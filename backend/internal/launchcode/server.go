@@ -142,6 +142,9 @@ func (s *LaunchServer) Start() error {
 func (s *LaunchServer) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/local/health", s.handleLocalHealth)
+	mux.HandleFunc("/api/local/profiles/upsert", s.handleLocalProfileUpsert)
+	mux.HandleFunc("/api/local/profiles/", s.handleLocalProfileByID)
 	mux.HandleFunc("/api/profiles", s.handleProfiles)
 	mux.HandleFunc("/api/profiles/", s.handleProfileByID)
 	mux.HandleFunc("/api/launch", s.handleLaunchWithBody)

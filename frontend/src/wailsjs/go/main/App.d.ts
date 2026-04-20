@@ -115,6 +115,8 @@ export function BrowserSnapshotRestore(arg1:string,arg2:string):Promise<void>;
 
 export function ClearAppLogs():Promise<void>;
 
+export function ClearProfileSession(arg1:string,arg2:boolean,arg3:boolean):Promise<void>;
+
 export function CreateGroup(arg1:browser.GroupInput):Promise<browser.Group>;
 
 export function DeleteGroup(arg1:string):Promise<void>;
@@ -171,6 +173,8 @@ export function StartInstance(arg1:string):Promise<browser.Profile>;
 
 export function StartInstanceWithParams(arg1:string,arg2:launchcode.LaunchRequestParams):Promise<browser.Profile>;
 
+export function StopInstance(arg1:string):Promise<boolean>;
+
 export function TestProxyConnectivity(arg1:string,arg2:string):Promise<backend.ProxyTestResult>;
 
 export function TestProxyRealConnectivity(arg1:string):Promise<backend.ProxyTestResult>;
@@ -178,5 +182,7 @@ export function TestProxyRealConnectivity(arg1:string):Promise<backend.ProxyTest
 export function TriggerGC():Promise<void>;
 
 export function UpdateGroup(arg1:string,arg2:browser.GroupInput):Promise<browser.Group>;
+
+export function UpsertManagedProfile(arg1:launchcode.ManagedProfileUpsertInput):Promise<launchcode.ManagedProfileUpsertResult>;
 
 export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.ProxyValidationResult>;

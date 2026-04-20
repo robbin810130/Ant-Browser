@@ -624,6 +624,42 @@ export namespace launchcode {
 	        this.skipDefaultStartUrls = source["skipDefaultStartUrls"];
 	    }
 	}
+	export class ManagedProfileUpsertInput {
+	    profileId: string;
+	    shopId: string;
+	    platformCode: string;
+	    profileName: string;
+	    managedMode: boolean;
+	    userDataDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ManagedProfileUpsertInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.profileId = source["profileId"];
+	        this.shopId = source["shopId"];
+	        this.platformCode = source["platformCode"];
+	        this.profileName = source["profileName"];
+	        this.managedMode = source["managedMode"];
+	        this.userDataDir = source["userDataDir"];
+	    }
+	}
+	export class ManagedProfileUpsertResult {
+	    ProfileID: string;
+	    Updated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ManagedProfileUpsertResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ProfileID = source["ProfileID"];
+	        this.Updated = source["Updated"];
+	    }
+	}
 
 }
 

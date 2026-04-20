@@ -218,6 +218,10 @@ export function ClearAppLogs() {
   return window['go']['main']['App']['ClearAppLogs']();
 }
 
+export function ClearProfileSession(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ClearProfileSession'](arg1, arg2, arg3);
+}
+
 export function CreateGroup(arg1) {
   return window['go']['main']['App']['CreateGroup'](arg1);
 }
@@ -330,6 +334,10 @@ export function StartInstanceWithParams(arg1, arg2) {
   return window['go']['main']['App']['StartInstanceWithParams'](arg1, arg2);
 }
 
+export function StopInstance(arg1) {
+  return window['go']['main']['App']['StopInstance'](arg1);
+}
+
 export function TestProxyConnectivity(arg1, arg2) {
   return window['go']['main']['App']['TestProxyConnectivity'](arg1, arg2);
 }
@@ -344,6 +352,10 @@ export function TriggerGC() {
 
 export function UpdateGroup(arg1, arg2) {
   return window['go']['main']['App']['UpdateGroup'](arg1, arg2);
+}
+
+export function UpsertManagedProfile(arg1) {
+  return window['go']['main']['App']['UpsertManagedProfile'](arg1);
 }
 
 export function ValidateProxyConfig(arg1, arg2) {
