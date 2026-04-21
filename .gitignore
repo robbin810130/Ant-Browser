@@ -28,6 +28,7 @@ pnpm-debug.log*
 build/bin/*
 !build/bin/README.md
 build/dist/
+build/darwin/
 chrome/*
 !chrome/README.md
 *.exe
