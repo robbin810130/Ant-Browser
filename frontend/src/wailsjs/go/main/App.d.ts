@@ -183,4 +183,6 @@ export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.Pro
 
 export function WorkspaceAuthorizedShops():Promise<Array<Record<string, any>>>;
 
+export function WorkspaceOpenShop(arg1:string):Promise<Record<string, any>>;
+
 export function WorkspaceSummary():Promise<Record<string, any>>;

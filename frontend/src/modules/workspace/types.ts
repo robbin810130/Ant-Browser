@@ -26,3 +26,14 @@ export interface WorkspaceDashboardStats {
   manualAttentionCount: number
   runningInstanceCount: number
 }
+
+export interface WorkspaceOpenShopResult {
+  shopId: string
+  profileId: string
+  instanceId: string
+  currentUrl: string
+  pageTitle: string
+  success: boolean
+  code: string
+  message: string
+}

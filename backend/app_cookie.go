@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/workspace"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -231,4 +232,109 @@ func (a *App) BrowserExportCookies(profileId string) (string, error) {
 			c.Domain, includeSubdomains, c.Path, secure, expires, c.Name, c.Value))
 	}
 	return sb.String(), nil
+}
+
+func (a *App) browserImportCookies(profileID string, cookies []workspace.SessionCookie) error {
+	if len(cookies) == 0 {
+		return nil
+	}
+
+	debugPort, err := a.getDebugPort(profileID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := cdpCall(debugPort, "Network.enable", map[string]any{}); err != nil {
+		return err
+	}
+
+	payload := make([]map[string]any, 0, len(cookies))
+	for _, cookie := range cookies {
+		item := map[string]any{
+			"name":     strings.TrimSpace(cookie.Name),
+			"value":    cookie.Value,
+			"domain":   strings.TrimSpace(cookie.Domain),
+			"path":     defaultString(cookie.Path, "/"),
+			"httpOnly": cookie.HttpOnly,
+			"secure":   cookie.Secure,
+		}
+		if cookie.Expires > 0 {
+			item["expires"] = cookie.Expires
+		}
+		if sameSite := strings.TrimSpace(cookie.SameSite); sameSite != "" {
+			item["sameSite"] = sameSite
+		}
+		if domain := strings.TrimSpace(cookie.Domain); domain == "" {
+			if url := strings.TrimSpace(cookie.URL); url != "" {
+				item["url"] = url
+			}
+		}
+		payload = append(payload, item)
+	}
+
+	_, err = cdpCall(debugPort, "Network.setCookies", map[string]any{
+		"cookies": payload,
+	})
+	return err
+}
+
+func (a *App) browserRuntimeSnapshot(profileID string) (workspace.OpenRuntimeSnapshot, error) {
+	debugPort, err := a.getDebugPort(profileID)
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, err
+	}
+
+	currentURL, err := cdpEvaluateString(debugPort, "window.location.href")
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, err
+	}
+	pageTitle, err := cdpEvaluateString(debugPort, "document.title")
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, err
+	}
+
+	return workspace.OpenRuntimeSnapshot{
+		CurrentURL: currentURL,
+		PageTitle:  pageTitle,
+	}, nil
+}
+
+func (a *App) browserNavigate(profileID string, targetURL string) error {
+	debugPort, err := a.getDebugPort(profileID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := cdpCall(debugPort, "Page.enable", map[string]any{}); err != nil {
+		return err
+	}
+	_, err = cdpCall(debugPort, "Page.navigate", map[string]any{
+		"url": strings.TrimSpace(targetURL),
+	})
+	return err
+}
+
+func cdpEvaluateString(debugPort int, expression string) (string, error) {
+	result, err := cdpCall(debugPort, "Runtime.evaluate", map[string]any{
+		"expression":    expression,
+		"returnByValue": true,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	valueNode, ok := result["result"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("CDP Runtime.evaluate 返回结构无效")
+	}
+	value, _ := valueNode["value"].(string)
+	return strings.TrimSpace(value), nil
+}
+
+func defaultString(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }

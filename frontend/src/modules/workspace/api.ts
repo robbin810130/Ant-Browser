@@ -1,7 +1,8 @@
-import { WorkspaceAuthorizedShops, WorkspaceSummary } from '../../wailsjs/go/main/App'
+import { WorkspaceAuthorizedShops, WorkspaceOpenShop, WorkspaceSummary } from '../../wailsjs/go/main/App'
 import type {
   WorkspaceAuthorizedShop,
   WorkspaceDashboardStats,
+  WorkspaceOpenShopResult,
   WorkspaceSummary as WorkspaceSummaryModel,
 } from './types'
 
@@ -52,4 +53,22 @@ export function deriveWorkspaceDashboardStats(shops: WorkspaceAuthorizedShop[]):
     manualAttentionCount,
     runningInstanceCount,
   }
+}
+
+function normalizeOpenResult(input: any): WorkspaceOpenShopResult {
+  return {
+    shopId: String(input?.shopId || ''),
+    profileId: String(input?.profileId || ''),
+    instanceId: String(input?.instanceId || ''),
+    currentUrl: String(input?.currentUrl || ''),
+    pageTitle: String(input?.pageTitle || ''),
+    success: Boolean(input?.success),
+    code: String(input?.code || ''),
+    message: String(input?.message || ''),
+  }
+}
+
+export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenShopResult> {
+  const payload = await WorkspaceOpenShop(shopId)
+  return normalizeOpenResult(payload)
 }

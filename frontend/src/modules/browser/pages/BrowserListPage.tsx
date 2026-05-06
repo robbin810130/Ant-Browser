@@ -5,6 +5,7 @@ import type { TableColumn } from '../../../shared/components/Table'
 import {
   deriveWorkspaceDashboardStats,
   fetchWorkspaceAuthorizedShops,
+  openWorkspaceShop,
 } from '../../workspace/api'
 import { ShopInstanceActionCell } from '../../workspace/components/ShopInstanceActionCell'
 import { ShopInstanceDrawer } from '../../workspace/components/ShopInstanceDrawer'
@@ -30,10 +31,7 @@ function lastOpenLabel() {
   return PLACEHOLDER_TIME
 }
 
-function actionPendingMessage(action: 'open' | 'bind' | 'validate', shop: WorkspaceAuthorizedShop) {
-  if (action === 'open') {
-    return `店铺 ${shop.shopName || shop.shopId} 的“一键打开后台”将在 Task 4 接入底层打开流程`
-  }
+function actionPendingMessage(action: 'bind' | 'validate', shop: WorkspaceAuthorizedShop) {
   if (action === 'bind') {
     return `店铺 ${shop.shopName || shop.shopId} 的“更新凭据”将在后续任务接入共享登录绑定流程`
   }
@@ -138,12 +136,23 @@ export function BrowserListPage() {
     setSelectedIds(new Set())
   }
 
-  const handlePlaceholderAction = (action: 'open' | 'bind' | 'validate', shop: WorkspaceAuthorizedShop) => {
-    if (action === 'open') {
-      toast.info(actionPendingMessage(action, shop))
-      return
-    }
+  const handlePlaceholderAction = (action: 'bind' | 'validate', shop: WorkspaceAuthorizedShop) => {
     toast.warning(actionPendingMessage(action, shop))
+  }
+
+  const handleOpen = async (shop: WorkspaceAuthorizedShop) => {
+    try {
+      const result = await openWorkspaceShop(shop.shopId)
+      if (!result.success) {
+        toast.error(result.message || '未能打开目标店铺后台')
+        return
+      }
+      toast.success(result.pageTitle || `已打开 ${shop.shopName || shop.shopId}`)
+      await load(true)
+    } catch (error: any) {
+      console.error('open workspace shop failed', error)
+      toast.error(error?.message || '未能打开目标店铺后台')
+    }
   }
 
   const columns: TableColumn<WorkspaceAuthorizedShop>[] = [
@@ -224,7 +233,7 @@ export function BrowserListPage() {
       render: (_, record) => (
         <ShopInstanceActionCell
           shop={record}
-          onOpen={() => handlePlaceholderAction('open', record)}
+          onOpen={() => void handleOpen(record)}
           onBind={() => handlePlaceholderAction('bind', record)}
           onValidate={() => handlePlaceholderAction('validate', record)}
           onDetail={() => setSelectedShop(record)}
@@ -392,7 +401,7 @@ export function BrowserListPage() {
                     <div className="mt-auto border-t border-[var(--color-border-muted)]/50 pt-3">
                       <ShopInstanceActionCell
                         shop={shop}
-                        onOpen={() => handlePlaceholderAction('open', shop)}
+                        onOpen={() => void handleOpen(shop)}
                         onBind={() => handlePlaceholderAction('bind', shop)}
                         onValidate={() => handlePlaceholderAction('validate', shop)}
                         onDetail={() => setSelectedShop(shop)}
