@@ -2,18 +2,19 @@ import { Badge } from '../../../shared/components'
 import type { WorkspaceAuthorizedShop } from '../types'
 
 function resolveStatus(shop: WorkspaceAuthorizedShop) {
+  const businessReason = shop.sharedLoginStatusLabel || shop.sharedLoginStatus || ''
+
   if (shop.instanceRunning && shop.sharedLoginStatus === 'ready') {
     return { variant: 'success' as const, label: '已就绪 / 运行中' }
   }
   if (shop.sharedLoginStatus === 'ready') {
     return { variant: 'info' as const, label: '已就绪' }
   }
-  if (shop.instanceRunning) {
-    return { variant: 'warning' as const, label: '运行中待处理' }
-  }
+
+  const label = businessReason || '待人工处理'
   return {
     variant: 'warning' as const,
-    label: shop.sharedLoginStatusLabel || shop.sharedLoginStatus || '待人工处理',
+    label: shop.instanceRunning ? `${label} / 本机运行中` : label,
   }
 }
 

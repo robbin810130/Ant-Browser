@@ -92,7 +92,31 @@ export function BrowserListPage() {
     }).sort((a, b) => a.shopName.localeCompare(b.shopName, 'zh-CN'))
   }, [keyword, shops, statusFilter])
 
+  const visibleShopIds = useMemo(() => new Set(filteredShops.map((shop) => shop.shopId)), [filteredShops])
+
+  const visibleSelectedCount = useMemo(() => {
+    let count = 0
+    selectedIds.forEach((shopId) => {
+      if (visibleShopIds.has(shopId)) {
+        count += 1
+      }
+    })
+    return count
+  }, [selectedIds, visibleShopIds])
+
   const stats = useMemo(() => deriveWorkspaceDashboardStats(shops), [shops])
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>()
+      prev.forEach((shopId) => {
+        if (visibleShopIds.has(shopId)) {
+          next.add(shopId)
+        }
+      })
+      return next.size === prev.size ? prev : next
+    })
+  }, [visibleShopIds])
 
   const toggleSelect = (shopId: string) => {
     setSelectedIds((prev) => {
@@ -129,10 +153,10 @@ export function BrowserListPage() {
         <input
           type="checkbox"
           className="h-4 w-4 cursor-pointer rounded accent-[var(--color-accent)]"
-          checked={filteredShops.length > 0 && selectedIds.size === filteredShops.length}
+          checked={filteredShops.length > 0 && visibleSelectedCount === filteredShops.length}
           ref={(input) => {
             if (input) {
-              input.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredShops.length
+              input.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < filteredShops.length
             }
           }}
           onChange={(event) => {
@@ -287,7 +311,7 @@ export function BrowserListPage() {
       {selectedIds.size > 0 ? (
         <div className="flex items-center gap-3 rounded-lg border border-[var(--color-accent)]/20 bg-[var(--color-accent)]/10 px-4 py-2.5">
           <span className="text-sm font-medium text-[var(--color-accent)]">
-            已选 {selectedIds.size} / {filteredShops.length}
+            已选 {visibleSelectedCount} / {filteredShops.length}
           </span>
           <div className="ml-auto flex gap-1.5">
             <Button size="sm" variant="ghost" onClick={handleSelectAll}>全选</Button>
