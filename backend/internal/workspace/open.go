@@ -19,6 +19,13 @@ var (
 		"1688后台",
 		"工作台",
 	}
+	defaultChallengeURLKeywords = []string{
+		"captcha",
+		"verify",
+		"challenge",
+		"checkcode",
+		"verifycenter",
+	}
 )
 
 type OpenRuntimeSnapshot struct {
@@ -63,6 +70,10 @@ type OpenShopResult struct {
 }
 
 func ClassifyOpenResult(snapshot OpenRuntimeSnapshot) OpenShopResult {
+	return ClassifyOpenResultForShop("", snapshot)
+}
+
+func ClassifyOpenResultForShop(shopID string, snapshot OpenRuntimeSnapshot) OpenShopResult {
 	currentURL := strings.TrimSpace(snapshot.CurrentURL)
 	pageTitle := strings.TrimSpace(snapshot.PageTitle)
 	lowerURL := strings.ToLower(currentURL)
@@ -75,7 +86,20 @@ func ClassifyOpenResult(snapshot OpenRuntimeSnapshot) OpenShopResult {
 		}
 	}
 
+	if containsAny(lowerURL, defaultChallengeURLKeywords) {
+		return OpenShopResult{
+			Code:    "ANT_MANUAL_VERIFICATION_REQUIRED",
+			Message: "当前店铺需要人工验证后才能继续打开后台",
+		}
+	}
+
 	if matchesAnyPrefix(lowerURL, defaultSuccessURLPatterns) && containsAny(lowerTitle, defaultBackendTitleKeywords) {
+		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && !strings.Contains(lowerURL, normalizedShopID) {
+			return OpenShopResult{
+				Code:    "ANT_BACKEND_TARGET_MISMATCH",
+				Message: "当前实例未进入目标店铺后台，请刷新会话后重试",
+			}
+		}
 		return OpenShopResult{
 			Success: true,
 		}
@@ -93,6 +117,36 @@ func DefaultBackendURL(shopID string) string {
 		return "https://work.1688.com/"
 	}
 	return "https://work.1688.com/?shopId=" + shopID
+}
+
+func SelectPreferredOpenSnapshot(shopID string, snapshots []OpenRuntimeSnapshot) OpenRuntimeSnapshot {
+	normalizedShopID := strings.ToLower(strings.TrimSpace(shopID))
+	if normalizedShopID == "" {
+		if len(snapshots) == 0 {
+			return OpenRuntimeSnapshot{}
+		}
+		return snapshots[0]
+	}
+
+	for _, snapshot := range snapshots {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(snapshot.CurrentURL)), normalizedShopID) {
+			return snapshot
+		}
+	}
+	for _, snapshot := range snapshots {
+		if ClassifyOpenResultForShop("", snapshot).Code == "ANT_BACKEND_LOGIN_REQUIRED" {
+			return snapshot
+		}
+	}
+	for _, snapshot := range snapshots {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(snapshot.CurrentURL)), "https://work.1688.com/") {
+			return snapshot
+		}
+	}
+	if len(snapshots) == 0 {
+		return OpenRuntimeSnapshot{}
+	}
+	return snapshots[0]
 }
 
 func matchesAnyPrefix(value string, prefixes []string) bool {

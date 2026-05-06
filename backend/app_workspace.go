@@ -57,13 +57,7 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 	}
 
 	if shop.SharedLoginStatus != "ready" {
-		return &workspace.OpenShopResult{
-			ShopID:     shop.ShopID,
-			ProfileID:  shop.ProfileID,
-			InstanceID: shop.InstanceID,
-			Code:       "ANT_BACKEND_LOGIN_REQUIRED",
-			Message:    "当前共享会话未就绪，请先执行更新凭据后重试",
-		}, nil
+		return buildUnavailableShopOpenResult(shop), nil
 	}
 
 	if err := a.ensureManagedShopProfile(shop); err != nil {
@@ -137,23 +131,24 @@ func (a *App) waitForWorkspaceOpenResult(shop workspace.ShopInstanceProjection, 
 	lastSnapshot := workspace.OpenRuntimeSnapshot{}
 
 	for time.Now().Before(deadline) {
-		snapshot, err := a.browserRuntimeSnapshot(shop.ProfileID)
+		snapshots, err := a.browserRuntimeSnapshots(shop.ProfileID)
 		if err == nil {
+			snapshot := workspace.SelectPreferredOpenSnapshot(shop.ShopID, snapshots)
 			lastSnapshot = snapshot
-			result := workspace.ClassifyOpenResult(snapshot)
+			result := workspace.ClassifyOpenResultForShop(shop.ShopID, snapshot)
 			result.ShopID = shop.ShopID
 			result.ProfileID = shop.ProfileID
 			result.InstanceID = firstNonEmptyString(shop.InstanceID, shop.ProfileID)
 			result.CurrentURL = snapshot.CurrentURL
 			result.PageTitle = snapshot.PageTitle
-			if result.Success || result.Code == "ANT_BACKEND_LOGIN_REQUIRED" {
+			if result.Success || result.Code == "ANT_BACKEND_LOGIN_REQUIRED" || result.Code == "ANT_BACKEND_TARGET_MISMATCH" || result.Code == "ANT_MANUAL_VERIFICATION_REQUIRED" {
 				return &result
 			}
 		}
 		time.Sleep(350 * time.Millisecond)
 	}
 
-	result := workspace.ClassifyOpenResult(lastSnapshot)
+	result := workspace.ClassifyOpenResultForShop(shop.ShopID, lastSnapshot)
 	result.ShopID = shop.ShopID
 	result.ProfileID = shop.ProfileID
 	result.InstanceID = firstNonEmptyString(shop.InstanceID, shop.ProfileID)
@@ -164,6 +159,28 @@ func (a *App) waitForWorkspaceOpenResult(shop workspace.ShopInstanceProjection, 
 		result.Message = "未能打开目标店铺后台，请稍后重试"
 	}
 	return &result
+}
+
+func buildUnavailableShopOpenResult(shop workspace.ShopInstanceProjection) *workspace.OpenShopResult {
+	result := &workspace.OpenShopResult{
+		ShopID:     shop.ShopID,
+		ProfileID:  shop.ProfileID,
+		InstanceID: shop.InstanceID,
+	}
+
+	switch strings.TrimSpace(shop.SharedLoginStatus) {
+	case "awaiting_verification":
+		result.Code = "ANT_MANUAL_VERIFICATION_REQUIRED"
+		result.Message = "当前共享会话等待人工验证，请先完成验证后重试"
+	case "validation_failed":
+		result.Code = "ANT_SESSION_RESTORE_FAILED"
+		result.Message = "当前共享会话验证失败，请先执行本机验证或更新凭据"
+	default:
+		result.Code = "ANT_BACKEND_LOGIN_REQUIRED"
+		result.Message = "当前共享会话未就绪，请先执行更新凭据后重试"
+	}
+
+	return result
 }
 
 func firstNonEmptyString(values ...string) string {

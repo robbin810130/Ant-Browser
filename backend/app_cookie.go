@@ -32,6 +32,8 @@ type CookieInfo struct {
 type cdpTarget struct {
 	WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
 	Type                 string `json:"type"`
+	Title                string `json:"title"`
+	URL                  string `json:"url"`
 }
 
 type cdpBrowserVersion struct {
@@ -279,24 +281,39 @@ func (a *App) browserImportCookies(profileID string, cookies []workspace.Session
 }
 
 func (a *App) browserRuntimeSnapshot(profileID string) (workspace.OpenRuntimeSnapshot, error) {
+	snapshots, err := a.browserRuntimeSnapshots(profileID)
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, err
+	}
+	if len(snapshots) == 0 {
+		return workspace.OpenRuntimeSnapshot{}, fmt.Errorf("未找到可用页面")
+	}
+	return snapshots[0], nil
+}
+
+func (a *App) browserRuntimeSnapshots(profileID string) ([]workspace.OpenRuntimeSnapshot, error) {
 	debugPort, err := a.getDebugPort(profileID)
 	if err != nil {
-		return workspace.OpenRuntimeSnapshot{}, err
+		return nil, err
 	}
 
-	currentURL, err := cdpEvaluateString(debugPort, "window.location.href")
-	if err != nil {
-		return workspace.OpenRuntimeSnapshot{}, err
-	}
-	pageTitle, err := cdpEvaluateString(debugPort, "document.title")
-	if err != nil {
-		return workspace.OpenRuntimeSnapshot{}, err
+	client := &http.Client{Timeout: 2 * time.Second}
+	var targets []cdpTarget
+	if err := fetchBrowserDebugJSON(client, debugPort, "/json/list", &targets); err != nil {
+		return nil, err
 	}
 
-	return workspace.OpenRuntimeSnapshot{
-		CurrentURL: currentURL,
-		PageTitle:  pageTitle,
-	}, nil
+	snapshots := make([]workspace.OpenRuntimeSnapshot, 0, len(targets))
+	for _, target := range targets {
+		if strings.TrimSpace(target.Type) != "page" {
+			continue
+		}
+		snapshots = append(snapshots, workspace.OpenRuntimeSnapshot{
+			CurrentURL: strings.TrimSpace(target.URL),
+			PageTitle:  strings.TrimSpace(target.Title),
+		})
+	}
+	return snapshots, nil
 }
 
 func (a *App) browserNavigate(profileID string, targetURL string) error {
