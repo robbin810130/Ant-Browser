@@ -8,6 +8,7 @@ import (
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/proxy"
+	"ant-chrome/backend/internal/workspace"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,19 +34,20 @@ const (
 
 // App 应用结构体
 type App struct {
-	ctx            context.Context
-	config         *config.Config
-	db             *database.DB
-	interceptor    *logger.MethodInterceptor
-	browserMgr     *browser.Manager
-	xrayMgr        *proxy.XrayManager
-	clashMgr       *proxy.ClashManager
-	singboxMgr     *proxy.SingBoxManager
-	launchCodeSvc  *launchcode.LaunchCodeService
-	launchServer   *launchcode.LaunchServer
-	speedScheduler *browser.ProxySpeedScheduler
-	appRoot        string
-	version        string
+	ctx              context.Context
+	config           *config.Config
+	db               *database.DB
+	interceptor      *logger.MethodInterceptor
+	browserMgr       *browser.Manager
+	xrayMgr          *proxy.XrayManager
+	clashMgr         *proxy.ClashManager
+	singboxMgr       *proxy.SingBoxManager
+	launchCodeSvc    *launchcode.LaunchCodeService
+	launchServer     *launchcode.LaunchServer
+	speedScheduler   *browser.ProxySpeedScheduler
+	workspaceService *workspace.WorkspaceService
+	appRoot          string
+	version          string
 
 	forceQuit        bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
 	quitMode         quitMode   // 退出模式：全量退出 / 仅退出应用
@@ -179,6 +181,7 @@ func (a *App) startup(ctx context.Context) {
 	a.autoDetectCores()
 	a.loadProxies()
 	a.reconcileProfileProxyBindings()
+	a.initWorkspaceService()
 
 	// 初始化 LaunchCode 服务
 	launchCodeDAO := launchcode.NewSQLiteLaunchCodeDAO(a.db.GetConn())
