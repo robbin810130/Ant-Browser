@@ -180,3 +180,7 @@ export function TriggerGC():Promise<void>;
 export function UpdateGroup(arg1:string,arg2:browser.GroupInput):Promise<browser.Group>;
 
 export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.ProxyValidationResult>;
+
+export function WorkspaceAuthorizedShops():Promise<Array<Record<string, any>>>;
+
+export function WorkspaceSummary():Promise<Record<string, any>>;

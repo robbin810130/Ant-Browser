@@ -349,3 +349,11 @@ export function UpdateGroup(arg1, arg2) {
 export function ValidateProxyConfig(arg1, arg2) {
   return window['go']['main']['App']['ValidateProxyConfig'](arg1, arg2);
 }
+
+export function WorkspaceAuthorizedShops() {
+  return window['go']['main']['App']['WorkspaceAuthorizedShops']();
+}
+
+export function WorkspaceSummary() {
+  return window['go']['main']['App']['WorkspaceSummary']();
+}
