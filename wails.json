@@ -2,7 +2,7 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Ant Browser",
   "outputfilename": "ant-chrome",
-  "frontend:install": "npm install && npm run ensure:native",
+  "frontend:install": "npx cross-env BROWSERSLIST_IGNORE_OLD_DATA=1 npm ci --prefer-offline --no-audit --no-fund && npm run ensure:native",
   "frontend:build": "npm run build",
   "author": {
     "name": "Ant Chrome Team",

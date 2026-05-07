@@ -77,10 +77,12 @@ try {
     Write-Host "[1/7] Installing frontend dependencies..."
     Push-Location (Join-Path $repoRoot "frontend")
     try {
-        Invoke-NativeCommand -FilePath "npm" -Arguments @("install")
+        $env:BROWSERSLIST_IGNORE_OLD_DATA = "1"
+        Invoke-NativeCommand -FilePath "npm" -Arguments @("ci", "--prefer-offline", "--no-audit", "--no-fund")
         Invoke-NativeCommand -FilePath "npm" -Arguments @("run", "ensure:native")
     }
     finally {
+        Remove-Item Env:BROWSERSLIST_IGNORE_OLD_DATA -ErrorAction SilentlyContinue
         Pop-Location
     }
 
@@ -115,9 +117,11 @@ try {
     }
     Push-Location (Join-Path $repoRoot "frontend")
     try {
+        $env:BROWSERSLIST_IGNORE_OLD_DATA = "1"
         Invoke-NativeCommand -FilePath "npm" -Arguments @("run", "build")
     }
     finally {
+        Remove-Item Env:BROWSERSLIST_IGNORE_OLD_DATA -ErrorAction SilentlyContinue
         Pop-Location
     }
 
