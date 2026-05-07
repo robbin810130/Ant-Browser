@@ -49,13 +49,14 @@ type App struct {
 	appRoot          string
 	version          string
 
-	forceQuit        bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
-	quitMode         quitMode   // 退出模式：全量退出 / 仅退出应用
-	maintenanceMu    sync.Mutex // 维护类操作（初始化/导入/导出）互斥锁
-	bridgeMu         sync.Mutex
-	xrayBridgeRefs   map[string]string
-	stopServicesOnce sync.Once
-	finalizeOnce     sync.Once
+	forceQuit         bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
+	quitMode          quitMode   // 退出模式：全量退出 / 仅退出应用
+	maintenanceMu     sync.Mutex // 维护类操作（初始化/导入/导出）互斥锁
+	bridgeMu          sync.Mutex
+	xrayBridgeRefs    map[string]string
+	workspaceAgentCmd *exec.Cmd
+	stopServicesOnce  sync.Once
+	finalizeOnce      sync.Once
 }
 
 // NewApp 创建新的应用实例
@@ -182,6 +183,7 @@ func (a *App) startup(ctx context.Context) {
 	a.loadProxies()
 	a.reconcileProfileProxyBindings()
 	a.initWorkspaceService()
+	a.ensureWorkspaceAgentBootstrapped()
 
 	// 初始化 LaunchCode 服务
 	launchCodeDAO := launchcode.NewSQLiteLaunchCodeDAO(a.db.GetConn())
