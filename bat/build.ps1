@@ -190,7 +190,9 @@ try {
         @{ Name = "HTTPS_PROXY"; Value = $env:HTTPS_PROXY },
         @{ Name = "http_proxy"; Value = $env:http_proxy },
         @{ Name = "https_proxy"; Value = $env:https_proxy },
-        @{ Name = "GOPROXY"; Value = $env:GOPROXY }
+        @{ Name = "GOPROXY"; Value = $env:GOPROXY },
+        @{ Name = "PATH"; Value = $env:PATH },
+        @{ Name = "GOROOT"; Value = $env:GOROOT }
     )
     Enable-OptionalBuildProxy | Out-Null
 
@@ -204,11 +206,34 @@ try {
     $npmExe = Resolve-RequiredCommand -Name "npm"
     $goExe = Resolve-RequiredCommand -Name "go"
     $wailsExe = Resolve-RequiredCommand -Name "wails"
+    $goBinDir = Split-Path -Path $goExe -Parent
+    $goRootDir = Split-Path -Path $goBinDir -Parent
+
+    if (-not [string]::IsNullOrWhiteSpace($goBinDir)) {
+        $pathEntries = @($env:PATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $hasGoBin = $false
+        foreach ($entry in $pathEntries) {
+            if ($entry.TrimEnd('\').ToLowerInvariant() -eq $goBinDir.TrimEnd('\').ToLowerInvariant()) {
+                $hasGoBin = $true
+                break
+            }
+        }
+
+        if (-not $hasGoBin) {
+            $env:PATH = "$goBinDir;$env:PATH"
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:GOROOT) -and -not [string]::IsNullOrWhiteSpace($goRootDir)) {
+        $env:GOROOT = $goRootDir
+    }
 
     Write-Host "Resolved commands:"
     Write-Host "  npm   = $npmExe"
     Write-Host "  go    = $goExe"
     Write-Host "  wails = $wailsExe"
+    Write-Host "  GOROOT = $env:GOROOT"
+    Write-Host "  PATH+go = $goBinDir"
     Write-Host ""
 
     Write-Host "[1/7] Installing frontend dependencies..."
