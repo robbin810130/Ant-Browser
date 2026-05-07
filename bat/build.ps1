@@ -39,6 +39,82 @@ function Assert-RequiredSourceFiles {
     }
 }
 
+function Test-TcpEndpoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Host,
+        [Parameter(Mandatory = $true)]
+        [int]$Port,
+        [int]$TimeoutMs = 1200
+    )
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $client.BeginConnect($Host, $Port, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+            return $false
+        }
+
+        $client.EndConnect($async)
+        return $true
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $client.Dispose()
+    }
+}
+
+function Enable-OptionalBuildProxy {
+    $proxyCandidates = @(
+        (Get-Item Env:ANT_BROWSER_BUILD_PROXY_URL -ErrorAction SilentlyContinue)?.Value,
+        (Get-Item Env:HTTPS_PROXY -ErrorAction SilentlyContinue)?.Value,
+        (Get-Item Env:HTTP_PROXY -ErrorAction SilentlyContinue)?.Value,
+        (Get-Item Env:https_proxy -ErrorAction SilentlyContinue)?.Value,
+        (Get-Item Env:http_proxy -ErrorAction SilentlyContinue)?.Value
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    if ($proxyCandidates.Count -eq 0) {
+        Write-Host "[0/7] No build proxy configured, using direct network."
+        Write-Host ""
+        return $false
+    }
+
+    $proxyValue = $proxyCandidates[0].Trim()
+    $proxyUri = $null
+    if (-not [System.Uri]::TryCreate($proxyValue, [System.UriKind]::Absolute, [ref]$proxyUri)) {
+        Write-Host "[0/7] Ignoring invalid build proxy: $proxyValue"
+        Write-Host ""
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($proxyUri.Host) -or $proxyUri.Port -le 0) {
+        Write-Host "[0/7] Ignoring unusable build proxy: $proxyValue"
+        Write-Host ""
+        return $false
+    }
+
+    Write-Host "[0/7] Validating build proxy..."
+    if (-not (Test-TcpEndpoint -Host $proxyUri.Host -Port $proxyUri.Port)) {
+        Write-Host "[WARN] Build proxy unreachable, falling back to direct network: $proxyValue"
+        Write-Host ""
+        return $false
+    }
+
+    $env:HTTP_PROXY = $proxyValue
+    $env:HTTPS_PROXY = $proxyValue
+    $env:http_proxy = $proxyValue
+    $env:https_proxy = $proxyValue
+    if ([string]::IsNullOrWhiteSpace($env:GOPROXY)) {
+        $env:GOPROXY = "https://goproxy.cn,direct"
+    }
+
+    Write-Host "OK proxy configured: $proxyValue"
+    Write-Host ""
+    return $true
+}
+
 try {
     Write-Host "========================================"
     Write-Host "  Ant Browser - Build Script"
@@ -47,25 +123,14 @@ try {
     Write-Host "Current workdir: $repoRoot"
     Write-Host ""
 
-    $proxyHost = "127.0.0.1"
-    $proxyPort = "7890"
-    $useProxy = $true
-
-    if ($useProxy) {
-        Write-Host "[0/7] Configuring proxy..."
-        $proxyValue = "http://${proxyHost}:${proxyPort}"
-        $env:HTTP_PROXY = $proxyValue
-        $env:HTTPS_PROXY = $proxyValue
-        $env:http_proxy = $proxyValue
-        $env:https_proxy = $proxyValue
-        $env:GOPROXY = "https://goproxy.cn,direct"
-
-        & npm config set proxy $proxyValue | Out-Null
-        & npm config set https-proxy $proxyValue | Out-Null
-
-        Write-Host "OK proxy configured: ${proxyHost}:${proxyPort}"
-        Write-Host ""
+    $originalEnv = @{
+        HTTP_PROXY  = $env:HTTP_PROXY
+        HTTPS_PROXY = $env:HTTPS_PROXY
+        http_proxy  = $env:http_proxy
+        https_proxy = $env:https_proxy
+        GOPROXY     = $env:GOPROXY
     }
+    Enable-OptionalBuildProxy | Out-Null
 
     Assert-RequiredSourceFiles -Action "Building from source" -Paths @(
         "go.mod",
@@ -158,6 +223,12 @@ catch {
     exit 1
 }
 finally {
-    & npm config delete proxy 2>$null | Out-Null
-    & npm config delete https-proxy 2>$null | Out-Null
+    foreach ($entry in $originalEnv.GetEnumerator()) {
+        if ($null -eq $entry.Value) {
+            Remove-Item "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+        }
+        else {
+            Set-Item "Env:$($entry.Key)" $entry.Value
+        }
+    }
 }
