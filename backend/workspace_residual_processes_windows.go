@@ -25,8 +25,9 @@ func cleanupWorkspaceBootstrapProcesses(installRoot string) (int, error) {
 
 	agentEntry := filepath.Join(installRoot, "apps", "agent", "src", "server", "index.mjs")
 	bridgeEntry := filepath.Join(installRoot, "installer", "windows", "scripts", "ant-runtime-bridge.mjs")
+	agentListenPort := defaultWorkspaceAgentListenPort
 
-	psScript := `param([string]$AgentEntry, [string]$BridgeEntry)
+	psScript := `param([string]$AgentEntry, [string]$BridgeEntry, [int]$AgentPort)
 $ErrorActionPreference = 'SilentlyContinue'
 function Normalize-PathText([string]$value) {
   if ([string]::IsNullOrWhiteSpace($value)) { return '' }
@@ -48,12 +49,36 @@ function Get-WorkspaceBootstrapProcesses {
     }
   )
 }
-$found = @(Get-WorkspaceBootstrapProcesses | Sort-Object ProcessId -Descending)
+$portOwners = @()
+if ($AgentPort -gt 0) {
+  try {
+    $portOwners = @(
+      Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $AgentPort -ErrorAction Stop |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    )
+  } catch {
+    $portOwners = @()
+  }
+}
+$found = @(
+  (Get-WorkspaceBootstrapProcesses | Select-Object -ExpandProperty ProcessId)
+  $portOwners
+) | Where-Object { $_ -gt 0 } | Sort-Object -Unique -Descending | ForEach-Object {
+  Get-CimInstance Win32_Process -Filter ("ProcessId = " + $_)
+}
 foreach ($p in $found) {
   try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {}
 }
 Start-Sleep -Milliseconds 400
-$left = @(Get-WorkspaceBootstrapProcesses)
+$left = @(
+  Get-WorkspaceBootstrapProcesses
+  if ($AgentPort -gt 0) {
+    try {
+      Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $AgentPort -ErrorAction Stop |
+        ForEach-Object { Get-CimInstance Win32_Process -Filter ("ProcessId = " + $_.OwningProcess) }
+    } catch {}
+  }
+) | Where-Object { $_ } | Sort-Object ProcessId -Unique
 if ($left.Count -gt 0) {
   $names = ($left | ForEach-Object { $_.Name + '#' + $_.ProcessId }) -join ', '
   Write-Host ('still running: ' + $names)
@@ -99,6 +124,7 @@ exit 0
 		"-File", filepath.Clean(scriptPath),
 		"-AgentEntry", agentEntry,
 		"-BridgeEntry", bridgeEntry,
+		"-AgentPort", agentListenPort,
 	)
 	hideWindow(cmd)
 
