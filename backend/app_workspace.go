@@ -1,26 +1,17 @@
 package backend
 
 import (
-	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/workspace"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const defaultWorkspaceBaseURL = "http://127.0.0.1:4174"
-
-type serverConnectionConfig struct {
-	ServerProtocol string `json:"serverProtocol"`
-	ServerIP       string `json:"serverIp"`
-	ServerPort     int    `json:"serverPort"`
-}
+const defaultWorkspaceAgentBaseURL = "http://127.0.0.1:47831"
 
 func (a *App) WorkspaceSummary() (*workspace.WorkspaceSummary, error) {
 	if a == nil || a.workspaceService == nil {
@@ -51,53 +42,85 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		return nil, err
 	}
 
-	shop, ok := findAuthorizedShopProjection(shops, shopID)
+	projectedShop, ok := findAuthorizedShopProjection(shops, shopID)
 	if !ok {
 		return nil, fmt.Errorf("shop not found: %s", shopID)
 	}
 
-	if shop.SharedLoginStatus != "ready" {
-		return buildUnavailableShopOpenResult(shop), nil
+	if projectedShop.SharedLoginStatus != "ready" {
+		return buildUnavailableShopOpenResult(projectedShop), nil
 	}
 
-	if err := a.ensureManagedShopProfile(shop); err != nil {
+	openContext, err := a.workspaceService.FetchOpenShopContext(context.Background(), shopID)
+	if err != nil {
 		return nil, err
 	}
 
-	targetURL := workspace.DefaultBackendURL(shop.ShopID)
-	profile, err := a.BrowserInstanceStartWithParams(shop.ProfileID, nil, []string{targetURL}, true)
-	if err != nil {
-		return &workspace.OpenShopResult{
-			ShopID:     shop.ShopID,
-			ProfileID:  shop.ProfileID,
-			InstanceID: shop.InstanceID,
-			Code:       "ANT_INSTANCE_OPEN_FAILED",
-			Message:    err.Error(),
-		}, nil
+	shop := openContext.Shop
+	profileID := firstNonEmptyString(openContext.Profile.ProfileID, shop.PlatformCode+":"+shopID)
+	result := &workspace.OpenShopResult{
+		ShopID:     firstNonEmptyString(shop.ShopID, shopID),
+		ProfileID:  profileID,
+		InstanceID: "",
 	}
 
-	result := a.waitForWorkspaceOpenResult(shop, 10*time.Second)
-	result.ProfileID = shop.ProfileID
-	if result.InstanceID == "" {
-		result.InstanceID = profile.ProfileId
+	if err := a.ensureManagedShopProfile(profileID, shop); err != nil {
+		result.Code = "ANT_PROFILE_UPSERT_FAILED"
+		result.Message = err.Error()
+		if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, nil); reportErr != nil {
+			return nil, reportErr
+		}
+		return result, nil
+	}
+
+	if err := a.InjectManagedSessionBundle(profileID, openContext.LaunchContext.SessionBundle); err != nil {
+		result.Code = "ANT_SESSION_RESTORE_FAILED"
+		result.Message = err.Error()
+		if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, nil); reportErr != nil {
+			return nil, reportErr
+		}
+		return result, nil
+	}
+
+	targetURL := firstNonEmptyString(openContext.LaunchContext.TargetURL, workspace.DefaultBackendURL(result.ShopID))
+	profile, err := a.BrowserInstanceStartWithParams(profileID, nil, []string{targetURL}, true)
+	if err != nil {
+		result.Code = "ANT_INSTANCE_OPEN_FAILED"
+		result.Message = err.Error()
+		if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, nil); reportErr != nil {
+			return nil, reportErr
+		}
+		return result, nil
+	}
+
+	runtimeInfo := &workspace.OpenReportRuntime{
+		PID:       profile.Pid,
+		DebugPort: profile.DebugPort,
+	}
+	result = a.waitForWorkspaceOpenResult(result.ShopID, profileID, "", openContext.LaunchContext, 10*time.Second)
+	runtimeInfo.CurrentURL = result.CurrentURL
+	runtimeInfo.PageTitle = result.PageTitle
+	if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo); reportErr != nil {
+		return nil, reportErr
 	}
 	return result, nil
 }
 
 func (a *App) initWorkspaceService() {
-	baseURL := resolveWorkspaceBaseURL(a.appRoot)
-	client := workspace.NewWorkspaceClient(baseURL, nil)
+	client := workspace.NewWorkspaceClient(resolveWorkspaceAgentBaseURL(), nil)
 	a.workspaceService = workspace.NewService(client, a.browserMgr)
 }
 
-func resolveWorkspaceBaseURL(appRoot string) string {
-	for _, path := range workspaceServerConnectionConfigCandidates(appRoot) {
-		baseURL, ok := readWorkspaceBaseURLFromConfig(path)
-		if ok {
-			return baseURL
+func resolveWorkspaceAgentBaseURL() string {
+	for _, value := range []string{
+		os.Getenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL"),
+		os.Getenv("AGENT_BASE_URL"),
+	} {
+		if trimmed := strings.TrimRight(strings.TrimSpace(value), "/"); trimmed != "" {
+			return trimmed
 		}
 	}
-	return defaultWorkspaceBaseURL
+	return defaultWorkspaceAgentBaseURL
 }
 
 func findAuthorizedShopProjection(shops []workspace.ShopInstanceProjection, shopID string) (workspace.ShopInstanceProjection, bool) {
@@ -109,8 +132,8 @@ func findAuthorizedShopProjection(shops []workspace.ShopInstanceProjection, shop
 	return workspace.ShopInstanceProjection{}, false
 }
 
-func (a *App) ensureManagedShopProfile(shop workspace.ShopInstanceProjection) error {
-	profileID := strings.TrimSpace(shop.ProfileID)
+func (a *App) ensureManagedShopProfile(profileID string, shop workspace.ShopDescriptor) error {
+	profileID = strings.TrimSpace(profileID)
 	if profileID == "" {
 		return fmt.Errorf("profile id is required")
 	}
@@ -126,19 +149,19 @@ func (a *App) ensureManagedShopProfile(shop workspace.ShopInstanceProjection) er
 	return err
 }
 
-func (a *App) waitForWorkspaceOpenResult(shop workspace.ShopInstanceProjection, timeout time.Duration) *workspace.OpenShopResult {
+func (a *App) waitForWorkspaceOpenResult(shopID string, profileID string, instanceID string, launchContext workspace.ShopLaunchContext, timeout time.Duration) *workspace.OpenShopResult {
 	deadline := time.Now().Add(timeout)
 	lastSnapshot := workspace.OpenRuntimeSnapshot{}
 
 	for time.Now().Before(deadline) {
-		snapshots, err := a.browserRuntimeSnapshots(shop.ProfileID)
+		snapshots, err := a.browserRuntimeSnapshots(profileID)
 		if err == nil {
-			snapshot := workspace.SelectPreferredOpenSnapshot(shop.ShopID, snapshots)
+			snapshot := workspace.SelectPreferredOpenSnapshotForLaunchContext(shopID, launchContext, snapshots)
 			lastSnapshot = snapshot
-			result := workspace.ClassifyOpenResultForShop(shop.ShopID, snapshot)
-			result.ShopID = shop.ShopID
-			result.ProfileID = shop.ProfileID
-			result.InstanceID = firstNonEmptyString(shop.InstanceID, shop.ProfileID)
+			result := workspace.ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot)
+			result.ShopID = shopID
+			result.ProfileID = profileID
+			result.InstanceID = strings.TrimSpace(instanceID)
 			result.CurrentURL = snapshot.CurrentURL
 			result.PageTitle = snapshot.PageTitle
 			if result.Success || result.Code == "ANT_BACKEND_LOGIN_REQUIRED" || result.Code == "ANT_BACKEND_TARGET_MISMATCH" || result.Code == "ANT_MANUAL_VERIFICATION_REQUIRED" {
@@ -148,10 +171,10 @@ func (a *App) waitForWorkspaceOpenResult(shop workspace.ShopInstanceProjection, 
 		time.Sleep(350 * time.Millisecond)
 	}
 
-	result := workspace.ClassifyOpenResultForShop(shop.ShopID, lastSnapshot)
-	result.ShopID = shop.ShopID
-	result.ProfileID = shop.ProfileID
-	result.InstanceID = firstNonEmptyString(shop.InstanceID, shop.ProfileID)
+	result := workspace.ClassifyOpenResultForLaunchContext(shopID, launchContext, lastSnapshot)
+	result.ShopID = shopID
+	result.ProfileID = profileID
+	result.InstanceID = strings.TrimSpace(instanceID)
 	result.CurrentURL = lastSnapshot.CurrentURL
 	result.PageTitle = lastSnapshot.PageTitle
 	if result.Code == "" && !result.Success {
@@ -159,6 +182,31 @@ func (a *App) waitForWorkspaceOpenResult(shop workspace.ShopInstanceProjection, 
 		result.Message = "未能打开目标店铺后台，请稍后重试"
 	}
 	return &result
+}
+
+func (a *App) reportWorkspaceOpenResult(ctx context.Context, openRequestID string, result *workspace.OpenShopResult, runtime *workspace.OpenReportRuntime) error {
+	if a == nil || a.workspaceService == nil || result == nil || strings.TrimSpace(openRequestID) == "" {
+		return nil
+	}
+
+	payload := workspace.OpenReportRequest{
+		Status:  "failed",
+		Runtime: runtime,
+	}
+	if result.Success {
+		payload.Status = "succeeded"
+	} else {
+		payload.FailureCode = result.Code
+		payload.FailureMessage = result.Message
+	}
+
+	if err := a.workspaceService.ReportOpenShopResult(ctx, openRequestID, payload); err != nil {
+		if result.Success {
+			return fmt.Errorf("native shop window opened but open result report failed: %w", err)
+		}
+		return fmt.Errorf("open failed and report failed: %w", err)
+	}
+	return nil
 }
 
 func buildUnavailableShopOpenResult(shop workspace.ShopInstanceProjection) *workspace.OpenShopResult {
@@ -191,46 +239,4 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func workspaceServerConnectionConfigCandidates(appRoot string) []string {
-	stateRoot := apppath.StateRoot(appRoot)
-	installRoot := apppath.InstallRoot(appRoot)
-
-	candidates := []string{
-		filepath.Join(stateRoot, "runtime", "config", "server-connection.json"),
-	}
-	if installRoot != stateRoot {
-		candidates = append(candidates, filepath.Join(installRoot, "runtime", "config", "server-connection.json"))
-	}
-	return candidates
-}
-
-func readWorkspaceBaseURLFromConfig(configPath string) (string, bool) {
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", false
-	}
-
-	var cfg serverConnectionConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return "", false
-	}
-
-	protocol := strings.ToLower(strings.TrimSpace(cfg.ServerProtocol))
-	if protocol != "https" {
-		protocol = "http"
-	}
-
-	host := strings.TrimSpace(cfg.ServerIP)
-	if host == "" {
-		host = "127.0.0.1"
-	}
-
-	port := cfg.ServerPort
-	if port <= 0 {
-		port = 4174
-	}
-
-	return protocol + "://" + host + ":" + strconv.Itoa(port), true
 }

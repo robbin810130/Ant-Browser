@@ -41,3 +41,32 @@ func TestOpenShopFailsWhenLandingOnDifferentShop(t *testing.T) {
 		t.Fatalf("expected failed result: %+v", result)
 	}
 }
+
+func TestOpenShopLaunchContextRequiresBackendTitle(t *testing.T) {
+	result := workspace.ClassifyOpenResultForLaunchContext("b2b-222082061706256a1a", workspace.ShopLaunchContext{
+		SuccessURLPatterns: []string{"https://work.1688.com/"},
+		LoginURLPatterns:   []string{"https://login.1688.com/"},
+	}, workspace.OpenRuntimeSnapshot{
+		CurrentURL: "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+		PageTitle:  "1688 工作台首页",
+	})
+	if result.Success {
+		t.Fatalf("expected launch context classification to reject generic page: %+v", result)
+	}
+	if result.Code != "ANT_INSTANCE_OPEN_FAILED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
+func TestOpenShopLaunchContextSucceedsWhenBackendMatched(t *testing.T) {
+	result := workspace.ClassifyOpenResultForLaunchContext("b2b-222082061706256a1a", workspace.ShopLaunchContext{
+		SuccessURLPatterns: []string{"https://work.1688.com/"},
+		LoginURLPatterns:   []string{"https://login.1688.com/"},
+	}, workspace.OpenRuntimeSnapshot{
+		CurrentURL: "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+		PageTitle:  "壹级供应链 - 1688后台管理",
+	})
+	if result.Code != "" || !result.Success {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}

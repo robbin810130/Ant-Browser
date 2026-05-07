@@ -17,7 +17,8 @@ var (
 	}
 	defaultBackendTitleKeywords = []string{
 		"1688后台",
-		"工作台",
+		"后台管理",
+		"商家工作台",
 	}
 	defaultChallengeURLKeywords = []string{
 		"captcha",
@@ -33,31 +34,6 @@ type OpenRuntimeSnapshot struct {
 	PageTitle  string `json:"pageTitle"`
 }
 
-type SessionCookie struct {
-	Name     string  `json:"name"`
-	Value    string  `json:"value"`
-	Domain   string  `json:"domain"`
-	Path     string  `json:"path"`
-	Expires  float64 `json:"expires"`
-	HttpOnly bool    `json:"httpOnly"`
-	Secure   bool    `json:"secure"`
-	SameSite string  `json:"sameSite"`
-	URL      string  `json:"url"`
-}
-
-type SessionStorageEntry struct {
-	Origin string            `json:"origin"`
-	Scope  string            `json:"scope"`
-	Items  map[string]string `json:"items"`
-}
-
-type SessionBundle struct {
-	UserAgent       string                `json:"userAgent"`
-	Cookies         []SessionCookie       `json:"cookies"`
-	Storages        []SessionStorageEntry `json:"storages"`
-	LastObservedURL string                `json:"lastObservedUrl"`
-}
-
 type OpenShopResult struct {
 	ShopID     string `json:"shopId"`
 	ProfileID  string `json:"profileId"`
@@ -71,6 +47,53 @@ type OpenShopResult struct {
 
 func ClassifyOpenResult(snapshot OpenRuntimeSnapshot) OpenShopResult {
 	return ClassifyOpenResultForShop("", snapshot)
+}
+
+func ClassifyOpenResultForLaunchContext(shopID string, launchContext ShopLaunchContext, snapshot OpenRuntimeSnapshot) OpenShopResult {
+	currentURL := strings.TrimSpace(snapshot.CurrentURL)
+	pageTitle := strings.TrimSpace(snapshot.PageTitle)
+	lowerURL := strings.ToLower(currentURL)
+	lowerTitle := strings.ToLower(pageTitle)
+
+	loginPatterns := normalizedURLPatterns(launchContext.LoginURLPatterns, defaultLoginURLPatterns)
+	successPatterns := normalizedURLPatterns(launchContext.SuccessURLPatterns, defaultSuccessURLPatterns)
+
+	if matchesAnyURLPattern(lowerURL, loginPatterns) || containsAny(lowerTitle, defaultLoginTitleKeywords) {
+		return OpenShopResult{
+			Code:    "ANT_BACKEND_LOGIN_REQUIRED",
+			Message: "未能打开目标店铺后台，请先执行更新凭据后重试",
+		}
+	}
+
+	if containsAny(lowerURL, defaultChallengeURLKeywords) {
+		return OpenShopResult{
+			Code:    "ANT_MANUAL_VERIFICATION_REQUIRED",
+			Message: "当前店铺需要人工验证后才能继续打开后台",
+		}
+	}
+
+	if matchesAnyURLPattern(lowerURL, successPatterns) {
+		if !containsAny(lowerTitle, defaultBackendTitleKeywords) {
+			return OpenShopResult{
+				Code:    "ANT_INSTANCE_OPEN_FAILED",
+				Message: "未能打开目标店铺后台，请稍后重试",
+			}
+		}
+		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && !strings.Contains(lowerURL, normalizedShopID) {
+			return OpenShopResult{
+				Code:    "ANT_BACKEND_TARGET_MISMATCH",
+				Message: "当前实例未进入目标店铺后台，请刷新会话后重试",
+			}
+		}
+		return OpenShopResult{
+			Success: true,
+		}
+	}
+
+	return OpenShopResult{
+		Code:    "ANT_INSTANCE_OPEN_FAILED",
+		Message: "未能打开目标店铺后台，请稍后重试",
+	}
 }
 
 func ClassifyOpenResultForShop(shopID string, snapshot OpenRuntimeSnapshot) OpenShopResult {
@@ -147,6 +170,59 @@ func SelectPreferredOpenSnapshot(shopID string, snapshots []OpenRuntimeSnapshot)
 		return OpenRuntimeSnapshot{}
 	}
 	return snapshots[0]
+}
+
+func SelectPreferredOpenSnapshotForLaunchContext(shopID string, launchContext ShopLaunchContext, snapshots []OpenRuntimeSnapshot) OpenRuntimeSnapshot {
+	normalizedShopID := strings.ToLower(strings.TrimSpace(shopID))
+	if normalizedShopID != "" {
+		for _, snapshot := range snapshots {
+			if strings.Contains(strings.ToLower(strings.TrimSpace(snapshot.CurrentURL)), normalizedShopID) {
+				return snapshot
+			}
+		}
+	}
+	for _, snapshot := range snapshots {
+		if ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot).Code == "ANT_BACKEND_LOGIN_REQUIRED" {
+			return snapshot
+		}
+	}
+	for _, snapshot := range snapshots {
+		if candidate := ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot); candidate.Success {
+			return snapshot
+		}
+	}
+	if len(snapshots) == 0 {
+		return OpenRuntimeSnapshot{}
+	}
+	return snapshots[0]
+}
+
+func normalizedURLPatterns(patterns []string, defaults []string) []string {
+	normalized := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.ToLower(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		normalized = append(normalized, pattern)
+	}
+	if len(normalized) > 0 {
+		return normalized
+	}
+	return defaults
+}
+
+func matchesAnyURLPattern(value string, patterns []string) bool {
+	for _, pattern := range patterns {
+		pattern = strings.ToLower(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		if strings.Contains(value, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesAnyPrefix(value string, prefixes []string) bool {
