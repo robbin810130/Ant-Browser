@@ -11,11 +11,26 @@ function Invoke-NativeCommand {
         [string[]]$Arguments = @()
     )
 
+    $argText = if ($Arguments.Count -gt 0) { " $($Arguments -join ' ')" } else { "" }
+    Write-Host ">> $FilePath$argText"
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
-        $argText = if ($Arguments.Count -gt 0) { " $($Arguments -join ' ')" } else { "" }
         throw "$FilePath$argText failed with exit code $LASTEXITCODE"
     }
+}
+
+function Resolve-RequiredCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -eq $command -or [string]::IsNullOrWhiteSpace($command.Source)) {
+        throw "Required command not found in PATH: $Name"
+    }
+
+    return $command.Source
 }
 
 function Assert-RequiredSourceFiles {
@@ -153,12 +168,22 @@ try {
         "wails.json"
     )
 
+    $npmExe = Resolve-RequiredCommand -Name "npm"
+    $goExe = Resolve-RequiredCommand -Name "go"
+    $wailsExe = Resolve-RequiredCommand -Name "wails"
+
+    Write-Host "Resolved commands:"
+    Write-Host "  npm   = $npmExe"
+    Write-Host "  go    = $goExe"
+    Write-Host "  wails = $wailsExe"
+    Write-Host ""
+
     Write-Host "[1/7] Installing frontend dependencies..."
     Push-Location (Join-Path $repoRoot "frontend")
     try {
         $env:BROWSERSLIST_IGNORE_OLD_DATA = "1"
-        Invoke-NativeCommand -FilePath "npm" -Arguments @("ci", "--prefer-offline", "--no-audit", "--no-fund")
-        Invoke-NativeCommand -FilePath "npm" -Arguments @("run", "ensure:native")
+        Invoke-NativeCommand -FilePath $npmExe -Arguments @("ci", "--prefer-offline", "--no-audit", "--no-fund")
+        Invoke-NativeCommand -FilePath $npmExe -Arguments @("run", "ensure:native")
     }
     finally {
         Remove-Item Env:BROWSERSLIST_IGNORE_OLD_DATA -ErrorAction SilentlyContinue
@@ -167,8 +192,9 @@ try {
 
     Write-Host ""
     Write-Host "[2/7] Installing Go dependencies..."
-    Invoke-NativeCommand -FilePath "go" -Arguments @("mod", "download")
-    Invoke-NativeCommand -FilePath "go" -Arguments @("mod", "tidy")
+    Invoke-NativeCommand -FilePath $goExe -Arguments @("version")
+    Invoke-NativeCommand -FilePath $goExe -Arguments @("mod", "download")
+    Invoke-NativeCommand -FilePath $goExe -Arguments @("mod", "tidy")
 
     Write-Host ""
     Write-Host "[3/7] Ensuring frontend\dist exists..."
@@ -197,7 +223,7 @@ try {
     Push-Location (Join-Path $repoRoot "frontend")
     try {
         $env:BROWSERSLIST_IGNORE_OLD_DATA = "1"
-        Invoke-NativeCommand -FilePath "npm" -Arguments @("run", "build")
+        Invoke-NativeCommand -FilePath $npmExe -Arguments @("run", "build")
     }
     finally {
         Remove-Item Env:BROWSERSLIST_IGNORE_OLD_DATA -ErrorAction SilentlyContinue
@@ -206,7 +232,7 @@ try {
 
     Write-Host ""
     Write-Host "[6/7] Building app..."
-    Invoke-NativeCommand -FilePath "wails" -Arguments @("build")
+    Invoke-NativeCommand -FilePath $wailsExe -Arguments @("build")
 
     if ($tempDistCreated -and (Test-Path -LiteralPath $frontendDist)) {
         Remove-Item -LiteralPath $frontendDist -Recurse -Force -ErrorAction SilentlyContinue
