@@ -84,14 +84,19 @@ func (a *App) ensureWorkspaceAgentBootstrapped() {
 		return
 	}
 
-	agentBaseURL := resolveWorkspaceLocalAgentBaseURL()
+	agentBaseURL := a.resolveWorkspaceAgentBaseURL()
 	appendWorkspaceHostLog(runtimeDir, "resolved agent base url: %s", agentBaseURL)
 	if !isHTTPReachable(agentBaseURL + "/health") {
-		cmd, err := a.startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin)
+		cmd, resolvedAgentBaseURL, err := a.startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin)
 		if err != nil {
 			appendWorkspaceHostLog(runtimeDir, "start workspace agent failed: %v", err)
 			log.Error("start workspace agent failed", logger.F("error", err.Error()))
 			return
+		}
+		agentBaseURL = resolvedAgentBaseURL
+		a.workspaceAgentURL = resolvedAgentBaseURL
+		if a.workspaceService != nil {
+			a.workspaceService.SetBaseURL(resolvedAgentBaseURL)
 		}
 		a.workspaceAgentCmd = cmd
 		if !waitForHTTPReachable(agentBaseURL+"/health", workspaceBootstrapTimeout) {
@@ -122,23 +127,29 @@ func (a *App) ensureWorkspaceAgentBootstrapped() {
 	)
 }
 
-func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin string) (*exec.Cmd, error) {
+func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin string) (*exec.Cmd, string, error) {
 	nodeExe, err := resolveWorkspaceNodeExecutable(installRoot)
 	if err != nil {
 		appendWorkspaceHostLog(runtimeDir, "resolve node executable failed: %v", err)
-		return nil, err
+		return nil, "", err
 	}
 
 	agentEntry := filepath.Join(installRoot, "apps", "agent", "src", "server", "index.mjs")
 	if _, statErr := os.Stat(agentEntry); statErr != nil {
 		appendWorkspaceHostLog(runtimeDir, "workspace agent entry missing: %v", statErr)
-		return nil, fmt.Errorf("workspace agent entry missing: %w", statErr)
+		return nil, "", fmt.Errorf("workspace agent entry missing: %w", statErr)
+	}
+
+	listenPort, agentBaseURL, err := reserveWorkspaceAgentPort()
+	if err != nil {
+		appendWorkspaceHostLog(runtimeDir, "reserve workspace agent port failed: %v", err)
+		return nil, "", err
 	}
 
 	cleanedCount, cleanupErr := cleanupWorkspaceBootstrapProcesses(installRoot)
 	if cleanupErr != nil {
 		appendWorkspaceHostLog(runtimeDir, "workspace bootstrap cleanup failed: %v", cleanupErr)
-		return nil, cleanupErr
+		return nil, "", cleanupErr
 	}
 	if cleanedCount > 0 {
 		appendWorkspaceHostLog(runtimeDir, "workspace bootstrap cleanup removed stale processes: count=%d", cleanedCount)
@@ -146,7 +157,7 @@ func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin s
 
 	logFile, err := openWorkspaceHostLogFile(runtimeDir)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if a.workspaceAgentLog != nil && a.workspaceAgentLog != logFile {
 		_ = a.workspaceAgentLog.Close()
@@ -156,7 +167,7 @@ func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin s
 	cmd := exec.Command(nodeExe, "--enable-source-maps", agentEntry)
 	hideWindow(cmd)
 	cmd.Dir = installRoot
-	cmd.Env = withWorkspaceAgentEnv(os.Environ(), runtimeDir, serverOrigin)
+	cmd.Env = withWorkspaceAgentEnv(os.Environ(), runtimeDir, serverOrigin, listenPort, agentBaseURL)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
@@ -166,16 +177,16 @@ func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin s
 		agentEntry,
 		cmd.Dir,
 		defaultWorkspaceAgentListenHost,
-		defaultWorkspaceAgentListenPort,
+		listenPort,
 		serverOrigin,
 	)
 
 	if err := cmd.Start(); err != nil {
 		appendWorkspaceHostLog(runtimeDir, "workspace agent process start error: %v", err)
-		return nil, err
+		return nil, "", err
 	}
 	appendWorkspaceHostLog(runtimeDir, "workspace agent process started: pid=%d", cmd.Process.Pid)
-	return cmd, nil
+	return cmd, agentBaseURL, nil
 }
 
 func stopWorkspaceAgentProcess(cmd *exec.Cmd) error {
@@ -258,6 +269,22 @@ func resolveWorkspaceLocalAgentBaseURL() string {
 	return defaultWorkspaceAgentBaseURL
 }
 
+func reserveWorkspaceAgentPort() (string, string, error) {
+	listener, err := net.Listen("tcp", net.JoinHostPort(defaultWorkspaceAgentListenHost, "0"))
+	if err != nil {
+		return "", "", fmt.Errorf("reserve workspace agent port: %w", err)
+	}
+	defer listener.Close()
+
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok || addr.Port <= 0 {
+		return "", "", fmt.Errorf("workspace agent reserved port unavailable")
+	}
+	port := fmt.Sprintf("%d", addr.Port)
+	baseURL := fmt.Sprintf("http://%s:%s", defaultWorkspaceAgentListenHost, port)
+	return port, baseURL, nil
+}
+
 func resolveWorkspaceNodeExecutable(installRoot string) (string, error) {
 	candidates := []string{
 		filepath.Join(installRoot, "runtime", "node", "node.exe"),
@@ -304,7 +331,7 @@ func appendWorkspaceHostLog(runtimeDir, format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(file, "[%s] %s\n", time.Now().Format(time.RFC3339Nano), fmt.Sprintf(format, args...))
 }
 
-func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin string) []string {
+func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, agentBaseURL string) []string {
 	envMap := make(map[string]string, len(base)+8)
 	for _, entry := range base {
 		parts := strings.SplitN(entry, "=", 2)
@@ -320,8 +347,8 @@ func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin string) []str
 	envMap["AGENT_STATE_DIR"] = runtimeDir
 	envMap["DESKTOP_SERVER_BASE_URL"] = serverOrigin
 	envMap["AGENT_LISTEN_HOST"] = defaultWorkspaceAgentListenHost
-	envMap["AGENT_LISTEN_PORT"] = defaultWorkspaceAgentListenPort
-	envMap["AGENT_BASE_URL"] = defaultWorkspaceAgentBaseURL
+	envMap["AGENT_LISTEN_PORT"] = listenPort
+	envMap["AGENT_BASE_URL"] = agentBaseURL
 	envMap["ANT_RUNTIME_BASE_URL"] = defaultWorkspaceAntRuntimeBaseURL
 
 	result := make([]string, 0, len(envMap))

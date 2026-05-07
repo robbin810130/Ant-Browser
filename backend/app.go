@@ -56,6 +56,7 @@ type App struct {
 	xrayBridgeRefs    map[string]string
 	workspaceAgentCmd *exec.Cmd
 	workspaceAgentLog *os.File
+	workspaceAgentURL string
 	stopServicesOnce  sync.Once
 	finalizeOnce      sync.Once
 }

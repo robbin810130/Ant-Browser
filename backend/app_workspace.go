@@ -107,7 +107,7 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 }
 
 func (a *App) initWorkspaceService() {
-	client := workspace.NewWorkspaceClient(resolveWorkspaceAgentBaseURL(), nil)
+	client := workspace.NewWorkspaceClient(a.resolveWorkspaceAgentBaseURL(), nil)
 	a.workspaceService = workspace.NewService(client, a.browserMgr)
 }
 
@@ -121,6 +121,15 @@ func resolveWorkspaceAgentBaseURL() string {
 		}
 	}
 	return defaultWorkspaceAgentBaseURL
+}
+
+func (a *App) resolveWorkspaceAgentBaseURL() string {
+	if a != nil {
+		if value := strings.TrimRight(strings.TrimSpace(a.workspaceAgentURL), "/"); value != "" {
+			return value
+		}
+	}
+	return resolveWorkspaceAgentBaseURL()
 }
 
 func findAuthorizedShopProjection(shops []workspace.ShopInstanceProjection, shopID string) (workspace.ShopInstanceProjection, bool) {

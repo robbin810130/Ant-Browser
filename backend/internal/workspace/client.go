@@ -44,11 +44,25 @@ func NewWorkspaceClient(baseURL string, client *http.Client) *WorkspaceClient {
 	}
 }
 
+func (c *WorkspaceClient) SetBaseURL(baseURL string) {
+	if c == nil {
+		return
+	}
+	c.baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+}
+
 func NewService(client *WorkspaceClient, profileList profileLister) *WorkspaceService {
 	return &WorkspaceService{
 		client:      client,
 		profileList: profileList,
 	}
+}
+
+func (s *WorkspaceService) SetBaseURL(baseURL string) {
+	if s == nil || s.client == nil {
+		return
+	}
+	s.client.SetBaseURL(baseURL)
 }
 
 func (c *WorkspaceClient) FetchWorkspaceSummary(ctx context.Context) (*WorkspaceSummary, error) {
