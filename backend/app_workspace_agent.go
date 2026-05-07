@@ -135,6 +135,15 @@ func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin s
 		return nil, fmt.Errorf("workspace agent entry missing: %w", statErr)
 	}
 
+	cleanedCount, cleanupErr := cleanupWorkspaceBootstrapProcesses(installRoot)
+	if cleanupErr != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace bootstrap cleanup failed: %v", cleanupErr)
+		return nil, cleanupErr
+	}
+	if cleanedCount > 0 {
+		appendWorkspaceHostLog(runtimeDir, "workspace bootstrap cleanup removed stale processes: count=%d", cleanedCount)
+	}
+
 	logFile, err := openWorkspaceHostLogFile(runtimeDir)
 	if err != nil {
 		return nil, err
