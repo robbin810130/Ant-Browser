@@ -66,13 +66,27 @@ function Test-TcpEndpoint {
     }
 }
 
+function Get-OptionalEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $item = Get-Item ("Env:" + $Name) -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return $null
+    }
+
+    return $item.Value
+}
+
 function Enable-OptionalBuildProxy {
     $proxyCandidates = @(
-        (Get-Item Env:ANT_BROWSER_BUILD_PROXY_URL -ErrorAction SilentlyContinue)?.Value,
-        (Get-Item Env:HTTPS_PROXY -ErrorAction SilentlyContinue)?.Value,
-        (Get-Item Env:HTTP_PROXY -ErrorAction SilentlyContinue)?.Value,
-        (Get-Item Env:https_proxy -ErrorAction SilentlyContinue)?.Value,
-        (Get-Item Env:http_proxy -ErrorAction SilentlyContinue)?.Value
+        (Get-OptionalEnvValue -Name "ANT_BROWSER_BUILD_PROXY_URL"),
+        (Get-OptionalEnvValue -Name "HTTPS_PROXY"),
+        (Get-OptionalEnvValue -Name "HTTP_PROXY"),
+        (Get-OptionalEnvValue -Name "https_proxy"),
+        (Get-OptionalEnvValue -Name "http_proxy")
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
     if ($proxyCandidates.Count -eq 0) {
@@ -123,13 +137,13 @@ try {
     Write-Host "Current workdir: $repoRoot"
     Write-Host ""
 
-    $originalEnv = @{
-        HTTP_PROXY  = $env:HTTP_PROXY
-        HTTPS_PROXY = $env:HTTPS_PROXY
-        http_proxy  = $env:http_proxy
-        https_proxy = $env:https_proxy
-        GOPROXY     = $env:GOPROXY
-    }
+    $originalEnv = @(
+        @{ Name = "HTTP_PROXY"; Value = $env:HTTP_PROXY },
+        @{ Name = "HTTPS_PROXY"; Value = $env:HTTPS_PROXY },
+        @{ Name = "http_proxy"; Value = $env:http_proxy },
+        @{ Name = "https_proxy"; Value = $env:https_proxy },
+        @{ Name = "GOPROXY"; Value = $env:GOPROXY }
+    )
     Enable-OptionalBuildProxy | Out-Null
 
     Assert-RequiredSourceFiles -Action "Building from source" -Paths @(
@@ -223,12 +237,12 @@ catch {
     exit 1
 }
 finally {
-    foreach ($entry in $originalEnv.GetEnumerator()) {
+    foreach ($entry in $originalEnv) {
         if ($null -eq $entry.Value) {
-            Remove-Item "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+            Remove-Item ("Env:" + $entry.Name) -ErrorAction SilentlyContinue
         }
         else {
-            Set-Item "Env:$($entry.Key)" $entry.Value
+            Set-Item ("Env:" + $entry.Name) $entry.Value
         }
     }
 }
