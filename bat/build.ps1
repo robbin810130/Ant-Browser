@@ -244,7 +244,19 @@ try {
 
     Write-Host ""
     Write-Host "[4/7] Generating Wails bindings..."
-    Invoke-NativeCommand -FilePath "cmd" -Arguments @("/c", "call bat\generate-bindings.bat --no-pause")
+    $originalWailsBin = $env:WAILS_BIN
+    try {
+        $env:WAILS_BIN = $wailsExe
+        Invoke-NativeCommand -FilePath "cmd" -Arguments @("/c", "call bat\generate-bindings.bat --no-pause")
+    }
+    finally {
+        if ($null -eq $originalWailsBin) {
+            Remove-Item Env:WAILS_BIN -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:WAILS_BIN = $originalWailsBin
+        }
+    }
 
     $binaryPath = Join-Path $repoRoot "build/bin/ant-chrome.exe"
 

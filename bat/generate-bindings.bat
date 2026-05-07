@@ -18,6 +18,11 @@ echo.
 echo Working directory: %CD%
 echo.
 
+set "WAILS_CMD=wails"
+if defined WAILS_BIN (
+    set "WAILS_CMD=%WAILS_BIN%"
+)
+
 if not exist "wails.json" (
     echo [ERROR] wails.json not found in repository root.
     echo         This development branch must keep a complete Wails source tree.
@@ -42,7 +47,8 @@ if not exist "frontend\dist\__wails_placeholder__.txt" (
 
 echo.
 echo [2/3] Regenerating Wails bindings...
-wails generate module
+echo ^>^> %WAILS_CMD% generate module
+"%WAILS_CMD%" generate module
 if errorlevel 1 (
     echo Failed to regenerate Wails bindings.
     goto :cleanup_fail
@@ -84,4 +90,3 @@ exit /b 0
 call :cleanup
 if not "%NO_PAUSE%"=="1" pause
 exit /b 1
-
