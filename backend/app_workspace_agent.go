@@ -70,42 +70,51 @@ func (a *App) ensureWorkspaceAgentBootstrapped() {
 
 	installRoot, ok := resolveWorkspaceInstallRoot(a.appRoot)
 	if !ok {
+		appendWorkspaceHostLog(resolveWorkspaceRuntimeDir(), "workspace install root unavailable: app_root=%s", a.appRoot)
 		log.Warn("workspace install root unavailable", logger.F("app_root", a.appRoot))
 		return
 	}
 
 	runtimeDir := resolveWorkspaceRuntimeDir()
 	serverOrigin := resolveWorkspaceServerOrigin(runtimeDir)
+	appendWorkspaceHostLog(runtimeDir, "bootstrap begin: app_root=%s install_root=%s runtime_dir=%s server_origin=%s", a.appRoot, installRoot, runtimeDir, serverOrigin)
 	if strings.TrimSpace(serverOrigin) == "" {
+		appendWorkspaceHostLog(runtimeDir, "workspace server origin unavailable")
 		log.Warn("workspace server origin unavailable", logger.F("runtime_dir", runtimeDir))
 		return
 	}
 
 	agentBaseURL := resolveWorkspaceLocalAgentBaseURL()
+	appendWorkspaceHostLog(runtimeDir, "resolved agent base url: %s", agentBaseURL)
 	if !isHTTPReachable(agentBaseURL + "/health") {
 		cmd, err := a.startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin)
 		if err != nil {
+			appendWorkspaceHostLog(runtimeDir, "start workspace agent failed: %v", err)
 			log.Error("start workspace agent failed", logger.F("error", err.Error()))
 			return
 		}
 		a.workspaceAgentCmd = cmd
 		if !waitForHTTPReachable(agentBaseURL+"/health", workspaceBootstrapTimeout) {
+			appendWorkspaceHostLog(runtimeDir, "workspace agent health timeout: url=%s", agentBaseURL+"/health")
 			log.Error("workspace agent health timeout", logger.F("url", agentBaseURL+"/health"))
 			return
 		}
 	}
 
 	if err := bootstrapWorkspaceAgentSession(agentBaseURL, serverOrigin); err != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent bootstrap failed: %v", err)
 		log.Error("workspace agent bootstrap failed", logger.F("error", err.Error()))
 		return
 	}
 
 	shopCount, err := warmWorkspaceAuthorizedShops(agentBaseURL)
 	if err != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace shops warmup failed: %v", err)
 		log.Error("workspace shops warmup failed", logger.F("error", err.Error()))
 		return
 	}
 
+	appendWorkspaceHostLog(runtimeDir, "workspace agent ready: agent_base_url=%s server_origin=%s shop_count=%d", agentBaseURL, serverOrigin, shopCount)
 	log.Info("workspace agent ready",
 		logger.F("agent_base_url", agentBaseURL),
 		logger.F("server_origin", serverOrigin),
@@ -116,22 +125,47 @@ func (a *App) ensureWorkspaceAgentBootstrapped() {
 func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin string) (*exec.Cmd, error) {
 	nodeExe, err := resolveWorkspaceNodeExecutable(installRoot)
 	if err != nil {
+		appendWorkspaceHostLog(runtimeDir, "resolve node executable failed: %v", err)
 		return nil, err
 	}
 
 	agentEntry := filepath.Join(installRoot, "apps", "agent", "src", "server", "index.mjs")
 	if _, statErr := os.Stat(agentEntry); statErr != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent entry missing: %v", statErr)
 		return nil, fmt.Errorf("workspace agent entry missing: %w", statErr)
 	}
+
+	logFile, err := openWorkspaceHostLogFile(runtimeDir)
+	if err != nil {
+		return nil, err
+	}
+	if a.workspaceAgentLog != nil && a.workspaceAgentLog != logFile {
+		_ = a.workspaceAgentLog.Close()
+	}
+	a.workspaceAgentLog = logFile
 
 	cmd := exec.Command(nodeExe, "--enable-source-maps", agentEntry)
 	hideWindow(cmd)
 	cmd.Dir = installRoot
 	cmd.Env = withWorkspaceAgentEnv(os.Environ(), runtimeDir, serverOrigin)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+
+	appendWorkspaceHostLog(runtimeDir,
+		"starting workspace agent: node=%s entry=%s cwd=%s listen=%s:%s server_origin=%s",
+		nodeExe,
+		agentEntry,
+		cmd.Dir,
+		defaultWorkspaceAgentListenHost,
+		defaultWorkspaceAgentListenPort,
+		serverOrigin,
+	)
 
 	if err := cmd.Start(); err != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent process start error: %v", err)
 		return nil, err
 	}
+	appendWorkspaceHostLog(runtimeDir, "workspace agent process started: pid=%d", cmd.Process.Pid)
 	return cmd, nil
 }
 
@@ -231,6 +265,34 @@ func resolveWorkspaceNodeExecutable(installRoot string) (string, error) {
 	}
 
 	return "", fmt.Errorf("node executable not found")
+}
+
+func openWorkspaceHostLogFile(runtimeDir string) (*os.File, error) {
+	logPath := resolveWorkspaceHostLogPath(runtimeDir)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		return nil, fmt.Errorf("create workspace host log dir failed: %w", err)
+	}
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open workspace host log failed: %w", err)
+	}
+	return file, nil
+}
+
+func resolveWorkspaceHostLogPath(runtimeDir string) string {
+	return filepath.Join(runtimeDir, "logs", "host-workspace-agent.log")
+}
+
+func appendWorkspaceHostLog(runtimeDir, format string, args ...interface{}) {
+	if strings.TrimSpace(runtimeDir) == "" {
+		runtimeDir = resolveWorkspaceRuntimeDir()
+	}
+	file, err := openWorkspaceHostLogFile(runtimeDir)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = fmt.Fprintf(file, "[%s] %s\n", time.Now().Format(time.RFC3339Nano), fmt.Sprintf(format, args...))
 }
 
 func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin string) []string {

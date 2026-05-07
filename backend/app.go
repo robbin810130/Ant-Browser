@@ -55,6 +55,7 @@ type App struct {
 	bridgeMu          sync.Mutex
 	xrayBridgeRefs    map[string]string
 	workspaceAgentCmd *exec.Cmd
+	workspaceAgentLog *os.File
 	stopServicesOnce  sync.Once
 	finalizeOnce      sync.Once
 }
