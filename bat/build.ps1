@@ -81,13 +81,13 @@ function Get-OptionalEnvValue {
 }
 
 function Enable-OptionalBuildProxy {
-    $proxyCandidates = @(
+    $proxyCandidates = @(@(
         (Get-OptionalEnvValue -Name "ANT_BROWSER_BUILD_PROXY_URL"),
         (Get-OptionalEnvValue -Name "HTTPS_PROXY"),
         (Get-OptionalEnvValue -Name "HTTP_PROXY"),
         (Get-OptionalEnvValue -Name "https_proxy"),
         (Get-OptionalEnvValue -Name "http_proxy")
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
     if ($proxyCandidates.Count -eq 0) {
         Write-Host "[0/7] No build proxy configured, using direct network."
