@@ -27,6 +27,39 @@ function Resolve-RequiredCommand {
 
     $command = Get-Command $Name -ErrorAction SilentlyContinue
     if ($null -eq $command -or [string]::IsNullOrWhiteSpace($command.Source)) {
+        $fallbacks = @()
+        switch ($Name.ToLowerInvariant()) {
+            "go" {
+                if (-not [string]::IsNullOrWhiteSpace($env:GOROOT)) {
+                    $fallbacks += (Join-Path $env:GOROOT "bin\go.exe")
+                }
+                $fallbacks += @(
+                    "C:\Program Files\Go\bin\go.exe",
+                    "C:\Go\bin\go.exe"
+                )
+            }
+            "wails" {
+                if (-not [string]::IsNullOrWhiteSpace($env:GOPATH)) {
+                    $fallbacks += (Join-Path $env:GOPATH "bin\wails.exe")
+                }
+                if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+                    $fallbacks += (Join-Path $env:USERPROFILE "go\bin\wails.exe")
+                }
+            }
+            "npm" {
+                $fallbacks += @(
+                    "C:\Program Files\nodejs\npm.cmd",
+                    "C:\Program Files (x86)\nodejs\npm.cmd"
+                )
+            }
+        }
+
+        foreach ($candidate in $fallbacks) {
+            if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+                return $candidate
+            }
+        }
+
         throw "Required command not found in PATH: $Name"
     }
 
