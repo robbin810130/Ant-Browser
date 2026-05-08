@@ -70,3 +70,16 @@ func TestOpenShopLaunchContextSucceedsWhenBackendMatched(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }
+
+func TestOpenShopLaunchContextSucceedsForSellerWorkbenchWithoutShopIDInURL(t *testing.T) {
+	result := workspace.ClassifyOpenResultForLaunchContext("b2b-222082061706256a1a", workspace.ShopLaunchContext{
+		SuccessURLPatterns: []string{"https://work.1688.com/"},
+		LoginURLPatterns:   []string{"https://login.1688.com/"},
+	}, workspace.OpenRuntimeSnapshot{
+		CurrentURL: "https://work.1688.com/?tracelog=login_target_is_blank_1688",
+		PageTitle:  "1688-卖家工作台",
+	})
+	if result.Code != "" || !result.Success {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}

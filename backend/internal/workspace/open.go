@@ -19,6 +19,7 @@ var (
 		"1688后台",
 		"后台管理",
 		"商家工作台",
+		"卖家工作台",
 	}
 	defaultChallengeURLKeywords = []string{
 		"captcha",
@@ -79,7 +80,7 @@ func ClassifyOpenResultForLaunchContext(shopID string, launchContext ShopLaunchC
 				Message: "未能打开目标店铺后台，请稍后重试",
 			}
 		}
-		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && !strings.Contains(lowerURL, normalizedShopID) {
+		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && urlDeclaresDifferentShop(lowerURL, normalizedShopID) {
 			return OpenShopResult{
 				Code:    "ANT_BACKEND_TARGET_MISMATCH",
 				Message: "当前实例未进入目标店铺后台，请刷新会话后重试",
@@ -117,7 +118,7 @@ func ClassifyOpenResultForShop(shopID string, snapshot OpenRuntimeSnapshot) Open
 	}
 
 	if matchesAnyPrefix(lowerURL, defaultSuccessURLPatterns) && containsAny(lowerTitle, defaultBackendTitleKeywords) {
-		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && !strings.Contains(lowerURL, normalizedShopID) {
+		if normalizedShopID := strings.ToLower(strings.TrimSpace(shopID)); normalizedShopID != "" && urlDeclaresDifferentShop(lowerURL, normalizedShopID) {
 			return OpenShopResult{
 				Code:    "ANT_BACKEND_TARGET_MISMATCH",
 				Message: "当前实例未进入目标店铺后台，请刷新会话后重试",
@@ -195,6 +196,16 @@ func SelectPreferredOpenSnapshotForLaunchContext(shopID string, launchContext Sh
 		return OpenRuntimeSnapshot{}
 	}
 	return snapshots[0]
+}
+
+func urlDeclaresDifferentShop(lowerURL, expectedShopID string) bool {
+	if lowerURL == "" || expectedShopID == "" {
+		return false
+	}
+	if strings.Contains(lowerURL, expectedShopID) {
+		return false
+	}
+	return strings.Contains(lowerURL, "shopid=")
 }
 
 func normalizedURLPatterns(patterns []string, defaults []string) []string {
