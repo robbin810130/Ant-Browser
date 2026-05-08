@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/managedinstance"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,7 +92,7 @@ func TestWorkspaceOpenShopDelegatesToManagedInstanceService(t *testing.T) {
 
 	browserMgr := browser.NewManager(config.DefaultConfig(), t.TempDir())
 	app := &App{
-		workspaceService:       workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil),
+		workspaceService:       workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
 		managedInstanceService: &managedinstance.Service{},
 		browserMgr:             browserMgr,
 	}
@@ -148,7 +150,7 @@ func TestReportWorkspaceOpenResultReturnsErrorWhenReportFails(t *testing.T) {
 	defer server.Close()
 
 	app := &App{
-		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil),
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
 	}
 
 	err := app.reportWorkspaceOpenResult(context.Background(), "desktop-open-001", &workspace.OpenShopResult{
@@ -183,7 +185,7 @@ func TestReportWorkspaceOpenResultSendsFailurePayload(t *testing.T) {
 	defer server.Close()
 
 	app := &App{
-		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil),
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
 	}
 
 	err := app.reportWorkspaceOpenResult(context.Background(), "desktop-open-002", &workspace.OpenShopResult{
@@ -245,5 +247,25 @@ func TestWaitForTargetReadyRetriesUntilTargetAppears(t *testing.T) {
 	}
 	if listCalls.Load() < 3 {
 		t.Fatalf("expected polling to retry, got=%d", listCalls.Load())
+	}
+}
+
+func TestWorkspaceOpenShopDoesNotInlineBrowserOrchestration(t *testing.T) {
+	source, err := os.ReadFile("/Users/robbin/.config/superpowers/worktrees/ant-browser-fork/codex-workspace-native-instance/backend/app_workspace.go")
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	for _, forbidden := range []string{
+		"Target.createTarget",
+		"Target.activateTarget",
+		"Page.navigate",
+		"browserImportCookies(",
+		"beginWorkspaceOpenRun(",
+		"waitWorkspaceOpenRun(",
+		"finishWorkspaceOpenRun(",
+	} {
+		if bytes.Contains(source, []byte(forbidden)) {
+			t.Fatalf("workspace layer still contains browser orchestration: %s", forbidden)
+		}
 	}
 }

@@ -12,13 +12,6 @@ import (
 
 const defaultWorkspaceAgentBaseURL = "http://127.0.0.1:47831"
 
-type workspaceOpenRun struct {
-	done    chan struct{}
-	result  *workspace.OpenShopResult
-	runtime *workspace.OpenReportRuntime
-	err     error
-}
-
 var workspaceOpenManagedShop = func(service *managedinstance.Service, req managedinstance.OpenRequest) (*managedinstance.OpenResult, error) {
 	if service == nil {
 		return nil, fmt.Errorf("managed instance service is not configured")
@@ -78,33 +71,6 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		InstanceID: "",
 	}
 	var runtimeInfo *workspace.OpenReportRuntime
-	var finalErr error
-
-	run := a.beginWorkspaceOpenRun(profileID)
-	if run != nil {
-		defer func() {
-			if result == nil && finalErr == nil {
-				finalErr = fmt.Errorf("workspace open finished without result")
-			}
-			if finalErr == nil {
-				if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo); reportErr != nil {
-					finalErr = reportErr
-				}
-			}
-			a.finishWorkspaceOpenRun(profileID, run, result, runtimeInfo, finalErr)
-		}()
-	} else {
-		result, runtime, err := a.waitWorkspaceOpenRun(profileID)
-		if err == nil {
-			if reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtime); reportErr != nil {
-				err = reportErr
-			}
-		}
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
 
 	log.Info("准备打开店铺后台",
 		logger.F("shop_id", result.ShopID),
@@ -133,7 +99,7 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 	if err != nil {
 		result.Code = "ANT_INSTANCE_OPEN_FAILED"
 		result.Message = err.Error()
-		return result, nil
+		return result, a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo)
 	}
 
 	result.Success = managedResult.Success
@@ -147,12 +113,15 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		CurrentURL: managedResult.CurrentURL,
 		PageTitle:  managedResult.PageTitle,
 	}
+	if err := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo); err != nil {
+		return result, err
+	}
 	return result, nil
 }
 
 func (a *App) initWorkspaceService() {
 	client := workspace.NewWorkspaceClient(a.resolveWorkspaceAgentBaseURL(), nil)
-	a.workspaceService = workspace.NewService(client, a.browserMgr)
+	a.workspaceService = workspace.NewService(client, a.browserMgr, a.managedInstanceService)
 	a.configureManagedInstanceRuntime()
 }
 
@@ -231,71 +200,6 @@ func buildUnavailableShopOpenResult(shop workspace.ShopInstanceProjection) *work
 	}
 
 	return result
-}
-
-func (a *App) beginWorkspaceOpenRun(profileID string) *workspaceOpenRun {
-	a.workspaceOpenMu.Lock()
-	defer a.workspaceOpenMu.Unlock()
-	if a.workspaceOpenRuns == nil {
-		a.workspaceOpenRuns = make(map[string]*workspaceOpenRun)
-	}
-	if existing := a.workspaceOpenRuns[profileID]; existing != nil {
-		return nil
-	}
-	run := &workspaceOpenRun{done: make(chan struct{})}
-	a.workspaceOpenRuns[profileID] = run
-	return run
-}
-
-func (a *App) finishWorkspaceOpenRun(profileID string, run *workspaceOpenRun, result *workspace.OpenShopResult, runtimeInfo *workspace.OpenReportRuntime, err error) {
-	if run == nil {
-		return
-	}
-	a.workspaceOpenMu.Lock()
-	run.result = cloneWorkspaceOpenResult(result)
-	run.runtime = cloneWorkspaceOpenRuntime(runtimeInfo)
-	run.err = err
-	delete(a.workspaceOpenRuns, profileID)
-	close(run.done)
-	a.workspaceOpenMu.Unlock()
-}
-
-func (a *App) waitWorkspaceOpenRun(profileID string) (*workspace.OpenShopResult, *workspace.OpenReportRuntime, error) {
-	a.workspaceOpenMu.Lock()
-	if a.workspaceOpenRuns == nil {
-		a.workspaceOpenMu.Unlock()
-		return nil, nil, fmt.Errorf("workspace open run not found")
-	}
-	run := a.workspaceOpenRuns[profileID]
-	a.workspaceOpenMu.Unlock()
-	if run == nil {
-		return nil, nil, fmt.Errorf("workspace open run not found")
-	}
-	<-run.done
-	return cloneWorkspaceOpenRunOutcome(run)
-}
-
-func cloneWorkspaceOpenRunOutcome(run *workspaceOpenRun) (*workspace.OpenShopResult, *workspace.OpenReportRuntime, error) {
-	if run == nil {
-		return nil, nil, nil
-	}
-	return cloneWorkspaceOpenResult(run.result), cloneWorkspaceOpenRuntime(run.runtime), run.err
-}
-
-func cloneWorkspaceOpenResult(result *workspace.OpenShopResult) *workspace.OpenShopResult {
-	if result == nil {
-		return nil
-	}
-	cloned := *result
-	return &cloned
-}
-
-func cloneWorkspaceOpenRuntime(runtimeInfo *workspace.OpenReportRuntime) *workspace.OpenReportRuntime {
-	if runtimeInfo == nil {
-		return nil
-	}
-	cloned := *runtimeInfo
-	return &cloned
 }
 
 func firstNonEmptyString(values ...string) string {

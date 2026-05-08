@@ -12,10 +12,13 @@ func ProjectShopInstance(shop ShopRecord, runtime LocalRuntimeState) ShopInstanc
 		SharedLoginStatus:      shop.SharedLoginStatus,
 		SharedLoginStatusLabel: shop.SharedLoginStatusLabel,
 		InstanceRunning:        runtime.Running,
+		ProfileExists:          runtime.ProfileExists,
+		ReclaimPending:         runtime.ReclaimPending,
+		CoreReady:              runtime.CoreReady,
 	}
 }
 
-func buildProfileID(platformCode string, shopID string) string {
+func BuildProfileID(platformCode string, shopID string) string {
 	platformCode = strings.TrimSpace(platformCode)
 	shopID = strings.TrimSpace(shopID)
 	if platformCode == "" {
@@ -25,4 +28,8 @@ func buildProfileID(platformCode string, shopID string) string {
 		return platformCode
 	}
 	return platformCode + ":" + shopID
+}
+
+func buildProfileID(platformCode string, shopID string) string {
+	return BuildProfileID(platformCode, shopID)
 }

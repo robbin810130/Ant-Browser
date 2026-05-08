@@ -18,6 +18,7 @@ type NativeOpenRuntime struct {
 	FindRunningProfile   func(profileID string) (*browser.Profile, bool)
 	WaitForDebugReady    func(profileID string, debugPort int, timeout time.Duration) (*browser.Profile, bool)
 	StartManagedProfile  func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error)
+	StopManagedProfile   func(profileID string) error
 	ImportCookies        func(profileID string, bundle workspace.SessionBundle) error
 	ListTargets          func(profileID string) ([]workspace.OpenRuntimeTarget, error)
 	ActivateTarget       func(profileID string, targetID string) error
@@ -45,15 +46,30 @@ func (s *Service) OpenManagedShop(req OpenRequest) (*OpenResult, error) {
 	}
 
 	req = normalizeOpenRequest(req)
-	profile, err := s.ensureManagedProfile(req)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.ensureManagedProfileCore(profile); err != nil {
-		return nil, err
+	if run := s.beginOpenRun(req.ProfileID); run != nil {
+		var (
+			result *OpenResult
+			err    error
+		)
+		defer func() {
+			s.finishOpenRun(req.ProfileID, run, result, err)
+		}()
+
+		profile, profileErr := s.ensureManagedProfile(req)
+		if profileErr != nil {
+			err = profileErr
+			return nil, err
+		}
+		if coreErr := s.ensureManagedProfileCore(profile); coreErr != nil {
+			err = coreErr
+			return nil, err
+		}
+
+		result, err = s.openViaNativeInstance(profile, req)
+		return result, err
 	}
 
-	return s.openViaNativeInstance(profile, req)
+	return s.waitOpenRun(req.ProfileID)
 }
 
 func normalizeOpenRequest(req OpenRequest) OpenRequest {

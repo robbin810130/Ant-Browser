@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+func requireProfile(t *testing.T, mgr *browser.Manager, profileID string) *browser.Profile {
+	t.Helper()
+
+	profile, ok := mgr.Profiles[profileID]
+	if !ok || profile == nil {
+		t.Fatalf("expected profile %s to exist", profileID)
+	}
+	return profile
+}
+
 func testBrowserConfig() *config.Config {
 	return config.DefaultConfig()
 }
@@ -408,5 +418,165 @@ func TestOpenManagedShopColdStartFlowRunsInsideServiceLayer(t *testing.T) {
 	}
 	if result.CurrentURL != "https://work.1688.com/?tracelog=login_target_is_blank_1688" {
 		t.Fatalf("unexpected current url: %s", result.CurrentURL)
+	}
+}
+
+func TestReconcileAuthorizedShopsCreatesAndReusesManagedProfiles(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	existingProfileID := "1688:shop-001"
+	mgr.Profiles[existingProfileID] = &browser.Profile{
+		ProfileId:   existingProfileID,
+		ProfileName: "旧店铺名",
+		UserDataDir: filepath.Join("managed-profiles", "1688__shop-001"),
+		CoreId:      "core-1688",
+		Tags:        []string{"managed", "managed:desktop", "managed:reclaim-pending", "shop:shop-001"},
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	result, err := service.ReconcileAuthorizedShops([]workspace.ShopRecord{
+		{
+			ShopID:       "shop-001",
+			ShopName:     "一级供应链",
+			PlatformCode: "1688",
+		},
+		{
+			ShopID:       "shop-002",
+			ShopName:     "二级供应链",
+			PlatformCode: "1688",
+		},
+	})
+	if err != nil {
+		t.Fatalf("reconcile authorized shops: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected reconcile result")
+	}
+	if len(result.UpdatedProfileIDs) != 1 || result.UpdatedProfileIDs[0] != existingProfileID {
+		t.Fatalf("unexpected updated profiles: %#v", result.UpdatedProfileIDs)
+	}
+	if len(result.CreatedProfileIDs) != 1 || result.CreatedProfileIDs[0] != "1688:shop-002" {
+		t.Fatalf("unexpected created profiles: %#v", result.CreatedProfileIDs)
+	}
+
+	existing := requireProfile(t, mgr, existingProfileID)
+	if existing.ProfileName != "一级供应链" {
+		t.Fatalf("expected existing profile name updated, got %s", existing.ProfileName)
+	}
+	if strings.Contains(strings.Join(existing.Tags, ","), "managed:reclaim-pending") {
+		t.Fatalf("expected reclaim pending tag removed, got %#v", existing.Tags)
+	}
+
+	created := requireProfile(t, mgr, "1688:shop-002")
+	if created.UserDataDir != filepath.Join("managed-profiles", "1688__shop-002") {
+		t.Fatalf("unexpected user data dir: %s", created.UserDataDir)
+	}
+	if created.CoreId != "core-1688" {
+		t.Fatalf("expected default core assigned, got %s", created.CoreId)
+	}
+}
+
+func TestReconcileAuthorizedShopsReclaimsRevokedManagedProfiles(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	keepProfileID := "1688:shop-keep"
+	revokeProfileID := "1688:shop-revoke"
+	revokeUserDataDir := filepath.Join("managed-profiles", "1688__shop-revoke")
+	revokeUserDataRoot := mgr.ResolveRelativePath(revokeUserDataDir)
+	if err := os.MkdirAll(revokeUserDataRoot, 0o755); err != nil {
+		t.Fatalf("create user data dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(revokeUserDataRoot, "Cookies"), []byte("stub"), 0o644); err != nil {
+		t.Fatalf("write user data marker: %v", err)
+	}
+
+	mgr.Profiles[keepProfileID] = &browser.Profile{
+		ProfileId:   keepProfileID,
+		ProfileName: "保留店铺",
+		UserDataDir: filepath.Join("managed-profiles", "1688__shop-keep"),
+		CoreId:      "core-1688",
+		Tags:        []string{"managed", "managed:desktop", "shop:shop-keep"},
+	}
+	mgr.Profiles[revokeProfileID] = &browser.Profile{
+		ProfileId:   revokeProfileID,
+		ProfileName: "撤权店铺",
+		UserDataDir: revokeUserDataDir,
+		CoreId:      "core-1688",
+		Running:     true,
+		Tags:        []string{"managed", "managed:desktop", "shop:shop-revoke"},
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var stopped []string
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		StopManagedProfile: func(profileID string) error {
+			stopped = append(stopped, profileID)
+			return nil
+		},
+	})
+
+	result, err := service.ReconcileAuthorizedShops([]workspace.ShopRecord{{
+		ShopID:       "shop-keep",
+		ShopName:     "保留店铺",
+		PlatformCode: "1688",
+	}})
+	if err != nil {
+		t.Fatalf("reconcile authorized shops: %v", err)
+	}
+	if len(result.ReclaimedProfileIDs) != 1 || result.ReclaimedProfileIDs[0] != revokeProfileID {
+		t.Fatalf("unexpected reclaimed profiles: %#v", result.ReclaimedProfileIDs)
+	}
+	if len(stopped) != 1 || stopped[0] != revokeProfileID {
+		t.Fatalf("unexpected stopped profiles: %#v", stopped)
+	}
+	if _, ok := mgr.Profiles[revokeProfileID]; ok {
+		t.Fatalf("expected revoked profile removed from manager")
+	}
+	if _, err := os.Stat(revokeUserDataRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected revoked user data dir removed, stat err=%v", err)
+	}
+	requireProfile(t, mgr, keepProfileID)
+}
+
+func TestReconcileAuthorizedShopsMarksPendingReclaimOnFailure(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	revokeProfileID := "1688:shop-revoke"
+	mgr.Profiles[revokeProfileID] = &browser.Profile{
+		ProfileId:   revokeProfileID,
+		ProfileName: "撤权店铺",
+		UserDataDir: filepath.Join("managed-profiles", "1688__shop-revoke"),
+		CoreId:      "core-1688",
+		Running:     true,
+		Tags:        []string{"managed", "managed:desktop", "shop:shop-revoke"},
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		StopManagedProfile: func(profileID string) error {
+			return os.ErrPermission
+		},
+	})
+
+	result, err := service.ReconcileAuthorizedShops(nil)
+	if err != nil {
+		t.Fatalf("expected pending reclaim to be reported in result, got err=%v", err)
+	}
+	if len(result.PendingReclaimProfileIDs) != 1 || result.PendingReclaimProfileIDs[0] != revokeProfileID {
+		t.Fatalf("unexpected pending reclaim profiles: %#v", result.PendingReclaimProfileIDs)
+	}
+
+	profile := requireProfile(t, mgr, revokeProfileID)
+	if !strings.Contains(strings.Join(profile.Tags, ","), "managed:reclaim-pending") {
+		t.Fatalf("expected reclaim pending tag, got %#v", profile.Tags)
 	}
 }

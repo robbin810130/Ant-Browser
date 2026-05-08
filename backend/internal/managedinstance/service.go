@@ -13,13 +13,24 @@ type Service struct {
 	browserMgr  *browser.Manager
 	runtimeMu   sync.RWMutex
 	openRuntime NativeOpenRuntime
+	openMu      sync.Mutex
+	openRuns    map[string]*openRun
+}
+
+type openRun struct {
+	done   chan struct{}
+	result *OpenResult
+	err    error
 }
 
 func NewService(deps Dependencies) (*Service, error) {
 	if deps.BrowserMgr == nil {
 		return nil, fmt.Errorf("managed instance service requires browser manager")
 	}
-	return &Service{browserMgr: deps.BrowserMgr}, nil
+	return &Service{
+		browserMgr: deps.BrowserMgr,
+		openRuns:   make(map[string]*openRun),
+	}, nil
 }
 
 func (s *Service) ensureManagedProfileCore(profile *browser.Profile) error {
@@ -80,4 +91,52 @@ func (s *Service) isSystemChromeExecutablePath(corePath string) bool {
 			strings.HasPrefix(corePath, "/snap/chromium/") ||
 			(outsideAppRoot && (strings.Contains(corePath, "/google-chrome") || strings.Contains(corePath, "/chromium")))
 	}
+}
+
+func (s *Service) beginOpenRun(profileID string) *openRun {
+	if s == nil {
+		return nil
+	}
+	s.openMu.Lock()
+	defer s.openMu.Unlock()
+	if existing := s.openRuns[profileID]; existing != nil {
+		return nil
+	}
+	run := &openRun{done: make(chan struct{})}
+	s.openRuns[profileID] = run
+	return run
+}
+
+func (s *Service) finishOpenRun(profileID string, run *openRun, result *OpenResult, err error) {
+	if s == nil || run == nil {
+		return
+	}
+	s.openMu.Lock()
+	run.result = cloneOpenResult(result)
+	run.err = err
+	delete(s.openRuns, profileID)
+	close(run.done)
+	s.openMu.Unlock()
+}
+
+func (s *Service) waitOpenRun(profileID string) (*OpenResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("managed instance service is not ready")
+	}
+	s.openMu.Lock()
+	run := s.openRuns[profileID]
+	s.openMu.Unlock()
+	if run == nil {
+		return nil, fmt.Errorf("managed open run not found")
+	}
+	<-run.done
+	return cloneOpenResult(run.result), run.err
+}
+
+func cloneOpenResult(result *OpenResult) *OpenResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	return &cloned
 }

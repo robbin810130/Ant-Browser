@@ -153,6 +153,10 @@ func (a *App) configureManagedInstanceRuntime() {
 		StartManagedProfile: func(profileID string, targetURL string, _ bool) (*BrowserProfile, error) {
 			return a.BrowserInstanceStartWithParams(profileID, nil, []string{targetURL}, true)
 		},
+		StopManagedProfile: func(profileID string) error {
+			_, err := a.StopInstance(profileID)
+			return err
+		},
 		ImportCookies:  a.importWorkspaceSessionBundle,
 		ListTargets:    a.browserRuntimeTargets,
 		ActivateTarget: a.browserActivateTarget,
@@ -163,6 +167,44 @@ func (a *App) configureManagedInstanceRuntime() {
 		},
 		CloseTarget: a.browserCloseTarget,
 	})
+}
+
+func (a *App) ReclaimManagedProfile(profileID string) error {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return fmt.Errorf("profile id is required")
+	}
+
+	a.browserMgr.InitData()
+	a.browserMgr.Mutex.Lock()
+	profile, exists := a.browserMgr.Profiles[profileID]
+	if !exists || profile == nil {
+		a.browserMgr.Mutex.Unlock()
+		return fmt.Errorf("profile not found")
+	}
+	userDataDir := strings.TrimSpace(profile.UserDataDir)
+	running := profile.Running
+	a.browserMgr.Mutex.Unlock()
+
+	if running {
+		if _, err := a.StopInstance(profileID); err != nil {
+			return err
+		}
+	}
+	if err := a.browserMgr.Delete(profileID); err != nil {
+		return err
+	}
+	if userDataDir != "" {
+		for _, path := range []string{
+			a.browserMgr.ResolveUserDataDir(&browser.Profile{ProfileId: profileID, UserDataDir: userDataDir}),
+			a.browserMgr.ResolveRelativePath(userDataDir),
+		} {
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (a *App) ensureManagedProfileForOpen(req managedinstance.OpenRequest) (*BrowserProfile, error) {

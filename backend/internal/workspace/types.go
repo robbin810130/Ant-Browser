@@ -23,6 +23,8 @@ type LocalRuntimeState struct {
 	ProfileExists bool
 	InstanceID    string
 	Running       bool
+	ReclaimPending bool
+	CoreReady      bool
 }
 
 type ShopInstanceProjection struct {
@@ -34,6 +36,16 @@ type ShopInstanceProjection struct {
 	SharedLoginStatus      string `json:"sharedLoginStatus"`
 	SharedLoginStatusLabel string `json:"sharedLoginStatusLabel"`
 	InstanceRunning        bool   `json:"instanceRunning"`
+	ProfileExists          bool   `json:"profileExists"`
+	ReclaimPending         bool   `json:"reclaimPending"`
+	CoreReady              bool   `json:"coreReady"`
+}
+
+type ReconcileSummary struct {
+	CreatedProfileIDs        []string `json:"createdProfileIds,omitempty"`
+	UpdatedProfileIDs        []string `json:"updatedProfileIds,omitempty"`
+	ReclaimedProfileIDs      []string `json:"reclaimedProfileIds,omitempty"`
+	PendingReclaimProfileIDs []string `json:"pendingReclaimProfileIds,omitempty"`
 }
 
 type SessionCookie struct {

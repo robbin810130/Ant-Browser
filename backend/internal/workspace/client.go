@@ -18,10 +18,17 @@ type WorkspaceClient struct {
 type WorkspaceService struct {
 	client      *WorkspaceClient
 	profileList profileLister
+	reconciler  authorizedShopReconciler
 }
 
 type profileLister interface {
 	List() []browser.Profile
+	GetCore(coreId string) (browser.Core, bool)
+	GetDefaultCore() (browser.Core, bool)
+}
+
+type authorizedShopReconciler interface {
+	ReconcileAuthorizedShops(shops []ShopRecord) (*ReconcileSummary, error)
 }
 
 type envelope[T any] struct {
@@ -51,10 +58,11 @@ func (c *WorkspaceClient) SetBaseURL(baseURL string) {
 	c.baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }
 
-func NewService(client *WorkspaceClient, profileList profileLister) *WorkspaceService {
+func NewService(client *WorkspaceClient, profileList profileLister, reconciler authorizedShopReconciler) *WorkspaceService {
 	return &WorkspaceService{
 		client:      client,
 		profileList: profileList,
+		reconciler:  reconciler,
 	}
 }
 
@@ -111,6 +119,11 @@ func (s *WorkspaceService) FetchAuthorizedShops(ctx context.Context) ([]ShopInst
 	if err != nil {
 		return nil, err
 	}
+	if s.reconciler != nil {
+		if _, err := s.reconciler.ReconcileAuthorizedShops(shops); err != nil {
+			return nil, err
+		}
+	}
 
 	runtimeIndex := s.localRuntimeIndex()
 	projected := make([]ShopInstanceProjection, 0, len(shops))
@@ -144,12 +157,41 @@ func (s *WorkspaceService) localRuntimeIndex() map[string]LocalRuntimeState {
 
 	for _, profile := range s.profileList.List() {
 		index[profile.ProfileId] = LocalRuntimeState{
-			ProfileExists: true,
-			Running:       profile.Running,
+			ProfileExists:  true,
+			Running:        profile.Running,
+			ReclaimPending: hasTag(profile.Tags, "managed:reclaim-pending"),
+			CoreReady:      s.profileCoreReady(profile),
 		}
 	}
 
 	return index
+}
+
+func (s *WorkspaceService) profileCoreReady(profile browser.Profile) bool {
+	if s == nil || s.profileList == nil {
+		return false
+	}
+
+	coreID := strings.TrimSpace(profile.CoreId)
+	if coreID != "" {
+		_, ok := s.profileList.GetCore(coreID)
+		return ok
+	}
+	_, ok := s.profileList.GetDefaultCore()
+	return ok
+}
+
+func hasTag(tags []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, tag := range tags {
+		if strings.EqualFold(strings.TrimSpace(tag), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *WorkspaceClient) getJSON(ctx context.Context, path string, dest interface{}) error {
