@@ -35,6 +35,20 @@ type OpenRuntimeSnapshot struct {
 	PageTitle  string `json:"pageTitle"`
 }
 
+type OpenRuntimeTarget struct {
+	TargetID   string `json:"targetId"`
+	CurrentURL string `json:"currentUrl"`
+	PageTitle  string `json:"pageTitle"`
+}
+
+type OpenTargetAction string
+
+const (
+	OpenTargetActionActivate OpenTargetAction = "activate"
+	OpenTargetActionNavigate OpenTargetAction = "navigate"
+	OpenTargetActionCreate   OpenTargetAction = "create"
+)
+
 type OpenShopResult struct {
 	ShopID     string `json:"shopId"`
 	ProfileID  string `json:"profileId"`
@@ -143,6 +157,18 @@ func DefaultBackendURL(shopID string) string {
 	return "https://work.1688.com/?shopId=" + shopID
 }
 
+func ResolveWorkspaceTargetURL(shopID string, launchTargetURL string) string {
+	launchTargetURL = strings.TrimSpace(launchTargetURL)
+	if launchTargetURL == "" {
+		return DefaultBackendURL(shopID)
+	}
+	lowerURL := strings.ToLower(launchTargetURL)
+	if lowerURL == "about:blank" || strings.HasPrefix(lowerURL, "chrome://newtab") || strings.HasPrefix(lowerURL, "chrome://new-tab-page") {
+		return DefaultBackendURL(shopID)
+	}
+	return launchTargetURL
+}
+
 func SelectPreferredOpenSnapshot(shopID string, snapshots []OpenRuntimeSnapshot) OpenRuntimeSnapshot {
 	normalizedShopID := strings.ToLower(strings.TrimSpace(shopID))
 	if normalizedShopID == "" {
@@ -198,6 +224,40 @@ func SelectPreferredOpenSnapshotForLaunchContext(shopID string, launchContext Sh
 	return snapshots[0]
 }
 
+func PickOpenTargetForLaunchContext(shopID string, launchContext ShopLaunchContext, targets []OpenRuntimeTarget) (OpenRuntimeTarget, OpenTargetAction, bool) {
+	for _, target := range targets {
+		if ClassifyOpenResultForLaunchContext(shopID, launchContext, OpenRuntimeSnapshot{
+			CurrentURL: target.CurrentURL,
+			PageTitle:  target.PageTitle,
+		}).Success {
+			return target, OpenTargetActionActivate, true
+		}
+	}
+
+	for _, target := range targets {
+		if isBlankRuntimeTarget(target) {
+			return target, OpenTargetActionNavigate, true
+		}
+	}
+
+	return OpenRuntimeTarget{}, OpenTargetActionCreate, true
+}
+
+func CollectClosableBlankTargetIDs(targets []OpenRuntimeTarget, keepTargetID string) []string {
+	closable := make([]string, 0, len(targets))
+	keepTargetID = strings.TrimSpace(keepTargetID)
+	for _, target := range targets {
+		targetID := strings.TrimSpace(target.TargetID)
+		if targetID == "" || targetID == keepTargetID {
+			continue
+		}
+		if isBlankRuntimeTarget(target) {
+			closable = append(closable, targetID)
+		}
+	}
+	return closable
+}
+
 func urlDeclaresDifferentShop(lowerURL, expectedShopID string) bool {
 	if lowerURL == "" || expectedShopID == "" {
 		return false
@@ -206,6 +266,15 @@ func urlDeclaresDifferentShop(lowerURL, expectedShopID string) bool {
 		return false
 	}
 	return strings.Contains(lowerURL, "shopid=")
+}
+
+func isBlankRuntimeTarget(target OpenRuntimeTarget) bool {
+	lowerURL := strings.ToLower(strings.TrimSpace(target.CurrentURL))
+	lowerTitle := strings.ToLower(strings.TrimSpace(target.PageTitle))
+	if lowerURL == "" || lowerURL == "about:blank" || lowerURL == "chrome://newtab/" || lowerURL == "chrome://new-tab-page/" {
+		return true
+	}
+	return strings.Contains(lowerTitle, "新标签页") || strings.Contains(lowerTitle, "new tab")
 }
 
 func normalizedURLPatterns(patterns []string, defaults []string) []string {

@@ -224,7 +224,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 	args = append(args, sanitizedExtraLaunchArgs...)
 	args = appendLaunchTargets(args, profile, normalizedStartURLs, skipDefaultStartURLs)
 
-	cmd := exec.Command(chromeBinaryPath, args...)
+	cmd := buildBrowserLaunchCommand(chromeBinaryPath, args)
 	cmd.Dir = filepath.Dir(chromeBinaryPath)
 	monitor, err := newBrowserProcessMonitor(cmd)
 	if err != nil {
@@ -273,6 +273,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 			logger.F("debug_port", assignedDebugPort),
 			logger.F("attempt", attempt),
 			logger.F("max_attempts", maxStartAttempts),
+			logger.F("args", strings.Join(args, " ")),
 			logger.F("error", readyErr.Error()),
 			logger.F("reason", startErr.Error()),
 		)
@@ -740,7 +741,7 @@ func (a *App) openBrowserWindowForRunningProfile(profile *BrowserProfile, extraL
 		args = append(args, "about:blank")
 	}
 
-	cmd := exec.Command(chromeBinaryPath, args...)
+	cmd := buildBrowserLaunchCommand(chromeBinaryPath, args)
 	cmd.Dir = filepath.Dir(chromeBinaryPath)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("%s", describeChromeProcessStartError(chromeBinaryPath, err))
@@ -809,6 +810,64 @@ func isProcessAlreadyFinished(err error) bool {
 		return true
 	}
 	return false
+}
+
+func buildBrowserLaunchCommand(chromeBinaryPath string, args []string) *exec.Cmd {
+	if stdruntime.GOOS == "darwin" {
+		if appBundleRoot, ok := macAppBundleRoot(chromeBinaryPath); ok {
+			openArgs := []string{"-na", appBundleRoot, "--args"}
+			openArgs = append(openArgs, args...)
+			return exec.Command("open", openArgs...)
+		}
+	}
+	return exec.Command(chromeBinaryPath, args...)
+}
+
+func buildBrowserActivateCommand(chromeBinaryPath string) *exec.Cmd {
+	if stdruntime.GOOS != "darwin" {
+		return nil
+	}
+	appName, ok := macAppBundleName(chromeBinaryPath)
+	if !ok {
+		return nil
+	}
+	return exec.Command("osascript", "-e", fmt.Sprintf(`tell application "%s" to activate`, appName))
+}
+
+func activateBrowserApp(chromeBinaryPath string) error {
+	cmd := buildBrowserActivateCommand(chromeBinaryPath)
+	if cmd == nil {
+		return nil
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("激活浏览器应用失败：%w", err)
+	}
+	return nil
+}
+
+func macAppBundleRoot(chromeBinaryPath string) (string, bool) {
+	cleanedPath := filepath.Clean(strings.TrimSpace(chromeBinaryPath))
+	if cleanedPath == "" {
+		return "", false
+	}
+	marker := string(filepath.Separator) + "Contents" + string(filepath.Separator) + "MacOS" + string(filepath.Separator)
+	idx := strings.Index(cleanedPath, ".app"+marker)
+	if idx < 0 {
+		return "", false
+	}
+	return cleanedPath[:idx+len(".app")], true
+}
+
+func macAppBundleName(chromeBinaryPath string) (string, bool) {
+	appBundleRoot, ok := macAppBundleRoot(chromeBinaryPath)
+	if !ok {
+		return "", false
+	}
+	appName := strings.TrimSuffix(filepath.Base(appBundleRoot), ".app")
+	if appName == "" {
+		return "", false
+	}
+	return appName, true
 }
 
 func waitProcessExitWindows(pid int, timeout time.Duration) bool {

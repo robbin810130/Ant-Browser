@@ -57,6 +57,8 @@ type App struct {
 	workspaceAgentCmd *exec.Cmd
 	workspaceAgentLog *os.File
 	workspaceAgentURL string
+	workspaceOpenMu   sync.Mutex
+	workspaceOpenRuns map[string]*workspaceOpenRun
 	stopServicesOnce  sync.Once
 	finalizeOnce      sync.Once
 }
@@ -68,9 +70,10 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		version = strings.TrimSpace(appVersion[0])
 	}
 	return &App{
-		appRoot:        strings.TrimSpace(appRoot),
-		version:        version,
-		xrayBridgeRefs: make(map[string]string),
+		appRoot:          strings.TrimSpace(appRoot),
+		version:          version,
+		xrayBridgeRefs:   make(map[string]string),
+		workspaceOpenRuns: make(map[string]*workspaceOpenRun),
 	}
 }
 

@@ -30,6 +30,7 @@ type CookieInfo struct {
 
 // cdpTarget 表示 /json 接口返回的调试目标
 type cdpTarget struct {
+	ID                   string `json:"id"`
 	WebSocketDebuggerUrl string `json:"webSocketDebuggerUrl"`
 	Type                 string `json:"type"`
 	Title                string `json:"title"`
@@ -111,46 +112,51 @@ func cdpCall(debugPort int, method string, params map[string]any) (map[string]an
 }
 
 func cdpBrowserCall(debugPort int, method string, params map[string]any) error {
+	_, err := cdpBrowserCallWithResult(debugPort, method, params)
+	return err
+}
+
+func cdpBrowserCallWithResult(debugPort int, method string, params map[string]any) (map[string]any, error) {
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", debugPort))
 	if err != nil {
-		return fmt.Errorf("CDP /json/version 请求失败: %w", err)
+		return nil, fmt.Errorf("CDP /json/version 请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var version cdpBrowserVersion
 	if err := json.Unmarshal(body, &version); err != nil {
-		return fmt.Errorf("CDP browser target 解析失败: %w", err)
+		return nil, fmt.Errorf("CDP browser target 解析失败: %w", err)
 	}
 	wsURL := strings.TrimSpace(version.WebSocketDebuggerUrl)
 	if wsURL == "" {
-		return fmt.Errorf("未找到浏览器级 WebSocket 调试地址")
+		return nil, fmt.Errorf("未找到浏览器级 WebSocket 调试地址")
 	}
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		return fmt.Errorf("浏览器级 WebSocket 连接失败: %w", err)
+		return nil, fmt.Errorf("浏览器级 WebSocket 连接失败: %w", err)
 	}
 	defer conn.Close()
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 
 	msg := cdpMessage{Id: 1, Method: method, Params: params}
 	if err := conn.WriteJSON(msg); err != nil {
-		return fmt.Errorf("浏览器级 CDP 命令发送失败: %w", err)
+		return nil, fmt.Errorf("浏览器级 CDP 命令发送失败: %w", err)
 	}
 
 	var cdpResp cdpResponse
 	if err := conn.ReadJSON(&cdpResp); err != nil {
 		// Browser.close 可能会直接关闭 websocket，视为成功。
 		if strings.EqualFold(method, "Browser.close") {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("浏览器级 CDP 响应读取失败: %w", err)
+		return nil, fmt.Errorf("浏览器级 CDP 响应读取失败: %w", err)
 	}
 	if cdpResp.Error != nil {
-		return fmt.Errorf("浏览器级 CDP 错误: %s", cdpResp.Error.Message)
+		return nil, fmt.Errorf("浏览器级 CDP 错误: %s", cdpResp.Error.Message)
 	}
-	return nil
+	return cdpResp.Result, nil
 }
 
 // getDebugPort 获取运行中实例的调试端口
@@ -292,6 +298,22 @@ func (a *App) browserRuntimeSnapshot(profileID string) (workspace.OpenRuntimeSna
 }
 
 func (a *App) browserRuntimeSnapshots(profileID string) ([]workspace.OpenRuntimeSnapshot, error) {
+	targets, err := a.browserRuntimeTargets(profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshots := make([]workspace.OpenRuntimeSnapshot, 0, len(targets))
+	for _, target := range targets {
+		snapshots = append(snapshots, workspace.OpenRuntimeSnapshot{
+			CurrentURL: strings.TrimSpace(target.CurrentURL),
+			PageTitle:  strings.TrimSpace(target.PageTitle),
+		})
+	}
+	return snapshots, nil
+}
+
+func (a *App) browserRuntimeTargets(profileID string) ([]workspace.OpenRuntimeTarget, error) {
 	debugPort, err := a.getDebugPort(profileID)
 	if err != nil {
 		return nil, err
@@ -303,17 +325,18 @@ func (a *App) browserRuntimeSnapshots(profileID string) ([]workspace.OpenRuntime
 		return nil, err
 	}
 
-	snapshots := make([]workspace.OpenRuntimeSnapshot, 0, len(targets))
+	runtimeTargets := make([]workspace.OpenRuntimeTarget, 0, len(targets))
 	for _, target := range targets {
 		if strings.TrimSpace(target.Type) != "page" {
 			continue
 		}
-		snapshots = append(snapshots, workspace.OpenRuntimeSnapshot{
+		runtimeTargets = append(runtimeTargets, workspace.OpenRuntimeTarget{
+			TargetID:   strings.TrimSpace(target.ID),
 			CurrentURL: strings.TrimSpace(target.URL),
 			PageTitle:  strings.TrimSpace(target.Title),
 		})
 	}
-	return snapshots, nil
+	return runtimeTargets, nil
 }
 
 func (a *App) browserNavigate(profileID string, targetURL string) error {
@@ -329,6 +352,50 @@ func (a *App) browserNavigate(profileID string, targetURL string) error {
 		"url": strings.TrimSpace(targetURL),
 	})
 	return err
+}
+
+func cdpCallTarget(debugPort int, targetID string, method string, params map[string]any) (map[string]any, error) {
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json", debugPort))
+	if err != nil {
+		return nil, fmt.Errorf("CDP /json 请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var targets []cdpTarget
+	if err := json.Unmarshal(body, &targets); err != nil {
+		return nil, fmt.Errorf("CDP targets 解析失败: %w", err)
+	}
+
+	targetID = strings.TrimSpace(targetID)
+	availableTargetIDs := make([]string, 0, len(targets))
+	for _, target := range targets {
+		availableTargetIDs = append(availableTargetIDs, strings.TrimSpace(target.ID))
+		if strings.TrimSpace(target.ID) != targetID || strings.TrimSpace(target.WebSocketDebuggerUrl) == "" {
+			continue
+		}
+		conn, _, err := websocket.DefaultDialer.Dial(target.WebSocketDebuggerUrl, nil)
+		if err != nil {
+			return nil, fmt.Errorf("WebSocket 连接失败: %w", err)
+		}
+		defer conn.Close()
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+		msg := cdpMessage{Id: 1, Method: method, Params: params}
+		if err := conn.WriteJSON(msg); err != nil {
+			return nil, fmt.Errorf("CDP 命令发送失败: %w", err)
+		}
+
+		var cdpResp cdpResponse
+		if err := conn.ReadJSON(&cdpResp); err != nil {
+			return nil, fmt.Errorf("CDP 响应读取失败: %w", err)
+		}
+		if cdpResp.Error != nil {
+			return nil, fmt.Errorf("CDP 错误: %s", cdpResp.Error.Message)
+		}
+		return cdpResp.Result, nil
+	}
+	return nil, fmt.Errorf("未找到目标页面: %s（method=%s available=%s）", targetID, strings.TrimSpace(method), strings.Join(availableTargetIDs, ","))
 }
 
 func cdpEvaluateString(debugPort int, expression string) (string, error) {

@@ -1,11 +1,14 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/browser"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"ant-chrome/backend/internal/workspace"
 )
@@ -97,5 +100,44 @@ func TestReportWorkspaceOpenResultSendsFailurePayload(t *testing.T) {
 	}
 	if got.Runtime == nil || got.Runtime.PID != 5678 {
 		t.Fatalf("unexpected runtime payload: %#v", got.Runtime)
+	}
+}
+
+func TestWaitForTargetReadyRetriesUntilTargetAppears(t *testing.T) {
+	var listCalls atomic.Int32
+	server := startDevToolsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/list":
+			call := listCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			if call < 3 {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"id":"target-1","type":"page","title":"1688-卖家工作台","url":"https://work.1688.com/"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	app := &App{
+		browserMgr: &browser.Manager{
+			Profiles: map[string]*BrowserProfile{
+				"profile-1": {
+					ProfileId:  "profile-1",
+					Running:    true,
+					DebugReady: true,
+					DebugPort:  server.port,
+				},
+			},
+		},
+	}
+
+	if err := app.waitForTargetReady("profile-1", "target-1", 500*time.Millisecond); err != nil {
+		t.Fatalf("waitForTargetReady 返回错误: %v", err)
+	}
+	if listCalls.Load() < 3 {
+		t.Fatalf("expected polling to retry, got=%d", listCalls.Load())
 	}
 }
