@@ -1,7 +1,15 @@
 package workspace_test
 
 import (
+	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/managedinstance"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"ant-chrome/backend/internal/workspace"
 )
@@ -162,5 +170,176 @@ func TestResolveWorkspaceTargetURLFallsBackWhenLaunchContextPointsToBlankPage(t 
 		if got != want {
 			t.Fatalf("unexpected target url for %s: got=%s want=%s", input, got, want)
 		}
+	}
+}
+
+func TestManagedOpenRejectsMissingFingerprintCoreBeforeLaunch(t *testing.T) {
+	mgr := browser.NewManager(config.DefaultConfig(), t.TempDir())
+	profileID := "1688:b2b-222082061706256a1a"
+	mgr.Profiles[profileID] = &browser.Profile{ProfileId: profileID}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var launchCalls atomic.Int32
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return mgr.Profiles[req.ProfileID], nil
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			launchCalls.Add(1)
+			return &browser.Profile{ProfileId: profileID}, nil
+		},
+		ImportCookies:      func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets:        func(profileID string) ([]workspace.OpenRuntimeTarget, error) { return nil, nil },
+		ActivateTarget:     func(profileID string, targetID string) error { return nil },
+		NavigateTarget:     func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:       func(profileID string, targetURL string) (string, error) { return "", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error { return nil },
+		CloseTarget:        func(profileID string, targetID string) error { return nil },
+	})
+
+	_, err = service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:      "b2b-222082061706256a1a",
+		ProfileID:   profileID,
+		ManagedMode: true,
+	})
+	if err == nil {
+		t.Fatal("expected managed open to fail without fingerprint core")
+	}
+	if !strings.Contains(err.Error(), "ANT_FINGERPRINT_CORE_REQUIRED") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if launchCalls.Load() != 0 {
+		t.Fatalf("expected launch to be skipped, got=%d", launchCalls.Load())
+	}
+}
+
+func TestManagedOpenRejectsSystemChromeCoreBeforeLaunch(t *testing.T) {
+	appRoot := t.TempDir()
+	coreRoot := t.TempDir()
+	coreDir := filepath.Join(coreRoot, "Google Chrome.app")
+	exePath := filepath.Join(coreDir, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(exePath), 0o755); err != nil {
+		t.Fatalf("create system-like core dir: %v", err)
+	}
+	if err := os.WriteFile(exePath, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write system-like core executable: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Browser.Cores = []config.BrowserCore{{
+		CoreId:    "system-like-core",
+		CoreName:  "System Chrome",
+		CorePath:  coreDir,
+		IsDefault: true,
+	}}
+	mgr := browser.NewManager(cfg, appRoot)
+	profileID := "1688:b2b-222082061706256a1a"
+	mgr.Profiles[profileID] = &browser.Profile{
+		ProfileId: profileID,
+		CoreId:    "system-like-core",
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var launchCalls atomic.Int32
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return mgr.Profiles[req.ProfileID], nil
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			launchCalls.Add(1)
+			return &browser.Profile{ProfileId: profileID}, nil
+		},
+		ImportCookies:      func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets:        func(profileID string) ([]workspace.OpenRuntimeTarget, error) { return nil, nil },
+		ActivateTarget:     func(profileID string, targetID string) error { return nil },
+		NavigateTarget:     func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:       func(profileID string, targetURL string) (string, error) { return "", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error { return nil },
+		CloseTarget:        func(profileID string, targetID string) error { return nil },
+	})
+
+	_, err = service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:      "b2b-222082061706256a1a",
+		ProfileID:   profileID,
+		ManagedMode: true,
+	})
+	if err == nil {
+		t.Fatal("expected managed open to reject system chrome core")
+	}
+	if !strings.Contains(err.Error(), "ANT_FINGERPRINT_CORE_REQUIRED") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if launchCalls.Load() != 0 {
+		t.Fatalf("expected launch to be skipped, got=%d", launchCalls.Load())
+	}
+}
+
+func TestManagedOpenRejectsDefaultSystemChromeCoreBeforeLaunch(t *testing.T) {
+	appRoot := t.TempDir()
+	coreRoot := t.TempDir()
+	coreDir := filepath.Join(coreRoot, "Google Chrome.app")
+	exePath := filepath.Join(coreDir, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(exePath), 0o755); err != nil {
+		t.Fatalf("create default system-like core dir: %v", err)
+	}
+	if err := os.WriteFile(exePath, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write default system-like core executable: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Browser.Cores = []config.BrowserCore{{
+		CoreId:    "default-system-like-core",
+		CoreName:  "Default System Chrome",
+		CorePath:  coreDir,
+		IsDefault: true,
+	}}
+	mgr := browser.NewManager(cfg, appRoot)
+	profileID := "1688:b2b-222082061706256a1a"
+	mgr.Profiles[profileID] = &browser.Profile{ProfileId: profileID}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var launchCalls atomic.Int32
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return mgr.Profiles[req.ProfileID], nil
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			launchCalls.Add(1)
+			return &browser.Profile{ProfileId: profileID}, nil
+		},
+		ImportCookies:      func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets:        func(profileID string) ([]workspace.OpenRuntimeTarget, error) { return nil, nil },
+		ActivateTarget:     func(profileID string, targetID string) error { return nil },
+		NavigateTarget:     func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:       func(profileID string, targetURL string) (string, error) { return "", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error { return nil },
+		CloseTarget:        func(profileID string, targetID string) error { return nil },
+	})
+
+	_, err = service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:      "b2b-222082061706256a1a",
+		ProfileID:   profileID,
+		ManagedMode: true,
+	})
+	if err == nil {
+		t.Fatal("expected managed open to reject default system chrome core")
+	}
+	if !strings.Contains(err.Error(), "ANT_FINGERPRINT_CORE_REQUIRED") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if launchCalls.Load() != 0 {
+		t.Fatalf("expected launch to be skipped, got=%d", launchCalls.Load())
 	}
 }

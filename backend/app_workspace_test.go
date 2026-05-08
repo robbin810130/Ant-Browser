@@ -2,16 +2,122 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/managedinstance"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"ant-chrome/backend/internal/workspace"
 )
+
+func TestWorkspaceOpenShopDelegatesToManagedInstanceService(t *testing.T) {
+	var gotReq managedinstance.OpenRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{{
+						"shopId":            "b2b-222082061706256a1a",
+						"shopName":          "壹级供应链",
+						"platformCode":      "1688",
+						"sharedLoginStatus": "ready",
+					}},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/local/shops/b2b-222082061706256a1a/open-context":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"openRequestId": "desktop-open-003",
+					"shop": map[string]any{
+						"shopId":            "b2b-222082061706256a1a",
+						"shopName":          "壹级供应链",
+						"platformCode":      "1688",
+						"sharedLoginStatus": "ready",
+					},
+					"profile": map[string]any{
+						"profileId": "1688:b2b-222082061706256a1a",
+					},
+					"launchContext": map[string]any{
+						"targetUrl": "https://work.1688.com/?tracelog=login_target_is_blank_1688",
+						"sessionBundle": map[string]any{
+							"platformCode": "1688",
+						},
+						"successUrlPatterns": []string{"https://work.1688.com/"},
+						"loginUrlPatterns":   []string{"https://login.1688.com/"},
+					},
+					"runtimeConfig": map[string]any{
+						"managedMode": true,
+					},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/local/open-requests/desktop-open-003/report":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data":    map[string]any{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	previousOpenManagedShop := workspaceOpenManagedShop
+	workspaceOpenManagedShop = func(_ *managedinstance.Service, req managedinstance.OpenRequest) (*managedinstance.OpenResult, error) {
+		gotReq = req
+		return &managedinstance.OpenResult{
+			ProfileID:  req.ProfileID,
+			Success:    true,
+			CurrentURL: "https://work.1688.com/?tracelog=login_target_is_blank_1688",
+			PageTitle:  "1688-卖家工作台",
+		}, nil
+	}
+	defer func() {
+		workspaceOpenManagedShop = previousOpenManagedShop
+	}()
+
+	browserMgr := browser.NewManager(config.DefaultConfig(), t.TempDir())
+	app := &App{
+		workspaceService:       workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil),
+		managedInstanceService: &managedinstance.Service{},
+		browserMgr:             browserMgr,
+	}
+
+	result, err := app.WorkspaceOpenShop("b2b-222082061706256a1a")
+	if err != nil {
+		t.Fatalf("workspace open: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("unexpected open result: %+v", result)
+	}
+	if gotReq.ShopID != "b2b-222082061706256a1a" {
+		t.Fatalf("unexpected shop id: %s", gotReq.ShopID)
+	}
+	if gotReq.ProfileID != "1688:b2b-222082061706256a1a" {
+		t.Fatalf("unexpected profile id: %s", gotReq.ProfileID)
+	}
+	if !gotReq.ManagedMode {
+		t.Fatal("expected managed mode request")
+	}
+	if !gotReq.PreferVisible {
+		t.Fatal("expected visible preference")
+	}
+	if !strings.Contains(gotReq.TargetURL, "work.1688.com") {
+		t.Fatalf("unexpected target url: %s", gotReq.TargetURL)
+	}
+}
 
 func TestResolveWorkspaceAgentBaseURLFallsBackToDefaultWhenUnset(t *testing.T) {
 	t.Setenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL", "")

@@ -415,6 +415,13 @@ func cdpEvaluateString(debugPort int, expression string) (string, error) {
 	return strings.TrimSpace(value), nil
 }
 
+func (a *App) importWorkspaceSessionBundle(profileID string, bundle workspace.SessionBundle) error {
+	if len(bundle.Cookies) == 0 {
+		return nil
+	}
+	return a.browserImportCookies(profileID, bundle.Cookies)
+}
+
 func defaultString(value string, fallback string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
