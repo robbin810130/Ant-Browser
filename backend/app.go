@@ -7,6 +7,7 @@ import (
 	"ant-chrome/backend/internal/database"
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/managedinstance"
 	"ant-chrome/backend/internal/proxy"
 	"ant-chrome/backend/internal/workspace"
 	"context"
@@ -34,20 +35,21 @@ const (
 
 // App 应用结构体
 type App struct {
-	ctx              context.Context
-	config           *config.Config
-	db               *database.DB
-	interceptor      *logger.MethodInterceptor
-	browserMgr       *browser.Manager
-	xrayMgr          *proxy.XrayManager
-	clashMgr         *proxy.ClashManager
-	singboxMgr       *proxy.SingBoxManager
-	launchCodeSvc    *launchcode.LaunchCodeService
-	launchServer     *launchcode.LaunchServer
-	speedScheduler   *browser.ProxySpeedScheduler
-	workspaceService *workspace.WorkspaceService
-	appRoot          string
-	version          string
+	ctx                    context.Context
+	config                 *config.Config
+	db                     *database.DB
+	interceptor            *logger.MethodInterceptor
+	browserMgr             *browser.Manager
+	xrayMgr                *proxy.XrayManager
+	clashMgr               *proxy.ClashManager
+	singboxMgr             *proxy.SingBoxManager
+	launchCodeSvc          *launchcode.LaunchCodeService
+	launchServer           *launchcode.LaunchServer
+	managedInstanceService *managedinstance.Service
+	speedScheduler         *browser.ProxySpeedScheduler
+	workspaceService       *workspace.WorkspaceService
+	appRoot                string
+	version                string
 
 	forceQuit         bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
 	quitMode          quitMode   // 退出模式：全量退出 / 仅退出应用
@@ -70,9 +72,9 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		version = strings.TrimSpace(appVersion[0])
 	}
 	return &App{
-		appRoot:          strings.TrimSpace(appRoot),
-		version:          version,
-		xrayBridgeRefs:   make(map[string]string),
+		appRoot:           strings.TrimSpace(appRoot),
+		version:           version,
+		xrayBridgeRefs:    make(map[string]string),
 		workspaceOpenRuns: make(map[string]*workspaceOpenRun),
 	}
 }
@@ -171,6 +173,13 @@ func (a *App) startup(ctx context.Context) {
 	a.xrayMgr = proxy.NewXrayManager(cfg, a.appRoot)
 	a.clashMgr = proxy.NewClashManager(cfg, a.appRoot)
 	a.singboxMgr = proxy.NewSingBoxManager(cfg, a.appRoot)
+	if service, err := managedinstance.NewService(managedinstance.Dependencies{
+		BrowserMgr: a.browserMgr,
+	}); err == nil {
+		a.managedInstanceService = service
+	} else {
+		log.Error("初始化 managed instance 服务失败", logger.F("service", "managedinstance"), logger.F("error", err))
+	}
 
 	// 注入 DAO（必须在 InitData 之前）
 	conn := db.GetConn()
