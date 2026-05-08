@@ -2,11 +2,44 @@ package managedinstance_test
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/managedinstance"
 	"ant-chrome/backend/internal/workspace"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func testBrowserConfig() *config.Config {
+	return config.DefaultConfig()
+}
+
+func newManagerWithCore(t *testing.T, coreID, corePath string) *browser.Manager {
+	t.Helper()
+
+	appRoot := t.TempDir()
+	exePath := filepath.Join(appRoot, filepath.FromSlash(corePath), filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(exePath), 0o755); err != nil {
+		t.Fatalf("create core directory: %v", err)
+	}
+	if err := os.WriteFile(exePath, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write core executable: %v", err)
+	}
+
+	cfg := testBrowserConfig()
+	cfg.Browser.Cores = []config.BrowserCore{
+		{
+			CoreId:    coreID,
+			CoreName:  "Fingerprint Chromium",
+			CorePath:  corePath,
+			IsDefault: true,
+		},
+	}
+
+	return browser.NewManager(cfg, appRoot)
+}
 
 func TestOpenManagedShopRequestCarriesWorkspaceBusinessContext(t *testing.T) {
 	sessionBundle := workspace.SessionBundle{
@@ -142,5 +175,45 @@ func TestNewManagedInstanceServiceAcceptsBrowserManager(t *testing.T) {
 	}
 	if service == nil {
 		t.Fatal("expected non-nil service")
+	}
+}
+
+func TestResolveManagedCoreFailsWithoutConfiguredFingerprintCore(t *testing.T) {
+	mgr := browser.NewManager(testBrowserConfig(), t.TempDir())
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	_, err = service.ResolveManagedCore(&browser.Profile{
+		ProfileId: "1688:b2b-222082061706256a1a",
+		CoreId:    "",
+	})
+	if err == nil {
+		t.Fatal("expected managed core resolution to fail")
+	}
+	if !strings.Contains(err.Error(), "ANT_FINGERPRINT_CORE_REQUIRED") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveManagedCoreUsesProfileCoreWhenConfigured(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	corePath, err := service.ResolveManagedCore(&browser.Profile{
+		ProfileId: "1688:b2b-222082061706256a1a",
+		CoreId:    "core-1688",
+	})
+	if err != nil {
+		t.Fatalf("resolve core: %v", err)
+	}
+
+	expectedPath := filepath.Join(mgr.AppRoot, "fingerprint-core", filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if corePath != expectedPath {
+		t.Fatalf("unexpected core path: got=%s want=%s", corePath, expectedPath)
 	}
 }
