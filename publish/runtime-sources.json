@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "description": "Pinned upstream runtime archives for reproducible runtime refresh.",
   "sources": [
     {
