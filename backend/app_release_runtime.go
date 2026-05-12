@@ -18,6 +18,14 @@ type activeRuntimePointer struct {
 	ResourceVersion string `json:"resourceVersion"`
 }
 
+type activeRuntimePointerStatus string
+
+const (
+	activeRuntimePointerOK      activeRuntimePointerStatus = "ok"
+	activeRuntimePointerMissing activeRuntimePointerStatus = "missing"
+	activeRuntimePointerInvalid activeRuntimePointerStatus = "invalid"
+)
+
 func (a *App) GetDesktopEnvironmentStatus() (release.CheckResult, error) {
 	manager, err := a.releaseManager()
 	if err != nil {
@@ -59,7 +67,29 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	}
 
 	target := release.DefaultTarget()
-	resourceVersion, version := loadActiveRuntimeVersion(layout.ActivePointerPath())
+	resourceVersion, version, pointerStatus := loadActiveRuntimeVersion(layout.ActivePointerPath())
+	if pointerStatus == activeRuntimePointerMissing {
+		return release.CheckResult{
+			State: release.StateRepairable,
+			Items: []release.FailureItem{{
+				Code:       "ENV-RUNTIME-POINTER-MISSING",
+				Severity:   "error",
+				Message:    "当前运行时指针缺失，需要修复",
+				Repairable: true,
+			}},
+		}, nil
+	}
+	if pointerStatus == activeRuntimePointerInvalid {
+		return release.CheckResult{
+			State: release.StateRepairable,
+			Items: []release.FailureItem{{
+				Code:       "ENV-RUNTIME-POINTER-INVALID",
+				Severity:   "error",
+				Message:    "当前运行时指针损坏，需要修复",
+				Repairable: true,
+			}},
+		}, nil
+	}
 	browserCorePath := ""
 	if versionDir, err := layout.VersionDir(version); err == nil {
 		browserCorePath = resolveBrowserCorePath(manifest, target, versionDir)
@@ -73,23 +103,29 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	}), nil
 }
 
-func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string) {
+func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string, status activeRuntimePointerStatus) {
 	data, err := os.ReadFile(pointerPath)
 	if err != nil {
-		return "", ""
+		if os.IsNotExist(err) {
+			return "", "", activeRuntimePointerMissing
+		}
+		return "", "", activeRuntimePointerInvalid
 	}
 
 	var pointer activeRuntimePointer
 	if err := json.Unmarshal(data, &pointer); err != nil {
-		return "", ""
+		return "", "", activeRuntimePointerInvalid
 	}
 
 	resourceVersion = strings.TrimSpace(pointer.ResourceVersion)
 	version = strings.TrimSpace(pointer.Version)
+	if resourceVersion == "" || version == "" {
+		return "", "", activeRuntimePointerInvalid
+	}
 	if version == "" {
 		version = resourceVersion
 	}
-	return resourceVersion, version
+	return resourceVersion, version, activeRuntimePointerOK
 }
 
 func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string) string {
