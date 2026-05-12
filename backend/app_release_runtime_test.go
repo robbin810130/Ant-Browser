@@ -89,6 +89,34 @@ func TestGetDesktopEnvironmentStatusPassesWhenPointerAndCoreAreHealthy(t *testin
 	}
 }
 
+func TestRepairDesktopEnvironmentRepairsMissingPointer(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	writeCoreFixture(t, filepath.Join(versionDir, "core"))
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.RepairDesktopEnvironment()
+	if err != nil {
+		t.Fatalf("RepairDesktopEnvironment returned error: %v", err)
+	}
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state after repair, got %s with items %#v", result.State, result.Items)
+	}
+
+	data, err := os.ReadFile(layout.ActivePointerPath())
+	if err != nil {
+		t.Fatalf("read active runtime pointer: %v", err)
+	}
+	expected := `{"version":"2026.05.12","resourceVersion":"2026.05.12"}`
+	if string(data) != expected {
+		t.Fatalf("unexpected active runtime pointer content: %s", string(data))
+	}
+}
+
 func newRuntimeStatusTestApp(t *testing.T, root string) *App {
 	t.Helper()
 	app := NewApp(root)
