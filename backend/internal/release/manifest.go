@@ -25,24 +25,6 @@ type RuntimePackage struct {
 	Note     string `json:"note,omitempty"`
 }
 
-type SourceManifest struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Description   string          `json:"description,omitempty"`
-	Sources       []RuntimeSource `json:"sources"`
-}
-
-type RuntimeSource struct {
-	ID                string `json:"id"`
-	Target            string `json:"target"`
-	Runtime           string `json:"runtime"`
-	Version           string `json:"version"`
-	ArchiveType       string `json:"archiveType"`
-	URL               string `json:"url"`
-	ArchiveSHA256     string `json:"archiveSha256"`
-	ArchiveBinaryPath string `json:"archiveBinaryPath"`
-	DestPath          string `json:"destPath"`
-}
-
 func LoadManifest(path string) (Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,21 +36,6 @@ func LoadManifest(path string) (Manifest, error) {
 	}
 	if manifest.SchemaVersion != 2 {
 		return Manifest{}, fmt.Errorf("unsupported manifest schema: %d", manifest.SchemaVersion)
-	}
-	return manifest, nil
-}
-
-func LoadSourceManifest(path string) (SourceManifest, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return SourceManifest{}, err
-	}
-	var manifest SourceManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return SourceManifest{}, err
-	}
-	if manifest.SchemaVersion != 2 {
-		return SourceManifest{}, fmt.Errorf("unsupported source manifest schema: %d", manifest.SchemaVersion)
 	}
 	return manifest, nil
 }
