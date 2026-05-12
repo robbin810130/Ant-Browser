@@ -1,3 +1,22 @@
+export namespace authsession {
+	
+	export class Session {
+	    accessToken: string;
+	    rememberMe: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Session(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accessToken = source["accessToken"];
+	        this.rememberMe = source["rememberMe"];
+	    }
+	}
+
+}
+
 export namespace backend {
 	
 	export class CookieInfo {
@@ -26,6 +45,72 @@ export namespace backend {
 	        this.sameSite = source["sameSite"];
 	    }
 	}
+	export class DesktopAuthRole {
+	    code: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopAuthRole(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.name = source["name"];
+	    }
+	}
+	export class DesktopAuthUser {
+	    id: string;
+	    displayName: string;
+	    username: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopAuthUser(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.username = source["username"];
+	    }
+	}
+	export class DesktopAuthProfile {
+	    user: DesktopAuthUser;
+	    roles: DesktopAuthRole[];
+	    dataScope: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopAuthProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.user = this.convertValues(source["user"], DesktopAuthUser);
+	        this.roles = this.convertValues(source["roles"], DesktopAuthRole);
+	        this.dataScope = source["dataScope"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	export class LicenseStatus {
 	    maxLimit: number;
 	    usedCount: number;
@@ -624,6 +709,42 @@ export namespace launchcode {
 	        this.skipDefaultStartUrls = source["skipDefaultStartUrls"];
 	    }
 	}
+	export class ManagedProfileUpsertInput {
+	    profileId: string;
+	    shopId: string;
+	    platformCode: string;
+	    profileName: string;
+	    managedMode: boolean;
+	    userDataDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ManagedProfileUpsertInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.profileId = source["profileId"];
+	        this.shopId = source["shopId"];
+	        this.platformCode = source["platformCode"];
+	        this.profileName = source["profileName"];
+	        this.managedMode = source["managedMode"];
+	        this.userDataDir = source["userDataDir"];
+	    }
+	}
+	export class ManagedProfileUpsertResult {
+	    ProfileID: string;
+	    Updated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ManagedProfileUpsertResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ProfileID = source["ProfileID"];
+	        this.Updated = source["Updated"];
+	    }
+	}
 
 }
 
@@ -659,6 +780,185 @@ export namespace logger {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	
+	    }
+	}
+
+}
+
+export namespace workspace {
+	
+	export class OpenShopResult {
+	    shopId: string;
+	    profileId: string;
+	    instanceId: string;
+	    currentUrl: string;
+	    pageTitle: string;
+	    success: boolean;
+	    code: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenShopResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.shopId = source["shopId"];
+	        this.profileId = source["profileId"];
+	        this.instanceId = source["instanceId"];
+	        this.currentUrl = source["currentUrl"];
+	        this.pageTitle = source["pageTitle"];
+	        this.success = source["success"];
+	        this.code = source["code"];
+	        this.message = source["message"];
+	    }
+	}
+	export class SessionStorageEntry {
+	    origin: string;
+	    scope: string;
+	    localStorage: Record<string, string>;
+	    sessionStorage: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionStorageEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.origin = source["origin"];
+	        this.scope = source["scope"];
+	        this.localStorage = source["localStorage"];
+	        this.sessionStorage = source["sessionStorage"];
+	    }
+	}
+	export class SessionCookie {
+	    name: string;
+	    value: string;
+	    domain: string;
+	    path: string;
+	    expires: number;
+	    httpOnly: boolean;
+	    secure: boolean;
+	    sameSite: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionCookie(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.value = source["value"];
+	        this.domain = source["domain"];
+	        this.path = source["path"];
+	        this.expires = source["expires"];
+	        this.httpOnly = source["httpOnly"];
+	        this.secure = source["secure"];
+	        this.sameSite = source["sameSite"];
+	        this.url = source["url"];
+	    }
+	}
+	export class SessionBundle {
+	    platformCode: string;
+	    capturedAt: string;
+	    captureStartedAt: string;
+	    lastObservedUrl: string;
+	    userAgent: string;
+	    cookies: SessionCookie[];
+	    storages: SessionStorageEntry[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionBundle(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platformCode = source["platformCode"];
+	        this.capturedAt = source["capturedAt"];
+	        this.captureStartedAt = source["captureStartedAt"];
+	        this.lastObservedUrl = source["lastObservedUrl"];
+	        this.userAgent = source["userAgent"];
+	        this.cookies = this.convertValues(source["cookies"], SessionCookie);
+	        this.storages = this.convertValues(source["storages"], SessionStorageEntry);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class ShopInstanceProjection {
+	    shopId: string;
+	    shopName: string;
+	    platformCode: string;
+	    profileId: string;
+	    instanceId: string;
+	    sharedLoginStatus: string;
+	    sharedLoginStatusLabel: string;
+	    instanceRunning: boolean;
+	    profileExists: boolean;
+	    reclaimPending: boolean;
+	    coreReady: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShopInstanceProjection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.shopId = source["shopId"];
+	        this.shopName = source["shopName"];
+	        this.platformCode = source["platformCode"];
+	        this.profileId = source["profileId"];
+	        this.instanceId = source["instanceId"];
+	        this.sharedLoginStatus = source["sharedLoginStatus"];
+	        this.sharedLoginStatusLabel = source["sharedLoginStatusLabel"];
+	        this.instanceRunning = source["instanceRunning"];
+	        this.profileExists = source["profileExists"];
+	        this.reclaimPending = source["reclaimPending"];
+	        this.coreReady = source["coreReady"];
+	    }
+	}
+	export class WorkspaceSummary {
+	    status: string;
+	    agentStatus: string;
+	    sessionReady: boolean;
+	    serverReachable: boolean;
+	    antRuntimeReachable: boolean;
+	    activeRunCount: number;
+	    deviceId: string;
+	    deviceStatus: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WorkspaceSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.agentStatus = source["agentStatus"];
+	        this.sessionReady = source["sessionReady"];
+	        this.serverReachable = source["serverReachable"];
+	        this.antRuntimeReachable = source["antRuntimeReachable"];
+	        this.activeRunCount = source["activeRunCount"];
+	        this.deviceId = source["deviceId"];
+	        this.deviceStatus = source["deviceStatus"];
 	    }
 	}
 

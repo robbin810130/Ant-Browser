@@ -5,6 +5,8 @@ import {config} from '../models';
 import {browser} from '../models';
 import {backend} from '../models';
 import {logger} from '../models';
+import {workspace} from '../models';
+import {authsession} from '../models';
 import {launchcode} from '../models';
 
 export function BackupExportPackage():Promise<Record<string, any>>;
@@ -22,6 +24,8 @@ export function BookmarkList():Promise<Array<config.BrowserBookmark>>;
 export function BookmarkReset():Promise<void>;
 
 export function BookmarkSave(arg1:Array<config.BrowserBookmark>):Promise<void>;
+
+export function BootstrapDesktopAuthRuntime():Promise<void>;
 
 export function BrowserClearCookies(arg1:string):Promise<void>;
 
@@ -115,9 +119,17 @@ export function BrowserSnapshotRestore(arg1:string,arg2:string):Promise<void>;
 
 export function ClearAppLogs():Promise<void>;
 
+export function ClearDesktopAuthSession():Promise<void>;
+
+export function ClearProfileSession(arg1:string,arg2:boolean,arg3:boolean):Promise<void>;
+
 export function CreateGroup(arg1:browser.GroupInput):Promise<browser.Group>;
 
 export function DeleteGroup(arg1:string):Promise<void>;
+
+export function DesktopAuthStrongCleanup(arg1:string):Promise<void>;
+
+export function FetchDesktopAuthProfile(arg1:string):Promise<backend.DesktopAuthProfile>;
 
 export function FetchRemoteAuthorProfile(arg1:string,arg2:number):Promise<Record<string, any>>;
 
@@ -145,7 +157,13 @@ export function GetMemoryStats():Promise<Record<string, any>>;
 
 export function GetRunningInstances():Promise<Array<browser.Profile>>;
 
+export function InjectManagedSessionBundle(arg1:string,arg2:workspace.SessionBundle):Promise<void>;
+
 export function ListGroups():Promise<Array<browser.GroupWithCount>>;
+
+export function LoadDesktopAuthSession():Promise<authsession.Session>;
+
+export function LoginDesktopUser(arg1:string,arg2:string):Promise<string>;
 
 export function MoveInstancesToGroup(arg1:Array<string>,arg2:string):Promise<void>;
 
@@ -154,6 +172,8 @@ export function OpenCorePath(arg1:string):Promise<void>;
 export function OpenUserDataDir(arg1:string):Promise<void>;
 
 export function QuitAppOnly():Promise<void>;
+
+export function ReclaimManagedProfile(arg1:string):Promise<void>;
 
 export function RedeemCDKey(arg1:string):Promise<void>;
 
@@ -165,11 +185,15 @@ export function SaveBrowserProxies(arg1:Array<config.BrowserProxy>):Promise<void
 
 export function SaveBrowserSettings(arg1:browser.Settings):Promise<void>;
 
+export function SaveDesktopAuthSession(arg1:string,arg2:boolean):Promise<void>;
+
 export function SetLogLevel(arg1:string):Promise<void>;
 
 export function StartInstance(arg1:string):Promise<browser.Profile>;
 
 export function StartInstanceWithParams(arg1:string,arg2:launchcode.LaunchRequestParams):Promise<browser.Profile>;
+
+export function StopInstance(arg1:string):Promise<boolean>;
 
 export function TestProxyConnectivity(arg1:string,arg2:string):Promise<backend.ProxyTestResult>;
 
@@ -179,10 +203,12 @@ export function TriggerGC():Promise<void>;
 
 export function UpdateGroup(arg1:string,arg2:browser.GroupInput):Promise<browser.Group>;
 
+export function UpsertManagedProfile(arg1:launchcode.ManagedProfileUpsertInput):Promise<launchcode.ManagedProfileUpsertResult>;
+
 export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.ProxyValidationResult>;
 
-export function WorkspaceAuthorizedShops():Promise<Array<Record<string, any>>>;
+export function WorkspaceAuthorizedShops():Promise<Array<workspace.ShopInstanceProjection>>;
 
-export function WorkspaceOpenShop(arg1:string):Promise<Record<string, any>>;
+export function WorkspaceOpenShop(arg1:string):Promise<workspace.OpenShopResult>;
 
-export function WorkspaceSummary():Promise<Record<string, any>>;
+export function WorkspaceSummary():Promise<workspace.WorkspaceSummary>;

@@ -1,11 +1,19 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { ThemeProvider } from './shared/theme'
 import { Layout } from './shared/layout'
 import { ToastContainer, Modal, Button, Loading } from './shared/components'
+import { RequireAuth } from './shared/auth/RequireAuth'
 import { AlertCircle } from 'lucide-react'
+import {
+  bootstrapDesktopAuthRuntime,
+  fetchDesktopAuthProfile,
+  loadDesktopAuthSession,
+  runDesktopAuthStrongCleanup,
+} from './modules/auth/api'
 import { useNotificationStore } from './store/notificationStore'
+import { useAuthStore } from './store/authStore'
 import { useBackupStore } from './store/backupStore'
 import { ForceQuit as ForceQuitApp, QuitAppOnly as QuitAppOnlyApp } from './wailsjs/go/main/App'
 import { Environment, Quit, WindowHide, WindowMinimise } from './wailsjs/runtime/runtime'
@@ -40,6 +48,13 @@ const TagManagementPage = lazyNamed(() => import('./modules/browser/pages/TagMan
 const AutomationPage = lazyNamed(() => import('./modules/browser/pages/AutomationPage'), 'AutomationPage')
 const UsageTutorialPage = lazyNamed(() => import('./modules/browser/pages/UsageTutorialPage'), 'UsageTutorialPage')
 const QuickLaunchModal = lazyNamed(() => import('./modules/browser/components/QuickLaunchModal'), 'QuickLaunchModal')
+const LoginPage = lazyNamed(() => import('./modules/auth/pages/LoginPage'), 'LoginPage')
+
+const ProtectedAppShell = () => (
+  <Layout>
+    <Outlet />
+  </Layout>
+)
 
 function useWailsNotifications() {
   const addNotification = useNotificationStore((s) => s.addNotification)
@@ -251,11 +266,68 @@ function CloseConfirmModal() {
 function App() {
   useWailsNotifications()
   const [quickLaunchOpen, setQuickLaunchOpen] = useState(false)
+  const [authRecoveryComplete, setAuthRecoveryComplete] = useState(false)
+  const setAuthenticating = useAuthStore((state) => state.setAuthenticating)
+  const setAuthenticated = useAuthStore((state) => state.setAuthenticated)
+  const setAnonymous = useAuthStore((state) => state.setAnonymous)
   const routeFallback = (
     <div className="flex min-h-[240px] items-center justify-center py-10">
       <Loading text="页面加载中..." />
     </div>
   )
+
+  useEffect(() => {
+    let cancelled = false
+
+    const recoverDesktopSession = async () => {
+      setAuthenticating()
+
+      try {
+        const session = await loadDesktopAuthSession()
+        const accessToken = session.accessToken.trim()
+
+        if (!accessToken) {
+          if (!cancelled) {
+            setAnonymous()
+          }
+          return
+        }
+
+        const profile = await fetchDesktopAuthProfile(accessToken)
+        await bootstrapDesktopAuthRuntime()
+
+        if (!cancelled) {
+          setAuthenticated({
+            accessToken,
+            rememberMe: session.rememberMe,
+            profile,
+            bootstrapReady: true,
+          })
+        }
+      } catch (error) {
+        try {
+          await runDesktopAuthStrongCleanup('session_expired')
+        } catch (cleanupError) {
+          console.error('Desktop auth cleanup failed', cleanupError)
+        }
+
+        if (!cancelled) {
+          setAnonymous()
+        }
+        console.error('Desktop auth session recovery failed', error)
+      } finally {
+        if (!cancelled) {
+          setAuthRecoveryComplete(true)
+        }
+      }
+    }
+
+    void recoverDesktopSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [setAnonymous, setAuthenticated, setAuthenticating])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -272,33 +344,48 @@ function App() {
     }
   }, [])
 
+  if (!authRecoveryComplete) {
+    return (
+      <ThemeProvider>
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <Loading text="正在恢复登录状态..." />
+        </div>
+        <ToastContainer />
+      </ThemeProvider>
+    )
+  }
+
   return (
     <ThemeProvider>
       <Router>
-        <Layout>
-          <Suspense fallback={routeFallback}>
-            <Routes>
-              <Route path="/" element={<WorkspaceDashboardPage />} />
-              <Route path="/charts" element={<ChartsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/admin/keygen" element={<AdminKeygenPage />} />
-              <Route path="/browser/list" element={<BrowserListPage />} />
-              <Route path="/browser/detail/:id" element={<BrowserDetailPage />} />
-              <Route path="/browser/edit/:id" element={<BrowserEditPage />} />
-              <Route path="/browser/copy/:id" element={<BrowserCopyPage />} />
-              <Route path="/browser/monitor" element={<Navigate to="/browser/list" replace />} />
-              <Route path="/browser/logs" element={<BrowserLogsPage />} />
-              <Route path="/browser/proxy-pool" element={<ProxyPoolPage />} />
-              <Route path="/browser/cores" element={<CoreManagementPage />} />
-              <Route path="/browser/bookmarks" element={<BookmarkSettingsPage />} />
-              <Route path="/browser/automation" element={<AutomationPage />} />
-              <Route path="/browser/launch-api" element={<LaunchApiDocsPage />} />
-              <Route path="/browser/tags" element={<TagManagementPage />} />
-              <Route path="/system/tutorial" element={<UsageTutorialPage />} />
-            </Routes>
-          </Suspense>
-        </Layout>
+        <Suspense fallback={routeFallback}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<RequireAuth />}>
+              <Route element={<ProtectedAppShell />}>
+                <Route path="/" element={<WorkspaceDashboardPage />} />
+                <Route path="/charts" element={<ChartsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/admin/keygen" element={<AdminKeygenPage />} />
+                <Route path="/browser/list" element={<BrowserListPage />} />
+                <Route path="/browser/detail/:id" element={<BrowserDetailPage />} />
+                <Route path="/browser/edit/:id" element={<BrowserEditPage />} />
+                <Route path="/browser/copy/:id" element={<BrowserCopyPage />} />
+                <Route path="/browser/monitor" element={<Navigate to="/browser/list" replace />} />
+                <Route path="/browser/logs" element={<BrowserLogsPage />} />
+                <Route path="/browser/proxy-pool" element={<ProxyPoolPage />} />
+                <Route path="/browser/cores" element={<CoreManagementPage />} />
+                <Route path="/browser/bookmarks" element={<BookmarkSettingsPage />} />
+                <Route path="/browser/automation" element={<AutomationPage />} />
+                <Route path="/browser/launch-api" element={<LaunchApiDocsPage />} />
+                <Route path="/browser/tags" element={<TagManagementPage />} />
+                <Route path="/system/tutorial" element={<UsageTutorialPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
         <ToastContainer />
         <CloseConfirmModal />
         <Suspense fallback={null}>

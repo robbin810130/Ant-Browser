@@ -135,10 +135,10 @@ func (a *App) InjectManagedSessionBundle(profileID string, bundle workspace.Sess
 	if profileID == "" {
 		return fmt.Errorf("profile id is required")
 	}
-	if len(bundle.Cookies) == 0 {
+	if len(bundle.Cookies) == 0 && len(bundle.Storages) == 0 {
 		return nil
 	}
-	return a.browserImportCookies(profileID, bundle.Cookies)
+	return a.importWorkspaceSessionBundle(profileID, bundle)
 }
 
 func (a *App) configureManagedInstanceRuntime() {
@@ -255,15 +255,19 @@ func (a *App) managedRunningProfileSnapshot(profileID string) (*BrowserProfile, 
 
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileID]
-	if !exists || profile == nil || !profile.Running {
+	if !exists || profile == nil {
 		a.browserMgr.Mutex.Unlock()
 		return nil, false
+	}
+	if !profile.Running {
+		a.browserMgr.Mutex.Unlock()
+		return a.recoverBrowserProfileRuntime(profileID)
 	}
 	trackedCmd := a.browserMgr.BrowserProcesses[profileID]
 	if !isBrowserProfileLive(profile, trackedCmd) {
 		a.markProfileStoppedLocked(profileID, profile)
 		a.browserMgr.Mutex.Unlock()
-		return nil, false
+		return a.recoverBrowserProfileRuntime(profileID)
 	}
 	snapshot := copyBrowserProfileSnapshot(profile)
 	a.browserMgr.Mutex.Unlock()

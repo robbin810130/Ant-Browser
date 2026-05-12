@@ -9,6 +9,7 @@ import (
 
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/launchcode"
+	"ant-chrome/backend/internal/workspace"
 )
 
 type mockStarterWithParams struct {
@@ -16,6 +17,7 @@ type mockStarterWithParams struct {
 	lastProfile string
 	started     []string
 	lastParams  launchcode.LaunchRequestParams
+	lastBundle  workspace.SessionBundle
 }
 
 func newMockStarterWithParams() *mockStarterWithParams {
@@ -45,6 +47,23 @@ func (m *mockStarterWithParams) StartInstanceWithParams(profileId string, params
 		return nil, http.ErrMissingFile
 	}
 	return p, nil
+}
+
+func (m *mockStarterWithParams) UpsertManagedProfile(input launchcode.ManagedProfileUpsertInput) (*launchcode.ManagedProfileUpsertResult, error) {
+	return &launchcode.ManagedProfileUpsertResult{ProfileID: input.ProfileID, Updated: true}, nil
+}
+
+func (m *mockStarterWithParams) StopInstance(profileID string) (bool, error) {
+	return true, nil
+}
+
+func (m *mockStarterWithParams) ClearProfileSession(profileID string, clearCookies bool, clearStorage bool) error {
+	return nil
+}
+
+func (m *mockStarterWithParams) InjectManagedSessionBundle(profileID string, bundle workspace.SessionBundle) error {
+	m.lastBundle = bundle
+	return nil
 }
 
 func TestLaunchWithParams(t *testing.T) {
@@ -213,6 +232,61 @@ func TestLaunchWithParamsBadRequest(t *testing.T) {
 			t.Fatalf("期望 400，实际 %d", w.Code)
 		}
 	})
+}
+
+func TestLocalLaunchAcceptsLaunchContextPayload(t *testing.T) {
+	svc := newInMemoryService()
+	starter := newMockStarterWithParams()
+	starter.addProfile(&browser.Profile{
+		ProfileId:   "profile-local-launch",
+		ProfileName: "local-launch",
+		Pid:         4321,
+		DebugPort:   9777,
+	})
+
+	handler := buildTestHandler(svc, starter)
+	payload := bytes.NewBufferString(`{
+		"headless": false,
+		"targetUrl": "https://work.1688.com/",
+		"sessionBundle": {
+			"platformCode": "alibaba",
+			"cookies": [
+				{"name":"sid","value":"cookie-1","domain":".1688.com","path":"/","expires":0,"httpOnly":true,"secure":true,"sameSite":"Lax","url":"https://work.1688.com/"}
+			]
+		}
+	}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/local/profiles/profile-local-launch/launch", payload)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，实际 %d，body=%s", w.Code, w.Body.String())
+	}
+	if starter.lastProfile != "profile-local-launch" {
+		t.Fatalf("profileId 传递错误: %s", starter.lastProfile)
+	}
+	if len(starter.lastParams.StartURLs) != 1 || starter.lastParams.StartURLs[0] != "https://work.1688.com/" {
+		t.Fatalf("targetUrl 未透传到 startUrls: %+v", starter.lastParams)
+	}
+	if !starter.lastParams.SkipDefaultStartURLs {
+		t.Fatalf("skipDefaultStartUrls 未开启: %+v", starter.lastParams)
+	}
+	if len(starter.lastBundle.Cookies) != 1 || starter.lastBundle.Cookies[0].Name != "sid" {
+		t.Fatalf("sessionBundle 未注入: %+v", starter.lastBundle)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if resp["targetUrl"] != "https://work.1688.com/" {
+		t.Fatalf("targetUrl 响应错误: %#v", resp["targetUrl"])
+	}
+	if resp["currentUrl"] != "https://work.1688.com/" {
+		t.Fatalf("currentUrl 响应错误: %#v", resp["currentUrl"])
+	}
 }
 
 func TestLaunchLogsEndpoint(t *testing.T) {

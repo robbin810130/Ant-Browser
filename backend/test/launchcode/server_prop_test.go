@@ -272,3 +272,29 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Error("期望 ok=true")
 	}
 }
+
+func TestLocalHealthEndpoint(t *testing.T) {
+	svc := newInMemoryService()
+	starter := newMockStarter()
+	handler := buildTestHandler(svc, starter)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/local/health", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，实际 %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	ok, _ := resp["ok"].(bool)
+	if !ok {
+		t.Error("期望 ok=true")
+	}
+	managedMode, _ := resp["managedMode"].(bool)
+	if !managedMode {
+		t.Error("期望 managedMode=true")
+	}
+}

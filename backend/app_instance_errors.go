@@ -8,7 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +22,15 @@ const browserStartStableWindow = 1200 * time.Millisecond
 const browserDebugProbeTimeout = 250 * time.Millisecond
 
 var errBrowserDebugPortPending = errors.New("browser debug port pending")
+
+var runBrowserProcessLookup = func() ([]byte, error) {
+	if runtime.GOOS == "windows" {
+		return nil, errBrowserDebugPortPending
+	}
+	return exec.Command("pgrep", "-fal", "Chromium|Google Chrome|chrome").Output()
+}
+
+var browserDebugPortFlagPattern = regexp.MustCompile(`--remote-debugging-port(?:=|\s+)(\d+)`)
 
 type browserStartupExitError struct {
 	exitErr    error
@@ -172,6 +184,14 @@ func resolveBrowserDebugPort(initialDebugPort int, userDataDir string, monitor *
 	} else if !errors.Is(err, errBrowserDebugPortPending) {
 		return 0, err
 	}
+	if debugPort, err := findBrowserDebugPortFromRunningProcess(userDataDir); err == nil {
+		if monitor != nil {
+			monitor.SetDebugPort(debugPort)
+		}
+		return debugPort, nil
+	} else if !errors.Is(err, errBrowserDebugPortPending) {
+		return 0, err
+	}
 	return 0, errBrowserDebugPortPending
 }
 
@@ -199,6 +219,48 @@ func readBrowserDebugPortFile(userDataDir string) (int, error) {
 		return 0, fmt.Errorf("DevToolsActivePort 内容无效: %q", lines[0])
 	}
 	return port, nil
+}
+
+func findBrowserDebugPortFromRunningProcess(userDataDir string) (int, error) {
+	userDataDir = strings.TrimSpace(userDataDir)
+	if userDataDir == "" {
+		return 0, errBrowserDebugPortPending
+	}
+
+	output, err := runBrowserProcessLookup()
+	if err != nil {
+		return 0, errBrowserDebugPortPending
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		if debugPort, ok := parseBrowserDebugPortFromProcessLine(line, userDataDir); ok {
+			return debugPort, nil
+		}
+	}
+	return 0, errBrowserDebugPortPending
+}
+
+func parseBrowserDebugPortFromProcessLine(line string, userDataDir string) (int, bool) {
+	line = strings.TrimSpace(line)
+	userDataDir = strings.TrimSpace(userDataDir)
+	if line == "" || userDataDir == "" {
+		return 0, false
+	}
+
+	if !strings.Contains(line, userDataDir) {
+		return 0, false
+	}
+
+	matches := browserDebugPortFlagPattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return 0, false
+	}
+
+	port, err := strconv.Atoi(strings.TrimSpace(matches[1]))
+	if err != nil || port <= 0 {
+		return 0, false
+	}
+	return port, true
 }
 
 func probeBrowserDebugPort(debugPort int, requestTimeout time.Duration) error {

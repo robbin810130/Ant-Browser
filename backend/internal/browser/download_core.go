@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -107,7 +109,8 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		Transport: transport,
 	}
 
-	tempFile, err := os.CreateTemp(chromeDir, "download_*.zip")
+	archiveKind := detectArchiveKind(targetUrl)
+	tempFile, err := os.CreateTemp(chromeDir, "download_*."+archiveKind)
 	if err != nil {
 		sendEvent("error", 0, "创建临时文件失败: "+err.Error())
 		return
@@ -131,11 +134,20 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 	log.Info("内核下载完成", logger.F("url", targetUrl), logger.F("temp", tempFilePath), logger.F("cost", time.Since(t).String()))
 
 	// 3. 执行解压，并剥离顶层文件夹
-	if err := extractZipAndStripRoot(tempFilePath, targetDir, func(p int, msg string) {
-		sendEvent("extracting", p, msg)
-	}); err != nil {
+	var extractErr error
+	switch archiveKind {
+	case "dmg":
+		extractErr = extractDmgToTarget(ctx, tempFilePath, targetDir, func(p int, msg string) {
+			sendEvent("extracting", p, msg)
+		})
+	default:
+		extractErr = extractZipAndStripRoot(tempFilePath, targetDir, func(p int, msg string) {
+			sendEvent("extracting", p, msg)
+		})
+	}
+	if extractErr != nil {
 		os.RemoveAll(targetDir) // 删除不完整的解压文件
-		sendEvent("error", 0, "解压失败: "+err.Error())
+		sendEvent("error", 0, "解压失败: "+extractErr.Error())
 		return
 	}
 
@@ -158,6 +170,69 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		os.RemoveAll(targetDir) // 删除不正确的解压内容
 		sendEvent("error", 0, fmt.Sprintf("解压后未找到浏览器可执行文件（候选：%s），请检查压缩包内容！", strings.Join(CoreExecutableCandidates(), ", ")))
 	}
+}
+
+func detectArchiveKind(targetURL string) string {
+	lower := strings.ToLower(strings.TrimSpace(targetURL))
+	if strings.HasSuffix(lower, ".dmg") {
+		return "dmg"
+	}
+	return "zip"
+}
+
+func extractDmgToTarget(ctx context.Context, dmgPath, dest string, progressCb func(int, string)) error {
+	if goruntime.GOOS != "darwin" {
+		return fmt.Errorf("dmg 安装包只能在 macOS 上解压")
+	}
+
+	mountPoint, err := os.MkdirTemp("", "ant-core-mount-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(mountPoint)
+
+	if progressCb != nil {
+		progressCb(5, "正在挂载 dmg 镜像...")
+	}
+	if err := exec.CommandContext(ctx, "hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", mountPoint, dmgPath).Run(); err != nil {
+		return fmt.Errorf("挂载 dmg 失败: %w", err)
+	}
+	defer exec.Command("hdiutil", "detach", mountPoint).Run()
+
+	appDir := ""
+	_ = filepath.WalkDir(mountPoint, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || d == nil {
+			return walkErr
+		}
+		if d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".app") {
+			appDir = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if appDir == "" {
+		return fmt.Errorf("dmg 中未找到 .app 目录")
+	}
+
+	src := filepath.Join(appDir, "Contents", "MacOS")
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("dmg 内部结构异常: %w", err)
+	}
+
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	if progressCb != nil {
+		progressCb(80, "正在复制 core 文件...")
+	}
+	cmd := exec.CommandContext(ctx, "ditto", src, dest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("复制 dmg core 失败: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if progressCb != nil {
+		progressCb(100, "解压完成！")
+	}
+	return nil
 }
 
 // extractZipAndStripRoot 解压 ZIP 包，如果其所有文件全被同一个根目录包裹，则剥离这层根目录解压至 dest

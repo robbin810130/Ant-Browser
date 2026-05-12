@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -64,6 +65,13 @@ type LaunchServerAuthConfig struct {
 	Header  string `yaml:"header"`
 }
 
+type WorkspaceConfig struct {
+	InstallRoot  string `yaml:"install_root"`
+	AgentBaseURL string `yaml:"agent_base_url"`
+	ServerOrigin string `yaml:"server_origin"`
+	RuntimeDir   string `yaml:"runtime_dir"`
+}
+
 // Config 应用配置
 type Config struct {
 	Database     DatabaseConfig     `yaml:"database"`
@@ -72,6 +80,7 @@ type Config struct {
 	Logging      LoggingConfig      `yaml:"logging"`
 	Browser      BrowserConfig      `yaml:"browser"`
 	LaunchServer LaunchServerConfig `yaml:"launch_server"`
+	Workspace    WorkspaceConfig    `yaml:"workspace"`
 }
 
 // DatabaseConfig 数据库配置
@@ -368,6 +377,11 @@ func normalizeConfig(config *Config) {
 	if strings.TrimSpace(config.LaunchServer.Auth.Header) == "" {
 		config.LaunchServer.Auth.Header = defaultConfig.LaunchServer.Auth.Header
 	}
+
+	config.Workspace.InstallRoot = strings.TrimSpace(config.Workspace.InstallRoot)
+	config.Workspace.AgentBaseURL = strings.TrimRight(strings.TrimSpace(config.Workspace.AgentBaseURL), "/")
+	config.Workspace.ServerOrigin = strings.TrimRight(strings.TrimSpace(config.Workspace.ServerOrigin), "/")
+	config.Workspace.RuntimeDir = strings.TrimSpace(config.Workspace.RuntimeDir)
 }
 
 func cloneInterceptorConfig(src InterceptorConfig) InterceptorConfig {
@@ -382,6 +396,10 @@ func isLegacyDefaultLogPath(path string) bool {
 
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
+	defaultFingerprintArgs := []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=windows"}
+	if goruntime.GOOS == "darwin" {
+		defaultFingerprintArgs = []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=mac"}
+	}
 	return &Config{
 		Database: DatabaseConfig{
 			Type: "sqlite",
@@ -406,7 +424,7 @@ func DefaultConfig() *Config {
 		},
 		Browser: BrowserConfig{
 			UserDataRoot:           "data",
-			DefaultFingerprintArgs: []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=windows"},
+			DefaultFingerprintArgs: defaultFingerprintArgs,
 			DefaultLaunchArgs:      []string{"--disable-sync", "--no-first-run"},
 			DefaultProxy:           "",
 			StartReadyTimeoutMs:    3000,
@@ -442,6 +460,7 @@ func DefaultConfig() *Config {
 				Header:  DefaultLaunchServerAPIKeyHeader,
 			},
 		},
+		Workspace: WorkspaceConfig{},
 	}
 }
 

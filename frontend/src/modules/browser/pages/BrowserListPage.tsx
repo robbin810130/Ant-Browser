@@ -141,6 +141,18 @@ export function BrowserListPage() {
   }
 
   const handleOpen = async (shop: WorkspaceAuthorizedShop) => {
+    if (shop.reclaimPending) {
+      toast.error('当前授权已失效，本地实例待回收，禁止再次打开')
+      return
+    }
+    if (!shop.profileExists) {
+      toast.error('当前店铺尚未完成本地实例映射，请刷新列表后重试')
+      return
+    }
+    if (!shop.coreReady) {
+      toast.error('当前未配置可用指纹内核，无法打开 managed 店铺')
+      return
+    }
     try {
       const result = await openWorkspaceShop(shop.shopId)
       if (!result.success) {
@@ -151,6 +163,19 @@ export function BrowserListPage() {
       await load(true)
     } catch (error: any) {
       console.error('open workspace shop failed', error)
+      const code = String(error?.code || error?.name || '')
+      if (code === 'ANT_FINGERPRINT_CORE_REQUIRED') {
+        toast.error('当前环境未配置指纹内核，无法打开 managed 店铺')
+        return
+      }
+      if (code === 'ANT_CORE_NOT_FOUND') {
+        toast.error('当前店铺绑定的指纹内核不存在')
+        return
+      }
+      if (code === 'ANT_CORE_UNAVAILABLE') {
+        toast.error('指纹内核当前不可用')
+        return
+      }
       toast.error(error?.message || '未能打开目标店铺后台')
     }
   }

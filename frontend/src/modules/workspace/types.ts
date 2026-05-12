@@ -18,6 +18,9 @@ export interface WorkspaceAuthorizedShop {
   sharedLoginStatus: string
   sharedLoginStatusLabel: string
   instanceRunning: boolean
+  profileExists: boolean
+  reclaimPending: boolean
+  coreReady: boolean
 }
 
 export interface WorkspaceDashboardStats {

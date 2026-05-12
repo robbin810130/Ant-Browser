@@ -21,10 +21,23 @@ export function ShopInstanceActionCell({
 }: ShopInstanceActionCellProps) {
   const size = compact ? 'sm' : 'sm'
   const wrapClass = compact ? 'flex-wrap' : 'justify-end'
+  const openDisabled = shop.reclaimPending || !shop.profileExists || !shop.coreReady
+  const openTooltip = shop.reclaimPending
+    ? '当前授权已失效，实例待回收，禁止再次打开'
+    : !shop.profileExists
+      ? '当前店铺尚未完成本地实例映射，请刷新列表后重试'
+      : !shop.coreReady
+        ? '当前未配置可用指纹内核，无法打开 managed 店铺'
+        : `打开 ${shop.shopName || shop.shopId} 后台`
 
   return (
     <div className={`flex gap-1.5 ${wrapClass}`}>
-      <Button size={size} onClick={(event) => { event.stopPropagation(); onOpen() }}>
+      <Button
+        size={size}
+        disabled={openDisabled}
+        title={openTooltip}
+        onClick={(event) => { event.stopPropagation(); if (!openDisabled) onOpen() }}
+      >
         <ExternalLink className="h-3.5 w-3.5" />
         一键打开后台
       </Button>
