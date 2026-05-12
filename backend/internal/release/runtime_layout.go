@@ -1,6 +1,10 @@
 package release
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+)
 
 type RuntimeLayout struct {
 	InstallRoot string
@@ -19,8 +23,18 @@ func (l RuntimeLayout) VersionsRoot() string {
 	return filepath.Join(l.RuntimeRoot(), "versions")
 }
 
-func (l RuntimeLayout) VersionDir(version string) string {
-	return filepath.Join(l.VersionsRoot(), version)
+func (l RuntimeLayout) VersionDir(version string) (string, error) {
+	version = strings.TrimSpace(version)
+	if version == "" || version == "." || version == ".." {
+		return "", fmt.Errorf("invalid version")
+	}
+	if strings.ContainsAny(version, `/\`) {
+		return "", fmt.Errorf("invalid version")
+	}
+	if cleaned := filepath.Clean(version); cleaned != version || cleaned == "." || cleaned == ".." {
+		return "", fmt.Errorf("invalid version")
+	}
+	return filepath.Join(l.VersionsRoot(), version), nil
 }
 
 func (l RuntimeLayout) StagingRoot() string {
