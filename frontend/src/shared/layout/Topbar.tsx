@@ -197,6 +197,49 @@ export function Topbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
+    if (!isDev) return
+
+    const onKeyDown = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.altKey || signingOut) return
+
+      let reason: DesktopAuthStrongCleanupReason | null = null
+      let navigateState: Record<string, string> | undefined
+      switch (event.key) {
+        case '1':
+          reason = 'logout'
+          break
+        case '2':
+          reason = 'switch_account'
+          navigateState = { reason: 'switch_account' }
+          break
+        case '3':
+          reason = 'rebind_device'
+          navigateState = { reason: 'rebind_device' }
+          break
+        default:
+          return
+      }
+
+      event.preventDefault()
+      setShowAccountMenu(false)
+      setSigningOut()
+
+      try {
+        await runDesktopAuthStrongCleanup(reason)
+        setAnonymous()
+        navigate('/login', { replace: true, state: navigateState })
+      } catch (error) {
+        setSigningOut(false)
+        toast.error(getErrorMessage(error))
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [navigate, setAnonymous, setSigningOut, signingOut])
+
   return (
     <header className="h-14 bg-[var(--color-bg-surface)] border-b border-[var(--color-border-default)] px-4 flex items-center justify-between gap-4">
       <div className="w-64">

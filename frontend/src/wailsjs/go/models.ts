@@ -111,6 +111,100 @@ export namespace backend {
 	}
 	
 	
+	export class DesktopSharedLoginDetail {
+	    shopId: string;
+	    shopName: string;
+	    platformCode: string;
+	    sharedLoginStatus: string;
+	    sharedLoginStatusLabel: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopSharedLoginDetail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.shopId = source["shopId"];
+	        this.shopName = source["shopName"];
+	        this.platformCode = source["platformCode"];
+	        this.sharedLoginStatus = source["sharedLoginStatus"];
+	        this.sharedLoginStatusLabel = source["sharedLoginStatusLabel"];
+	    }
+	}
+	export class DesktopSharedLoginBindSession {
+	    bindSessionId: string;
+	    traceId: string;
+	    shopId: string;
+	    shopName: string;
+	    sessionType: string;
+	    status: string;
+	    statusLabel: string;
+	    message: string;
+	    manualActionRequired: boolean;
+	    lastObservedUrl: string;
+	    startedAt: string;
+	    expiresAt: string;
+	    completedAt: string;
+	    updatedAt: string;
+	    challengeType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopSharedLoginBindSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bindSessionId = source["bindSessionId"];
+	        this.traceId = source["traceId"];
+	        this.shopId = source["shopId"];
+	        this.shopName = source["shopName"];
+	        this.sessionType = source["sessionType"];
+	        this.status = source["status"];
+	        this.statusLabel = source["statusLabel"];
+	        this.message = source["message"];
+	        this.manualActionRequired = source["manualActionRequired"];
+	        this.lastObservedUrl = source["lastObservedUrl"];
+	        this.startedAt = source["startedAt"];
+	        this.expiresAt = source["expiresAt"];
+	        this.completedAt = source["completedAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.challengeType = source["challengeType"];
+	    }
+	}
+	export class DesktopSharedLoginActionResult {
+	    bindSession: DesktopSharedLoginBindSession;
+	    detail: DesktopSharedLoginDetail;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopSharedLoginActionResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bindSession = this.convertValues(source["bindSession"], DesktopSharedLoginBindSession);
+	        this.detail = this.convertValues(source["detail"], DesktopSharedLoginDetail);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	export class LicenseStatus {
 	    maxLimit: number;
 	    usedCount: number;

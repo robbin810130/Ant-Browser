@@ -128,6 +128,211 @@ func TestLoginDesktopUserUsesWorkspaceServerOrigin(t *testing.T) {
 	}
 }
 
+func TestStartDesktopSharedLoginBindUsesDesktopEndpointAndAuthorization(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-1/bind" {
+			http.NotFound(w, r)
+			return
+		}
+
+		authHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"bindSession": map[string]any{
+					"bindSessionId":        "bind-session-1",
+					"traceId":              "trace-1",
+					"shopId":               "shop-1",
+					"shopName":             "店铺一号",
+					"sessionType":          "bind",
+					"status":               "pending",
+					"statusLabel":          "待处理",
+					"message":              "已发起绑定",
+					"manualActionRequired": true,
+					"lastObservedUrl":      "https://login.1688.com/",
+					"startedAt":            "2026-05-12T10:00:00Z",
+					"expiresAt":            "2026-05-12T10:30:00Z",
+					"completedAt":          nil,
+					"updatedAt":            "2026-05-12T10:00:05Z",
+					"challengeType":        "sms",
+				},
+				"detail": map[string]any{
+					"shopId":       "shop-1",
+					"shopName":     "店铺一号",
+					"platformCode": "alibaba",
+					"sharedLogin": map[string]any{
+						"status":      "binding",
+						"statusLabel": "绑定中",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: server.URL,
+		},
+	}
+
+	result, err := app.StartDesktopSharedLoginBind(" desktop-token ", " shop-1 ")
+	if err != nil {
+		t.Fatalf("StartDesktopSharedLoginBind 返回错误: %v", err)
+	}
+	if authHeader != "Bearer desktop-token" {
+		t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", authHeader)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil bind result")
+	}
+	if result.BindSession.BindSessionID != "bind-session-1" {
+		t.Fatalf("期望 bindSessionId=bind-session-1，实际=%q", result.BindSession.BindSessionID)
+	}
+	if !result.BindSession.ManualActionRequired {
+		t.Fatal("期望 manualActionRequired=true")
+	}
+	if result.Detail.ShopID != "shop-1" || result.Detail.SharedLoginStatus != "binding" {
+		t.Fatalf("unexpected bind detail: %#v", result.Detail)
+	}
+}
+
+func TestStartDesktopSharedLoginValidateUsesDesktopEndpointAndAuthorization(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-2/validate" {
+			http.NotFound(w, r)
+			return
+		}
+
+		authHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"bindSession": map[string]any{
+					"bindSessionId":        "bind-session-validate-1",
+					"traceId":              "trace-2",
+					"shopId":               "shop-2",
+					"shopName":             "店铺二号",
+					"sessionType":          "validate",
+					"status":               "running",
+					"statusLabel":          "验证中",
+					"message":              "正在验证共享会话",
+					"manualActionRequired": false,
+					"lastObservedUrl":      "https://work.1688.com/",
+					"startedAt":            "2026-05-12T11:00:00Z",
+					"expiresAt":            "2026-05-12T11:30:00Z",
+					"completedAt":          nil,
+					"updatedAt":            "2026-05-12T11:00:05Z",
+					"challengeType":        nil,
+				},
+				"detail": map[string]any{
+					"shopId":       "shop-2",
+					"shopName":     "店铺二号",
+					"platformCode": "alibaba",
+					"sharedLogin": map[string]any{
+						"status":      "binding",
+						"statusLabel": "验证中",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: server.URL,
+		},
+	}
+
+	result, err := app.StartDesktopSharedLoginValidate(" desktop-token ", " shop-2 ")
+	if err != nil {
+		t.Fatalf("StartDesktopSharedLoginValidate 返回错误: %v", err)
+	}
+	if authHeader != "Bearer desktop-token" {
+		t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", authHeader)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil validate result")
+	}
+	if result.BindSession.SessionType != "validate" {
+		t.Fatalf("期望 sessionType=validate，实际=%q", result.BindSession.SessionType)
+	}
+	if result.Detail.SharedLoginStatusLabel != "验证中" {
+		t.Fatalf("期望 statusLabel=验证中，实际=%q", result.Detail.SharedLoginStatusLabel)
+	}
+}
+
+func TestFetchDesktopSharedLoginBindSessionUsesDesktopEndpointAndAuthorization(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/desktop/shared-login-bind-sessions/bind-session-9" {
+			http.NotFound(w, r)
+			return
+		}
+
+		authHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"bindSessionId":        "bind-session-9",
+				"traceId":              "trace-9",
+				"shopId":               "shop-9",
+				"shopName":             "店铺九号",
+				"sessionType":          "bind",
+				"status":               "completed",
+				"statusLabel":          "已完成",
+				"message":              "共享会话已保存",
+				"manualActionRequired": false,
+				"lastObservedUrl":      "https://work.1688.com/?shopId=shop-9",
+				"startedAt":            "2026-05-12T12:00:00Z",
+				"expiresAt":            "2026-05-12T12:30:00Z",
+				"completedAt":          "2026-05-12T12:00:20Z",
+				"updatedAt":            "2026-05-12T12:00:20Z",
+				"challengeType":        nil,
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: server.URL,
+		},
+	}
+
+	session, err := app.FetchDesktopSharedLoginBindSession(" desktop-token ", " bind-session-9 ")
+	if err != nil {
+		t.Fatalf("FetchDesktopSharedLoginBindSession 返回错误: %v", err)
+	}
+	if authHeader != "Bearer desktop-token" {
+		t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", authHeader)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil bind session")
+	}
+	if session.Status != "completed" || session.CompletedAt != "2026-05-12T12:00:20Z" {
+		t.Fatalf("unexpected bind session: %#v", session)
+	}
+}
+
 func TestDesktopAuthSessionRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

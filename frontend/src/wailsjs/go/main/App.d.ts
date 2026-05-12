@@ -131,6 +131,8 @@ export function DesktopAuthStrongCleanup(arg1:string):Promise<void>;
 
 export function FetchDesktopAuthProfile(arg1:string):Promise<backend.DesktopAuthProfile>;
 
+export function FetchDesktopSharedLoginBindSession(arg1:string,arg2:string):Promise<backend.DesktopSharedLoginBindSession>;
+
 export function FetchRemoteAuthorProfile(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function ForceQuit():Promise<void>;
@@ -188,6 +190,10 @@ export function SaveBrowserSettings(arg1:browser.Settings):Promise<void>;
 export function SaveDesktopAuthSession(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetLogLevel(arg1:string):Promise<void>;
+
+export function StartDesktopSharedLoginBind(arg1:string,arg2:string):Promise<backend.DesktopSharedLoginActionResult>;
+
+export function StartDesktopSharedLoginValidate(arg1:string,arg2:string):Promise<backend.DesktopSharedLoginActionResult>;
 
 export function StartInstance(arg1:string):Promise<browser.Profile>;
 

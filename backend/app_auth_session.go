@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/authsession"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -46,6 +47,60 @@ type desktopAuthLoginEnvelope struct {
 	Data    struct {
 		AccessToken string `json:"accessToken"`
 	} `json:"data"`
+}
+
+type DesktopSharedLoginBindSession struct {
+	BindSessionID        string `json:"bindSessionId"`
+	TraceID              string `json:"traceId"`
+	ShopID               string `json:"shopId"`
+	ShopName             string `json:"shopName"`
+	SessionType          string `json:"sessionType"`
+	Status               string `json:"status"`
+	StatusLabel          string `json:"statusLabel"`
+	Message              string `json:"message"`
+	ManualActionRequired bool   `json:"manualActionRequired"`
+	LastObservedURL      string `json:"lastObservedUrl"`
+	StartedAt            string `json:"startedAt"`
+	ExpiresAt            string `json:"expiresAt"`
+	CompletedAt          string `json:"completedAt"`
+	UpdatedAt            string `json:"updatedAt"`
+	ChallengeType        string `json:"challengeType"`
+}
+
+type DesktopSharedLoginDetail struct {
+	ShopID                 string `json:"shopId"`
+	ShopName               string `json:"shopName"`
+	PlatformCode           string `json:"platformCode"`
+	SharedLoginStatus      string `json:"sharedLoginStatus"`
+	SharedLoginStatusLabel string `json:"sharedLoginStatusLabel"`
+}
+
+type DesktopSharedLoginActionResult struct {
+	BindSession DesktopSharedLoginBindSession `json:"bindSession"`
+	Detail      DesktopSharedLoginDetail      `json:"detail"`
+}
+
+type desktopSharedLoginActionEnvelope struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		BindSession DesktopSharedLoginBindSession `json:"bindSession"`
+		Detail      struct {
+			ShopID       string `json:"shopId"`
+			ShopName     string `json:"shopName"`
+			PlatformCode string `json:"platformCode"`
+			SharedLogin  struct {
+				Status      string `json:"status"`
+				StatusLabel string `json:"statusLabel"`
+			} `json:"sharedLogin"`
+		} `json:"detail"`
+	} `json:"data"`
+}
+
+type desktopSharedLoginBindSessionEnvelope struct {
+	Code    int                           `json:"code"`
+	Message string                        `json:"message"`
+	Data    DesktopSharedLoginBindSession `json:"data"`
 }
 
 func (a *App) LoadDesktopAuthSession() (*DesktopAuthSession, error) {
@@ -111,6 +166,38 @@ func (a *App) FetchDesktopAuthProfile(accessToken string) (*DesktopAuthProfile, 
 
 func (a *App) ClearDesktopAuthSession() error {
 	return a.desktopAuthSessionStore().Save(authsession.Session{})
+}
+
+func (a *App) StartDesktopSharedLoginBind(accessToken, shopID string) (*DesktopSharedLoginActionResult, error) {
+	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/bind")
+}
+
+func (a *App) StartDesktopSharedLoginValidate(accessToken, shopID string) (*DesktopSharedLoginActionResult, error) {
+	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/validate")
+}
+
+func (a *App) FetchDesktopSharedLoginBindSession(accessToken, bindSessionID string) (*DesktopSharedLoginBindSession, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("desktop auth access token is required")
+	}
+
+	bindSessionID = strings.TrimSpace(bindSessionID)
+	if bindSessionID == "" {
+		return nil, fmt.Errorf("bind session id is required")
+	}
+
+	var envelope desktopSharedLoginBindSessionEnvelope
+	if err := a.doDesktopAuthedWorkspaceJSON(accessToken, http.MethodGet, fmt.Sprintf("/api/desktop/shared-login-bind-sessions/%s", bindSessionID), nil, &envelope); err != nil {
+		return nil, err
+	}
+
+	session := envelope.Data
+	session.BindSessionID = strings.TrimSpace(session.BindSessionID)
+	if session.BindSessionID == "" {
+		return nil, fmt.Errorf("desktop shared login bind session id is required")
+	}
+	return &session, nil
 }
 
 func (a *App) BootstrapDesktopAuthRuntime() error {
@@ -183,4 +270,83 @@ func hasDesktopManagedTag(tags []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func (a *App) startDesktopSharedLoginAction(accessToken, shopID, pathTemplate string) (*DesktopSharedLoginActionResult, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("desktop auth access token is required")
+	}
+
+	shopID = strings.TrimSpace(shopID)
+	if shopID == "" {
+		return nil, fmt.Errorf("shop id is required")
+	}
+
+	var envelope desktopSharedLoginActionEnvelope
+	if err := a.doDesktopAuthedWorkspaceJSON(accessToken, http.MethodPost, fmt.Sprintf(pathTemplate, shopID), map[string]any{}, &envelope); err != nil {
+		return nil, err
+	}
+
+	result := &DesktopSharedLoginActionResult{
+		BindSession: envelope.Data.BindSession,
+		Detail: DesktopSharedLoginDetail{
+			ShopID:                 strings.TrimSpace(envelope.Data.Detail.ShopID),
+			ShopName:               strings.TrimSpace(envelope.Data.Detail.ShopName),
+			PlatformCode:           strings.TrimSpace(envelope.Data.Detail.PlatformCode),
+			SharedLoginStatus:      strings.TrimSpace(envelope.Data.Detail.SharedLogin.Status),
+			SharedLoginStatusLabel: strings.TrimSpace(envelope.Data.Detail.SharedLogin.StatusLabel),
+		},
+	}
+	result.BindSession.BindSessionID = strings.TrimSpace(result.BindSession.BindSessionID)
+	if result.BindSession.BindSessionID == "" {
+		return nil, fmt.Errorf("desktop shared login bind session id is required")
+	}
+	return result, nil
+}
+
+func (a *App) doDesktopAuthedWorkspaceJSON(accessToken, method, path string, body any, dest any) error {
+	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
+	serverOrigin = strings.TrimRight(strings.TrimSpace(serverOrigin), "/")
+	if serverOrigin == "" {
+		return fmt.Errorf("workspace server origin is required")
+	}
+
+	var requestBody any
+	if method != http.MethodGet && body == nil {
+		requestBody = map[string]any{}
+	} else {
+		requestBody = body
+	}
+
+	url := serverOrigin + path
+	var request *http.Request
+	var err error
+	if method == http.MethodGet {
+		request, err = http.NewRequestWithContext(context.Background(), method, url, nil)
+	} else {
+		payload, marshalErr := jsonMarshalWorkspaceBody(requestBody)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		request, err = http.NewRequestWithContext(context.Background(), method, url, strings.NewReader(payload))
+		if err == nil {
+			request.Header.Set("content-type", "application/json")
+		}
+	}
+	if err != nil {
+		return err
+	}
+	request.Header.Set("accept", "application/json")
+	request.Header.Set("authorization", "Bearer "+accessToken)
+
+	return doWorkspaceJSON(request, dest)
+}
+
+func jsonMarshalWorkspaceBody(body any) (string, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }

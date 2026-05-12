@@ -60,8 +60,9 @@ export function LoginPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    const normalizedUsername = username.trim()
-    const normalizedPassword = password.trim()
+    const formData = new FormData(event.currentTarget)
+    const normalizedUsername = String(formData.get('username') ?? username).trim()
+    const normalizedPassword = String(formData.get('password') ?? password).trim()
     if (!normalizedUsername || !normalizedPassword) {
       const nextError = '请输入用户名和密码'
       setErrorMessage(nextError)
@@ -157,8 +158,14 @@ export function LoginPage() {
                   </label>
                   <Input
                     id="desktop-login-username"
+                    name="username"
                     value={username}
-                    onChange={(event) => setUsername(event.target.value)}
+                    onChange={(event) => {
+                      setUsername(event.target.value)
+                      if (errorMessage) {
+                        setErrorMessage('')
+                      }
+                    }}
                     placeholder="请输入用户名"
                     autoComplete="username"
                     error={Boolean(errorMessage) && !username.trim()}
@@ -172,9 +179,15 @@ export function LoginPage() {
                   </label>
                   <Input
                     id="desktop-login-password"
+                    name="password"
                     type="password"
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                      setPassword(event.target.value)
+                      if (errorMessage) {
+                        setErrorMessage('')
+                      }
+                    }}
                     placeholder="请输入密码"
                     autoComplete="current-password"
                     error={Boolean(errorMessage) && !password.trim()}

@@ -246,6 +246,10 @@ export function FetchDesktopAuthProfile(arg1) {
   return window['go']['main']['App']['FetchDesktopAuthProfile'](arg1);
 }
 
+export function FetchDesktopSharedLoginBindSession(arg1, arg2) {
+  return window['go']['main']['App']['FetchDesktopSharedLoginBindSession'](arg1, arg2);
+}
+
 export function FetchRemoteAuthorProfile(arg1, arg2) {
   return window['go']['main']['App']['FetchRemoteAuthorProfile'](arg1, arg2);
 }
@@ -360,6 +364,14 @@ export function SaveDesktopAuthSession(arg1, arg2) {
 
 export function SetLogLevel(arg1) {
   return window['go']['main']['App']['SetLogLevel'](arg1);
+}
+
+export function StartDesktopSharedLoginBind(arg1, arg2) {
+  return window['go']['main']['App']['StartDesktopSharedLoginBind'](arg1, arg2);
+}
+
+export function StartDesktopSharedLoginValidate(arg1, arg2) {
+  return window['go']['main']['App']['StartDesktopSharedLoginValidate'](arg1, arg2);
 }
 
 export function StartInstance(arg1) {

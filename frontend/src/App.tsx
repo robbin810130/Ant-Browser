@@ -12,6 +12,7 @@ import {
   loadDesktopAuthSession,
   runDesktopAuthStrongCleanup,
 } from './modules/auth/api'
+import type { DesktopAuthStrongCleanupReason } from './modules/auth/api'
 import { useNotificationStore } from './store/notificationStore'
 import { useAuthStore } from './store/authStore'
 import { useBackupStore } from './store/backupStore'
@@ -263,6 +264,46 @@ function CloseConfirmModal() {
   )
 }
 
+function DevDesktopAuthCleanupPanel() {
+  const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
+  const signingOut = useAuthStore((state) => state.signingOut)
+  const setAnonymous = useAuthStore((state) => state.setAnonymous)
+  const setSigningOut = useAuthStore((state) => state.setSigningOut)
+
+  if (!isDev) {
+    return null
+  }
+
+  async function run(reason: DesktopAuthStrongCleanupReason) {
+    if (signingOut) return
+
+    setSigningOut()
+    try {
+      await runDesktopAuthStrongCleanup(reason)
+    } finally {
+      setAnonymous()
+      window.location.replace(`/login${reason === 'logout' ? '' : `?reason=${encodeURIComponent(reason)}`}`)
+    }
+  }
+
+  return (
+    <div className="fixed bottom-4 left-4 z-[100] rounded-2xl border border-amber-200 bg-white/95 p-3 shadow-[0_20px_48px_rgba(15,23,42,0.14)] backdrop-blur">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Dev Cleanup</div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="danger" onClick={() => void run('logout')} disabled={signingOut}>
+          注销
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => void run('switch_account')} disabled={signingOut}>
+          切换账号
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => void run('rebind_device')} disabled={signingOut}>
+          重绑设备
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   useWailsNotifications()
   const [quickLaunchOpen, setQuickLaunchOpen] = useState(false)
@@ -344,6 +385,32 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
+    if (!isDev) return
+
+    const params = new URLSearchParams(window.location.search)
+    const reason = params.get('desktopAuthCleanup')
+    const allowedReasons = new Set<DesktopAuthStrongCleanupReason>(['logout', 'switch_account', 'rebind_device'])
+    if (!reason || !allowedReasons.has(reason as DesktopAuthStrongCleanupReason)) return
+
+    const cleanupReason = reason as DesktopAuthStrongCleanupReason
+
+    const run = async () => {
+      try {
+        await runDesktopAuthStrongCleanup(cleanupReason)
+      } finally {
+        setAnonymous()
+        const nextURL = new URL(window.location.href)
+        nextURL.searchParams.delete('desktopAuthCleanup')
+        window.history.replaceState({}, '', `${nextURL.pathname}${nextURL.search}${nextURL.hash}`)
+        window.location.replace(`/login${cleanupReason === 'logout' ? '' : `?reason=${encodeURIComponent(cleanupReason)}`}`)
+      }
+    }
+
+    void run()
+  }, [setAnonymous])
+
   if (!authRecoveryComplete) {
     return (
       <ThemeProvider>
@@ -388,6 +455,7 @@ function App() {
         </Suspense>
         <ToastContainer />
         <CloseConfirmModal />
+        <DevDesktopAuthCleanupPanel />
         <Suspense fallback={null}>
           {quickLaunchOpen ? (
             <QuickLaunchModal open={quickLaunchOpen} onClose={() => setQuickLaunchOpen(false)} />
