@@ -1,19 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight, ChevronUp, LayoutGrid, List, RefreshCw, Search, Store } from 'lucide-react'
-import { Badge, Button, Card, Input, StatCard, Table, toast } from '../../../shared/components'
+import { Badge, Button, Card, Input, Modal, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import {
   deriveWorkspaceDashboardStats,
+  fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
   openWorkspaceShop,
+  startWorkspaceSharedLoginBind,
+  startWorkspaceSharedLoginValidate,
 } from '../../workspace/api'
 import { ShopInstanceActionCell } from '../../workspace/components/ShopInstanceActionCell'
 import { ShopInstanceDrawer } from '../../workspace/components/ShopInstanceDrawer'
 import { ShopInstanceStatusBadge } from '../../workspace/components/ShopInstanceStatusBadge'
-import type { WorkspaceAuthorizedShop } from '../../workspace/types'
+import type { WorkspaceAuthorizedShop, WorkspaceSharedLoginBindSession } from '../../workspace/types'
+import { useAuthStore } from '../../../store/authStore'
 
 type ViewMode = 'table' | 'card'
 type StatusFilter = 'all' | 'ready' | 'attention' | 'running'
+type SharedLoginAction = 'bind' | 'validate'
+
+type SharedLoginDialogState = {
+  action: SharedLoginAction
+  shopId: string
+  shopName: string
+  session: WorkspaceSharedLoginBindSession | null
+  starting: boolean
+  terminalHandled: boolean
+  errorMessage: string
+}
 
 const PLACEHOLDER_TIME = '-'
 
@@ -31,14 +46,31 @@ function lastOpenLabel() {
   return PLACEHOLDER_TIME
 }
 
-function actionPendingMessage(action: 'bind' | 'validate', shop: WorkspaceAuthorizedShop) {
+function sharedLoginActionLabel(action: SharedLoginAction) {
   if (action === 'bind') {
-    return `店铺 ${shop.shopName || shop.shopId} 的“更新凭据”将在后续任务接入共享登录绑定流程`
+    return '更新凭据'
   }
-  return `店铺 ${shop.shopName || shop.shopId} 的“本机验证”将在后续任务接入本机验证流程`
+  return '本机验证'
+}
+
+function sharedLoginActionSuccessMessage(action: SharedLoginAction, shopName: string) {
+  if (action === 'bind') {
+    return `${shopName} 共享凭据已更新`
+  }
+  return `${shopName} 共享会话验证完成`
+}
+
+function isTerminalSharedLoginStatus(status: string) {
+  return new Set(['completed', 'failed', 'expired']).has(status.trim())
+}
+
+function resolveSharedLoginActionError(action: SharedLoginAction, error: any) {
+  const fallback = action === 'bind' ? '发起更新凭据失败' : '发起本机验证失败'
+  return String(error?.message || '').trim() || fallback
 }
 
 export function BrowserListPage() {
+  const accessToken = useAuthStore((state) => state.accessToken)
   const [shops, setShops] = useState<WorkspaceAuthorizedShop[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -48,6 +80,7 @@ export function BrowserListPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedShop, setSelectedShop] = useState<WorkspaceAuthorizedShop | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [sharedLoginDialog, setSharedLoginDialog] = useState<SharedLoginDialogState | null>(null)
 
   async function load(silent = false) {
     if (silent) {
@@ -136,8 +169,64 @@ export function BrowserListPage() {
     setSelectedIds(new Set())
   }
 
-  const handlePlaceholderAction = (action: 'bind' | 'validate', shop: WorkspaceAuthorizedShop) => {
-    toast.warning(actionPendingMessage(action, shop))
+  const handleSharedLoginTerminal = async (
+    action: SharedLoginAction,
+    shopName: string,
+    session: WorkspaceSharedLoginBindSession,
+  ) => {
+    await load(true)
+    if (session.status === 'completed') {
+      toast.success(sharedLoginActionSuccessMessage(action, shopName))
+      return
+    }
+    if (session.status === 'expired') {
+      toast.error(`${sharedLoginActionLabel(action)}已过期，请重新发起`)
+      return
+    }
+    toast.error(session.message || `${sharedLoginActionLabel(action)}失败，请重试`)
+  }
+
+  const handleSharedLoginAction = async (action: SharedLoginAction, shop: WorkspaceAuthorizedShop) => {
+    const token = accessToken.trim()
+    if (!token) {
+      toast.error('当前桌面登录态已失效，请重新登录')
+      return
+    }
+
+    const shopName = shop.shopName || shop.shopId
+    setSharedLoginDialog({
+      action,
+      shopId: shop.shopId,
+      shopName,
+      session: null,
+      starting: true,
+      terminalHandled: false,
+      errorMessage: '',
+    })
+
+    try {
+      const result = action === 'bind'
+        ? await startWorkspaceSharedLoginBind(token, shop.shopId)
+        : await startWorkspaceSharedLoginValidate(token, shop.shopId)
+      const nextShopName = result.detail.shopName || shopName
+      const terminal = isTerminalSharedLoginStatus(result.bindSession.status)
+      setSharedLoginDialog({
+        action,
+        shopId: shop.shopId,
+        shopName: nextShopName,
+        session: result.bindSession,
+        starting: false,
+        terminalHandled: terminal,
+        errorMessage: '',
+      })
+      if (terminal) {
+        await handleSharedLoginTerminal(action, nextShopName, result.bindSession)
+      }
+    } catch (error: any) {
+      console.error(`${action} shared login failed`, error)
+      setSharedLoginDialog(null)
+      toast.error(resolveSharedLoginActionError(action, error))
+    }
   }
 
   const handleOpen = async (shop: WorkspaceAuthorizedShop) => {
@@ -179,6 +268,69 @@ export function BrowserListPage() {
       toast.error(error?.message || '未能打开目标店铺后台')
     }
   }
+
+  useEffect(() => {
+    if (!sharedLoginDialog || sharedLoginDialog.starting || !sharedLoginDialog.session) {
+      return
+    }
+
+    const token = accessToken.trim()
+    const bindSessionId = sharedLoginDialog.session.bindSessionId.trim()
+    if (!token || !bindSessionId || isTerminalSharedLoginStatus(sharedLoginDialog.session.status)) {
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const nextSession = await fetchWorkspaceSharedLoginBindSession(token, bindSessionId)
+        if (cancelled) return
+
+        const terminal = isTerminalSharedLoginStatus(nextSession.status)
+        setSharedLoginDialog((prev) => {
+          if (!prev || prev.session?.bindSessionId !== bindSessionId) {
+            return prev
+          }
+          return {
+            ...prev,
+            session: nextSession,
+            terminalHandled: prev.terminalHandled || terminal,
+            errorMessage: '',
+          }
+        })
+
+        if (terminal) {
+          await handleSharedLoginTerminal(sharedLoginDialog.action, sharedLoginDialog.shopName, nextSession)
+        }
+      } catch (error: any) {
+        if (cancelled) return
+        console.error('poll shared login bind session failed', error)
+        setSharedLoginDialog((prev) => {
+          if (!prev || prev.session?.bindSessionId !== bindSessionId) {
+            return prev
+          }
+          return {
+            ...prev,
+            errorMessage: String(error?.message || '轮询共享登录状态失败，请稍后重试'),
+          }
+        })
+      }
+    }, 1500)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    accessToken,
+    sharedLoginDialog,
+    sharedLoginDialog?.action,
+    sharedLoginDialog?.shopName,
+    sharedLoginDialog?.starting,
+    sharedLoginDialog?.session?.bindSessionId,
+    sharedLoginDialog?.session?.status,
+    sharedLoginDialog?.session?.updatedAt,
+  ])
 
   const columns: TableColumn<WorkspaceAuthorizedShop>[] = [
     {
@@ -259,8 +411,8 @@ export function BrowserListPage() {
         <ShopInstanceActionCell
           shop={record}
           onOpen={() => void handleOpen(record)}
-          onBind={() => handlePlaceholderAction('bind', record)}
-          onValidate={() => handlePlaceholderAction('validate', record)}
+          onBind={() => void handleSharedLoginAction('bind', record)}
+          onValidate={() => void handleSharedLoginAction('validate', record)}
           onDetail={() => setSelectedShop(record)}
         />
       ),
@@ -427,8 +579,8 @@ export function BrowserListPage() {
                       <ShopInstanceActionCell
                         shop={shop}
                         onOpen={() => void handleOpen(shop)}
-                        onBind={() => handlePlaceholderAction('bind', shop)}
-                        onValidate={() => handlePlaceholderAction('validate', shop)}
+                        onBind={() => void handleSharedLoginAction('bind', shop)}
+                        onValidate={() => void handleSharedLoginAction('validate', shop)}
                         onDetail={() => setSelectedShop(shop)}
                         compact
                       />
@@ -446,6 +598,100 @@ export function BrowserListPage() {
         shop={selectedShop}
         onClose={() => setSelectedShop(null)}
       />
+
+      <Modal
+        open={Boolean(sharedLoginDialog)}
+        onClose={() => {
+          if (sharedLoginDialog?.session && isTerminalSharedLoginStatus(sharedLoginDialog.session.status)) {
+            setSharedLoginDialog(null)
+          }
+        }}
+        title={sharedLoginDialog ? `${sharedLoginActionLabel(sharedLoginDialog.action)} · ${sharedLoginDialog.shopName}` : undefined}
+        width="560px"
+        closable={Boolean(sharedLoginDialog?.session && isTerminalSharedLoginStatus(sharedLoginDialog.session.status))}
+        footer={sharedLoginDialog?.session && isTerminalSharedLoginStatus(sharedLoginDialog.session.status) ? (
+          <Button onClick={() => setSharedLoginDialog(null)}>
+            知道了
+          </Button>
+        ) : (
+          <Button variant="secondary" loading disabled>
+            处理中
+          </Button>
+        )}
+      >
+        {!sharedLoginDialog || sharedLoginDialog.starting || !sharedLoginDialog.session ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              正在发起{sharedLoginDialog ? sharedLoginActionLabel(sharedLoginDialog.action) : '操作'}，请稍候。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                    当前状态：{sharedLoginDialog.session.statusLabel || sharedLoginDialog.session.status || '-'}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    会话 ID：{sharedLoginDialog.session.bindSessionId || '-'}
+                  </div>
+                </div>
+                <Badge variant={sharedLoginDialog.session.status === 'completed' ? 'success' : sharedLoginDialog.session.status === 'failed' || sharedLoginDialog.session.status === 'expired' ? 'warning' : 'default'}>
+                  {sharedLoginDialog.session.sessionType || sharedLoginDialog.action}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
+              <p>{sharedLoginDialog.session.message || `${sharedLoginActionLabel(sharedLoginDialog.action)}已发起`}</p>
+              {!isTerminalSharedLoginStatus(sharedLoginDialog.session.status) ? (
+                <p>
+                  如已弹出受控浏览器，请在窗口内完成登录、验证或挑战处理；本弹层会自动刷新状态。
+                </p>
+              ) : null}
+              {sharedLoginDialog.session.manualActionRequired ? (
+                <p className="text-[var(--color-warning)]">
+                  当前需要人工完成登录或挑战步骤。
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 rounded-lg border border-[var(--color-border-default)] p-4 md:grid-cols-2">
+              <div>
+                <div className="text-xs font-medium text-[var(--color-text-muted)]">最后观察 URL</div>
+                <div className="mt-1 break-all text-sm text-[var(--color-text-primary)]">
+                  {sharedLoginDialog.session.lastObservedUrl || '-'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-[var(--color-text-muted)]">挑战类型</div>
+                <div className="mt-1 text-sm text-[var(--color-text-primary)]">
+                  {sharedLoginDialog.session.challengeType || '-'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-[var(--color-text-muted)]">开始时间</div>
+                <div className="mt-1 text-sm text-[var(--color-text-primary)]">
+                  {sharedLoginDialog.session.startedAt || '-'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-[var(--color-text-muted)]">最近更新时间</div>
+                <div className="mt-1 text-sm text-[var(--color-text-primary)]">
+                  {sharedLoginDialog.session.updatedAt || '-'}
+                </div>
+              </div>
+            </div>
+
+            {sharedLoginDialog.errorMessage ? (
+              <div className="rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 text-sm text-[var(--color-error)]">
+                {sharedLoginDialog.errorMessage}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

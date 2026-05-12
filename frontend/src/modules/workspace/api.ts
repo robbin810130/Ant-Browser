@@ -1,7 +1,17 @@
-import { WorkspaceAuthorizedShops, WorkspaceOpenShop, WorkspaceSummary } from '../../wailsjs/go/main/App'
+import {
+  FetchDesktopSharedLoginBindSession,
+  StartDesktopSharedLoginBind,
+  StartDesktopSharedLoginValidate,
+  WorkspaceAuthorizedShops,
+  WorkspaceOpenShop,
+  WorkspaceSummary,
+} from '../../wailsjs/go/main/App'
 import type {
   WorkspaceAuthorizedShop,
   WorkspaceDashboardStats,
+  WorkspaceSharedLoginActionResult,
+  WorkspaceSharedLoginBindSession,
+  WorkspaceSharedLoginDetail,
   WorkspaceOpenShopResult,
   WorkspaceSummary as WorkspaceSummaryModel,
 } from './types'
@@ -71,6 +81,43 @@ function normalizeOpenResult(input: any): WorkspaceOpenShopResult {
   }
 }
 
+function normalizeSharedLoginBindSession(input: any): WorkspaceSharedLoginBindSession {
+  return {
+    bindSessionId: String(input?.bindSessionId || ''),
+    traceId: String(input?.traceId || ''),
+    shopId: String(input?.shopId || ''),
+    shopName: String(input?.shopName || ''),
+    sessionType: String(input?.sessionType || ''),
+    status: String(input?.status || ''),
+    statusLabel: String(input?.statusLabel || ''),
+    message: String(input?.message || ''),
+    manualActionRequired: Boolean(input?.manualActionRequired),
+    lastObservedUrl: String(input?.lastObservedUrl || ''),
+    startedAt: String(input?.startedAt || ''),
+    expiresAt: String(input?.expiresAt || ''),
+    completedAt: String(input?.completedAt || ''),
+    updatedAt: String(input?.updatedAt || ''),
+    challengeType: String(input?.challengeType || ''),
+  }
+}
+
+function normalizeSharedLoginDetail(input: any): WorkspaceSharedLoginDetail {
+  return {
+    shopId: String(input?.shopId || ''),
+    shopName: String(input?.shopName || ''),
+    platformCode: String(input?.platformCode || ''),
+    sharedLoginStatus: String(input?.sharedLoginStatus || ''),
+    sharedLoginStatusLabel: String(input?.sharedLoginStatusLabel || ''),
+  }
+}
+
+function normalizeSharedLoginActionResult(input: any): WorkspaceSharedLoginActionResult {
+  return {
+    bindSession: normalizeSharedLoginBindSession(input?.bindSession),
+    detail: normalizeSharedLoginDetail(input?.detail),
+  }
+}
+
 function resolveOpenErrorMessage(code: string, message: string) {
   if (message) return message
   switch (code) {
@@ -94,4 +141,19 @@ export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenSh
         ...result,
         message: resolveOpenErrorMessage(result.code, result.message),
       }
+}
+
+export async function startWorkspaceSharedLoginBind(accessToken: string, shopId: string): Promise<WorkspaceSharedLoginActionResult> {
+  const payload = await StartDesktopSharedLoginBind(accessToken.trim(), shopId.trim())
+  return normalizeSharedLoginActionResult(payload)
+}
+
+export async function startWorkspaceSharedLoginValidate(accessToken: string, shopId: string): Promise<WorkspaceSharedLoginActionResult> {
+  const payload = await StartDesktopSharedLoginValidate(accessToken.trim(), shopId.trim())
+  return normalizeSharedLoginActionResult(payload)
+}
+
+export async function fetchWorkspaceSharedLoginBindSession(accessToken: string, bindSessionId: string): Promise<WorkspaceSharedLoginBindSession> {
+  const payload = await FetchDesktopSharedLoginBindSession(accessToken.trim(), bindSessionId.trim())
+  return normalizeSharedLoginBindSession(payload)
 }
