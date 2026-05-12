@@ -63,7 +63,7 @@ func (c Checker) Run(input CheckInput) CheckResult {
 
 	requiredPackages, err := c.Manifest.RequiredPackages(target)
 	if err != nil {
-		return repairableResult("PKG-TARGET-MISSING", fmt.Sprintf("目标平台 %s 缺少必需运行时包", target))
+		return blockedResult("PKG-TARGET-MISSING", fmt.Sprintf("当前平台 %s 缺少必需运行时包或未受支持", target))
 	}
 	if !c.Manifest.ResourceCompatible(input.ResourceVersion) {
 		return repairableResult("PKG-RESOURCE-OUTDATED", "资源版本过旧，需要修复")
@@ -108,5 +108,17 @@ func ResolvePackagePath(versionDir string, pkg RuntimePackage) string {
 	if versionDir == "" || packagePath == "" {
 		return ""
 	}
-	return filepath.Join(versionDir, filepath.FromSlash(packagePath))
+	if filepath.IsAbs(packagePath) {
+		return ""
+	}
+	joined := filepath.Join(versionDir, filepath.FromSlash(packagePath))
+	rel, err := filepath.Rel(versionDir, joined)
+	if err != nil {
+		return ""
+	}
+	rel = filepath.Clean(rel)
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return joined
 }
