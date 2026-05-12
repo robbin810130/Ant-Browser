@@ -61,6 +61,7 @@ type App struct {
 	workspaceAgentCmd *exec.Cmd
 	workspaceAgentLog *os.File
 	workspaceAgentURL string
+	releaseManagerFn  func() (*releaseRuntimeManager, error)
 	stopServicesOnce  sync.Once
 	finalizeOnce      sync.Once
 }
