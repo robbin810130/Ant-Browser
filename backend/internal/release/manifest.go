@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,7 @@ type Manifest struct {
 	AppVersion             string           `json:"appVersion"`
 	MinimumResourceVersion string           `json:"minimumResourceVersion"`
 	Packages               []RuntimePackage `json:"packages"`
+	Files                  []RuntimeFile    `json:"files,omitempty"`
 }
 
 type RuntimePackage struct {
@@ -23,6 +25,13 @@ type RuntimePackage struct {
 	SHA256   string `json:"sha256,omitempty"`
 	Path     string `json:"path,omitempty"`
 	Note     string `json:"note,omitempty"`
+}
+
+type RuntimeFile struct {
+	Path    string   `json:"path"`
+	SHA256  string   `json:"sha256"`
+	Targets []string `json:"targets"`
+	Note    string   `json:"note,omitempty"`
 }
 
 func LoadManifest(path string) (Manifest, error) {
@@ -59,5 +68,64 @@ func (m Manifest) RequiredPackages(target string) ([]RuntimePackage, error) {
 }
 
 func (m Manifest) ResourceCompatible(version string) bool {
-	return strings.TrimSpace(version) >= strings.TrimSpace(m.MinimumResourceVersion)
+	actual, ok := parseDottedVersion(version)
+	if !ok {
+		return false
+	}
+	floor, ok := parseDottedVersion(m.MinimumResourceVersion)
+	if !ok {
+		return false
+	}
+	return compareDottedVersion(actual, floor) >= 0
+}
+
+func parseDottedVersion(version string) ([]int, bool) {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return nil, false
+	}
+
+	parts := strings.Split(version, ".")
+	out := make([]int, len(parts))
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return nil, false
+			}
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+func compareDottedVersion(a, b []int) int {
+	maxLen := len(a)
+	if len(b) > maxLen {
+		maxLen = len(b)
+	}
+	for i := 0; i < maxLen; i++ {
+		av := 0
+		if i < len(a) {
+			av = a[i]
+		}
+		bv := 0
+		if i < len(b) {
+			bv = b[i]
+		}
+		if av < bv {
+			return -1
+		}
+		if av > bv {
+			return 1
+		}
+	}
+	return 0
 }
