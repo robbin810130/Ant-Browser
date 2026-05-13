@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -228,15 +227,6 @@ func (m *releaseRuntimeManager) syncRuntimePackages(ctx context.Context) error {
 		return err
 	}
 
-	for _, file := range manifest.Files {
-		if !slices.Contains(file.Targets, target) {
-			continue
-		}
-		if err := copyManifestFile(filepath.Join(layout.InstallRoot, "publish"), versionDir, file); err != nil {
-			return err
-		}
-	}
-
 	for _, pkg := range packages {
 		if strings.EqualFold(strings.TrimSpace(pkg.Kind), "browser-core") {
 			continue
@@ -244,12 +234,23 @@ func (m *releaseRuntimeManager) syncRuntimePackages(ctx context.Context) error {
 		if pkg.Path == "" {
 			continue
 		}
+		src := filepath.Join(layout.InstallRoot, "publish", filepath.FromSlash(strings.TrimSpace(pkg.Path)))
 		dst := release.ResolvePackagePath(versionDir, pkg)
 		if dst == "" {
 			return fmt.Errorf("invalid package path for %s", pkg.ID)
 		}
-		if _, err := os.Stat(dst); err != nil {
-			return fmt.Errorf("required runtime package missing after sync: %s", pkg.ID)
+		info, err := os.Stat(src)
+		if err != nil {
+			return fmt.Errorf("runtime package source missing for %s: %w", pkg.ID, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("runtime package source must be a file for %s", pkg.ID)
+		}
+		if err := copyFile(src, dst, info.Mode().Perm()); err != nil {
+			return err
+		}
+		if err := verifySHA256(dst, pkg.SHA256); err != nil {
+			return err
 		}
 		if err := fsutil.EnsureExecutable(dst); err != nil {
 			return err
@@ -308,30 +309,6 @@ func writeActiveRuntimePointer(pointerPath string, pointer activeRuntimePointer)
 		return err
 	}
 	return os.WriteFile(pointerPath, data, 0o600)
-}
-
-func copyManifestFile(publishRoot, versionDir string, file release.RuntimeFile) error {
-	relPath := filepath.FromSlash(strings.TrimSpace(file.Path))
-	if relPath == "" || relPath == "." {
-		return fmt.Errorf("invalid runtime file path")
-	}
-
-	src := filepath.Join(publishRoot, relPath)
-	dst := filepath.Join(versionDir, relPath)
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
-		return fmt.Errorf("runtime file source must be a file: %s", src)
-	}
-	if err := copyFile(src, dst, info.Mode().Perm()); err != nil {
-		return err
-	}
-	if err := verifySHA256(dst, file.SHA256); err != nil {
-		return err
-	}
-	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
