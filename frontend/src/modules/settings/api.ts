@@ -1,6 +1,8 @@
 // Settings 模块 API
 import type { AppSettings } from './types'
 import { defaultSettings } from './types'
+import { exportDesktopEnvironmentDiagnostics, getDesktopEnvironmentStatus, repairDesktopEnvironment } from '../runtime/api'
+import type { SettingsEnvironmentStatus } from './types'
 
 // 本地存储 key
 const SETTINGS_KEY = 'app_settings'
@@ -84,4 +86,16 @@ export async function importSystemConfig(resetFirst: boolean): Promise<BackupAct
     return { cancelled: false, message: '当前环境不支持后端加载接口' }
   }
   return (await bindings.BackupImportPackage(resetFirst)) || {}
+}
+
+export async function recheckEnvironmentStatus(): Promise<SettingsEnvironmentStatus> {
+  return getDesktopEnvironmentStatus()
+}
+
+export async function repairEnvironmentNow(): Promise<SettingsEnvironmentStatus> {
+  return repairDesktopEnvironment()
+}
+
+export async function exportEnvironmentDiagnostics(): Promise<string> {
+  return exportDesktopEnvironmentDiagnostics()
 }

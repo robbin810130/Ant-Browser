@@ -1,3 +1,5 @@
+import type { EnvironmentStatus } from '../runtime/types'
+
 // Settings 模块类型定义
 
 export interface AppSettings {
@@ -43,3 +45,5 @@ export const defaultSettings: AppSettings = {
   maxMemoryMB: 1024,
   gcPercent: 100,
 }
+
+export type SettingsEnvironmentStatus = EnvironmentStatus
