@@ -34,3 +34,10 @@ Behavior:
 - the script shows console options for publish scope: `master` / `master+release` / `master+tag` / `master+release+tag`
 - running the script will publish directly; use `-DryRun` only when you explicitly want a no-push preview
 - command line switches are kept only for automation/manual override
+
+## Runtime contract
+
+- packaged builds must include `publish/runtime-manifest.json`
+- packaged Windows and macOS bundles stage required payloads under `publish/bin/...` according to manifest `packages`
+- optional source metadata lives in `publish/runtime-sources.json`
+- `runtime/current.json` is created in the writable state root after the first validated activation, not committed into release snapshots

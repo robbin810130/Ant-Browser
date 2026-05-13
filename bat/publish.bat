@@ -1,4 +1,6 @@
 @echo off
+rem Runtime contract: publish.ps1 stages publish/runtime-manifest.json and publish/bin/* payloads.
+rem runtime/current.json is created on first successful activation under the writable state root.
 setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
