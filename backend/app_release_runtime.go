@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/release"
 	"context"
@@ -14,7 +15,9 @@ import (
 )
 
 type releaseRuntimeManager struct {
-	app *App
+	app                    *App
+	remoteManifestProvider func(context.Context) (release.Manifest, error)
+	activationProbe        func(string) error
 }
 
 type activeRuntimePointer struct {
@@ -44,6 +47,22 @@ func (a *App) RepairDesktopEnvironment() (release.CheckResult, error) {
 		return release.CheckResult{}, err
 	}
 	return manager.RepairAndRecheck(a.ctx)
+}
+
+func (a *App) CheckDesktopReleaseUpdate() (release.UpdateState, error) {
+	manager, err := a.releaseManager()
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+	return manager.CheckForUpdate(a.ctx)
+}
+
+func (a *App) ApplyDesktopReleaseUpdate() (release.UpdateState, error) {
+	manager, err := a.releaseManager()
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+	return manager.ApplyConfirmedUpdate(a.ctx)
 }
 
 func (a *App) releaseManager() (*releaseRuntimeManager, error) {
@@ -136,6 +155,44 @@ func (m *releaseRuntimeManager) ApplyRepairAction(ctx context.Context, action re
 	}
 }
 
+func (m *releaseRuntimeManager) CheckForUpdate(ctx context.Context) (release.UpdateState, error) {
+	manager, err := m.updateManager(ctx)
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+
+	localResourceVersion := manager.CurrentResourceVersion()
+	if strings.TrimSpace(localResourceVersion) == "" {
+		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
+	}
+	return manager.ClassifyUpdate(localResourceVersion), nil
+}
+
+func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (release.UpdateState, error) {
+	manager, err := m.updateManager(ctx)
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+
+	localResourceVersion := manager.CurrentResourceVersion()
+	if strings.TrimSpace(localResourceVersion) == "" {
+		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
+	}
+	state := manager.ClassifyUpdate(localResourceVersion)
+	if state.Kind == "none" {
+		return state, nil
+	}
+
+	targetVersion := strings.TrimSpace(state.ResourceVersion)
+	if targetVersion == "" {
+		return state, fmt.Errorf("remote resource version is required")
+	}
+	if err := manager.ActivateVersion(targetVersion, m.runtimeActivationProbeForManifest(manager.RemoteManifest)); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
 func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string, status activeRuntimePointerStatus) {
 	data, err := os.ReadFile(pointerPath)
 	if err != nil {
@@ -158,6 +215,28 @@ func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, versi
 	return resourceVersion, version, activeRuntimePointerOK
 }
 
+func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Manager, error) {
+	_ = ctx
+	localManifest, err := release.LoadManifest(m.manifestPath())
+	if err != nil {
+		return release.Manager{}, err
+	}
+
+	remoteManifest := localManifest
+	if m.remoteManifestProvider != nil {
+		remoteManifest, err = m.remoteManifestProvider(ctx)
+		if err != nil {
+			return release.Manager{}, err
+		}
+	}
+
+	return release.Manager{
+		LocalManifest:  localManifest,
+		RemoteManifest: remoteManifest,
+		Layout:         m.app.runtimeLayout(),
+	}, nil
+}
+
 func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string) string {
 	packages, err := manifest.RequiredPackages(target)
 	if err != nil {
@@ -169,6 +248,39 @@ func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string
 		}
 	}
 	return ""
+}
+
+func (m *releaseRuntimeManager) runtimeActivationProbeForManifest(manifest release.Manifest) func(string) error {
+	if m.activationProbe != nil {
+		return m.activationProbe
+	}
+	return func(versionDir string) error {
+		return m.probeRuntimePackages(manifest, versionDir)
+	}
+}
+
+func (m *releaseRuntimeManager) probeRuntimePackages(manifest release.Manifest, versionDir string) error {
+	packages, err := manifest.RequiredPackages(release.DefaultTarget())
+	if err != nil {
+		return err
+	}
+	for _, pkg := range packages {
+		if strings.EqualFold(strings.TrimSpace(pkg.Kind), "browser-core") {
+			corePath := release.ResolvePackagePath(versionDir, pkg)
+			if result := browser.ValidateCoreDirectory(corePath); !result.Valid {
+				return fmt.Errorf(result.Message)
+			}
+			continue
+		}
+		path := release.ResolvePackagePath(versionDir, pkg)
+		if path == "" {
+			return fmt.Errorf("invalid package path for %s", pkg.ID)
+		}
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("required runtime package missing after activation: %s", pkg.ID)
+		}
+	}
+	return nil
 }
 
 func (m *releaseRuntimeManager) manifestPath() string {

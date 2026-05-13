@@ -176,6 +176,126 @@ func TestRepairDesktopEnvironmentRepairsOutdatedRuntimePackage(t *testing.T) {
 	}
 }
 
+func TestCheckDesktopReleaseUpdateReturnsRequired(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	app := newRuntimeStatusTestApp(t, root)
+	app.releaseManagerFn = func() (*releaseRuntimeManager, error) {
+		return &releaseRuntimeManager{
+			app: app,
+			remoteManifestProvider: func(context.Context) (release.Manifest, error) {
+				return release.Manifest{
+					SchemaVersion:          2,
+					AppVersion:             "1.2.0",
+					MinimumResourceVersion: "2026.06.01",
+					Packages: []release.RuntimePackage{
+						{ID: "runtime-bin", Target: release.DefaultTarget(), Kind: "runtime-binary", Required: true, Version: "1.0.0", Path: "bin/test-runtime"},
+					},
+				}, nil
+			},
+		}, nil
+	}
+
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "required" {
+		t.Fatalf("expected required update, got %#v", state)
+	}
+}
+
+func TestApplyDesktopReleaseUpdateRollsBackOnProbeFailure(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixture(t, root)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+	app := newRuntimeStatusTestApp(t, root)
+	app.releaseManagerFn = func() (*releaseRuntimeManager, error) {
+		return &releaseRuntimeManager{
+			app: app,
+			remoteManifestProvider: func(context.Context) (release.Manifest, error) {
+				return release.Manifest{
+					SchemaVersion:          2,
+					AppVersion:             "1.2.0",
+					MinimumResourceVersion: "2026.06.01",
+					Packages: []release.RuntimePackage{
+						{ID: "runtime-bin", Target: release.DefaultTarget(), Kind: "runtime-binary", Required: true, Version: "1.0.0", Path: "bin/test-runtime"},
+					},
+				}, nil
+			},
+			activationProbe: func(string) error {
+				return fmt.Errorf("probe failed")
+			},
+		}, nil
+	}
+
+	if _, err := app.ApplyDesktopReleaseUpdate(); err == nil {
+		t.Fatal("expected ApplyDesktopReleaseUpdate to fail")
+	}
+	data, err := os.ReadFile(layout.ActivePointerPath())
+	if err != nil {
+		t.Fatalf("read active runtime pointer: %v", err)
+	}
+	expected := `{"version":"2026.05.12","resourceVersion":"2026.05.12"}`
+	if string(data) != expected {
+		t.Fatalf("expected pointer rollback to previous version, got %s", string(data))
+	}
+}
+
+func TestApplyDesktopReleaseUpdateSwitchesPointerOnSuccess(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixture(t, root)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+	newVersionDir, err := layout.VersionDir("2026.06.01")
+	if err != nil {
+		t.Fatalf("new version dir: %v", err)
+	}
+	runtimeFile := filepath.Join(newVersionDir, "bin", "test-runtime")
+	if err := os.MkdirAll(filepath.Dir(runtimeFile), 0o755); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	if err := os.WriteFile(runtimeFile, []byte("runtime-binary"), 0o755); err != nil {
+		t.Fatalf("write runtime file: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	app.releaseManagerFn = func() (*releaseRuntimeManager, error) {
+		return &releaseRuntimeManager{
+			app: app,
+			remoteManifestProvider: func(context.Context) (release.Manifest, error) {
+				return release.Manifest{
+					SchemaVersion:          2,
+					AppVersion:             "1.2.0",
+					MinimumResourceVersion: "2026.06.01",
+					Packages: []release.RuntimePackage{
+						{ID: "runtime-bin", Target: release.DefaultTarget(), Kind: "runtime-binary", Required: true, Version: "1.0.0", Path: "bin/test-runtime"},
+					},
+				}, nil
+			},
+		}, nil
+	}
+
+	state, err := app.ApplyDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("ApplyDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "required" {
+		t.Fatalf("expected required update state, got %#v", state)
+	}
+	data, err := os.ReadFile(layout.ActivePointerPath())
+	if err != nil {
+		t.Fatalf("read active runtime pointer: %v", err)
+	}
+	expected := `{"version":"2026.06.01","resourceVersion":"2026.06.01"}`
+	if string(data) != expected {
+		t.Fatalf("expected pointer to switch to new version, got %s", string(data))
+	}
+}
+
 func newRuntimeStatusTestApp(t *testing.T, root string) *App {
 	t.Helper()
 	app := NewApp(root)
