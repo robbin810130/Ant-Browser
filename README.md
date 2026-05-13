@@ -140,7 +140,7 @@ Ant Browser 适合以下场景：
 
 1. 开发默认使用 `master` 分支；该分支不带测试用户数据，适合作为日常开发基线。
 2. 如需带测试库的演示环境，请切换到 `user_data` 分支。
-3. Windows 统一执行 `bat\dev.bat`；默认是稳定模式，如需前端 HMR 联调使用 `bat\dev.bat live`，如需受限内存复现使用 `bat\dev.bat limited`。脚本会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，优先级为环境变量 > 位置参数 > 默认路径 `%USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop`；若 `http://127.0.0.1:4174/api/health` 不可达，还会优先从 `ANT_BROWSER_WORKSPACE_SERVER_ROOT` / `WORKSPACE_SERVER_ROOT` / install root 推导出的主仓库自动拉起 `npm run server`。
+3. Windows 统一执行 `bat\dev.bat`；默认是稳定模式，如需前端 HMR 联调使用 `bat\dev.bat live`，如需受限内存复现使用 `bat\dev.bat limited`。脚本会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，优先级为环境变量 > 位置参数 > 默认路径 `%USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop`；若 `http://127.0.0.1:4174/api/health` 不可达，还会优先从 `ANT_BROWSER_WORKSPACE_SERVER_ROOT` / `WORKSPACE_SERVER_ROOT` / install root 推导出的主仓库自动拉起 `node --experimental-sqlite server/index.mjs`。
 4. macOS 开发可执行 `scripts/dev-mac.sh`；默认 `stable` 模式会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，默认尝试 `$HOME/Codex/1688shopManager/desktop-repos/1688shop-desktop`，也可手动传入 install root 参数或预先设置环境变量覆盖。若本地 `4174` 未启动，脚本也会尝试自动补起 workspace server。
 5. Windows 运行时使用 `bin/xray.exe`、`bin/sing-box.exe`；Linux 运行时使用 `bin/linux-<arch>/xray`、`bin/linux-<arch>/sing-box`。
 6. 运行时文件采用“仓库固定 + 哈希校验”，校验清单在 `publish/runtime-manifest.json`，固定来源清单在 `publish/runtime-sources.json`。

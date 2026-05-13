@@ -356,7 +356,7 @@ if errorlevel 1 (
 echo Workspace server: starting from %WORKSPACE_SERVER_ROOT%
 set "WORKSPACE_SERVER_OUT_LOG=%CD%\tmp-workspace-server.log"
 set "WORKSPACE_SERVER_ERR_LOG=%CD%\tmp-workspace-server.err.log"
-for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$root=$env:ANT_BROWSER_WORKSPACE_SERVER_ROOT; $out=$env:WORKSPACE_SERVER_OUT_LOG; $err=$env:WORKSPACE_SERVER_ERR_LOG; $p=Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','server' -WorkingDirectory $root -RedirectStandardOutput $out -RedirectStandardError $err -PassThru; Write-Output $p.Id"`) do (
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -ExecutionPolicy Bypass -File "bat\start-workspace-server.ps1" -WorkspaceServerRoot "%WORKSPACE_SERVER_ROOT%" -StdoutLog "%WORKSPACE_SERVER_OUT_LOG%" -StderrLog "%WORKSPACE_SERVER_ERR_LOG%"`) do (
     if not defined WORKSPACE_SERVER_PID set "WORKSPACE_SERVER_PID=%%a"
 )
 if not defined WORKSPACE_SERVER_PID (
