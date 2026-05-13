@@ -3,6 +3,8 @@ package backend
 import (
 	"ant-chrome/backend/internal/browser"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,6 +119,63 @@ func TestRepairDesktopEnvironmentRepairsMissingPointer(t *testing.T) {
 	}
 }
 
+func TestRepairDesktopEnvironmentRepairsOutdatedRuntimePackage(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixture(t, root)
+	oldVersionDir, err := layout.VersionDir("2026.05.01")
+	if err != nil {
+		t.Fatalf("old version dir: %v", err)
+	}
+	if err := os.MkdirAll(oldVersionDir, 0o755); err != nil {
+		t.Fatalf("mkdir old version dir: %v", err)
+	}
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.01","resourceVersion":"2026.05.01"}`), 0o600); err != nil {
+		t.Fatalf("write stale active runtime pointer: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	before, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus before repair returned error: %v", err)
+	}
+	if before.State != release.StateRepairable {
+		t.Fatalf("expected repairable state before repair, got %s with items %#v", before.State, before.Items)
+	}
+	if len(before.Items) == 0 || before.Items[0].Code != "PKG-RESOURCE-OUTDATED" {
+		t.Fatalf("expected PKG-RESOURCE-OUTDATED before repair, got %#v", before.Items)
+	}
+
+	after, err := app.RepairDesktopEnvironment()
+	if err != nil {
+		t.Fatalf("RepairDesktopEnvironment returned error: %v", err)
+	}
+	if after.State != release.StatePass {
+		t.Fatalf("expected pass state after repair, got %s with items %#v", after.State, after.Items)
+	}
+
+	newVersionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("new version dir: %v", err)
+	}
+	runtimeFile := filepath.Join(newVersionDir, "bin", "test-runtime")
+	data, err := os.ReadFile(runtimeFile)
+	if err != nil {
+		t.Fatalf("read repaired runtime file: %v", err)
+	}
+	if string(data) != "runtime-binary" {
+		t.Fatalf("unexpected repaired runtime file content: %q", string(data))
+	}
+
+	pointerData, err := os.ReadFile(layout.ActivePointerPath())
+	if err != nil {
+		t.Fatalf("read repaired active runtime pointer: %v", err)
+	}
+	expectedPointer := `{"version":"2026.05.12","resourceVersion":"2026.05.12"}`
+	if string(pointerData) != expectedPointer {
+		t.Fatalf("unexpected active runtime pointer content after repair: %s", string(pointerData))
+	}
+}
+
 func newRuntimeStatusTestApp(t *testing.T, root string) *App {
 	t.Helper()
 	app := NewApp(root)
@@ -139,6 +198,41 @@ func writeRuntimeManifestFixture(t *testing.T, root string) release.RuntimeLayou
 			{"id":"desktop-core","target":"`+release.DefaultTarget()+`","kind":"browser-core","required":true,"version":"136.0.0","path":"core"}
 		]
 	}`), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.ActivePointerPath()), 0o755); err != nil {
+		t.Fatalf("mkdir runtime root: %v", err)
+	}
+	return layout
+}
+
+func writeRuntimePackageManifestFixture(t *testing.T, root string) release.RuntimeLayout {
+	t.Helper()
+	layout := RuntimeReleaseLayout(root)
+	manifestPath := filepath.Clean(filepath.Join(root, "publish", "runtime-manifest.json"))
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatalf("mkdir manifest dir: %v", err)
+	}
+
+	runtimeContent := []byte("runtime-binary")
+	runtimeSHA := fmt.Sprintf("%x", sha256.Sum256(runtimeContent))
+	publishRuntimePath := filepath.Join(root, "publish", "bin", "test-runtime")
+	if err := os.MkdirAll(filepath.Dir(publishRuntimePath), 0o755); err != nil {
+		t.Fatalf("mkdir publish runtime dir: %v", err)
+	}
+	if err := os.WriteFile(publishRuntimePath, runtimeContent, 0o755); err != nil {
+		t.Fatalf("write publish runtime file: %v", err)
+	}
+
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 2,
+		"appVersion": "1.0.0",
+		"minimumResourceVersion": "2026.05.12",
+		"packages": [
+			{"id":"runtime-bin","target":"%s","kind":"runtime-binary","required":true,"version":"1.0.0","path":"bin/test-runtime","sha256":"%s"}
+		]
+	}`, release.DefaultTarget(), runtimeSHA)
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(layout.ActivePointerPath()), 0o755); err != nil {
