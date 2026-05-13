@@ -164,6 +164,11 @@ target = sys.argv[2]
 with open(manifest_path, "r", encoding="utf-8") as f:
     data = json.load(f)
 
+for item in data.get("packages", []):
+    if item.get("required") and (item.get("target") or "").strip().lower() == target.lower():
+        print("yes")
+        raise SystemExit(0)
+
 for item in data.get("files", []):
     if target in (item.get("targets") or []):
         print("yes")
@@ -240,6 +245,16 @@ cp "$XRAY_SRC" "$APP_MACOS_DIR/bin/xray"
 cp "$SINGBOX_SRC" "$APP_MACOS_DIR/bin/sing-box"
 cp "$CONFIG_INIT_SRC" "$APP_MACOS_DIR/config.yaml"
 chmod +x "$APP_MACOS_DIR/bin/xray" "$APP_MACOS_DIR/bin/sing-box"
+
+APP_PUBLISH_DIR="$APP_MACOS_DIR/publish"
+mkdir -p "$APP_PUBLISH_DIR/bin/$TARGET"
+cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"
+if [[ -f "$ROOT_DIR/publish/runtime-sources.json" ]]; then
+  cp "$ROOT_DIR/publish/runtime-sources.json" "$APP_PUBLISH_DIR/runtime-sources.json"
+fi
+cp "$XRAY_SRC" "$APP_PUBLISH_DIR/bin/$TARGET/xray"
+cp "$SINGBOX_SRC" "$APP_PUBLISH_DIR/bin/$TARGET/sing-box"
+chmod +x "$APP_PUBLISH_DIR/bin/$TARGET/xray" "$APP_PUBLISH_DIR/bin/$TARGET/sing-box"
 
 echo "  - downloading fingerprint core ${FINGERPRINT_CORE_TAG}..."
 CORE_TMP_DIR="$(mktemp -d)"
