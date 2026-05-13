@@ -31,7 +31,7 @@ bat\dev.bat stable C:\Users\you\Codex\1688shopManager\desktop-repos\1688shop-des
 默认行为：
 
 - workspace install root 优先级：`ANT_BROWSER_WORKSPACE_INSTALL_ROOT` > `WORKSPACE_INSTALL_ROOT` > 位置参数 > `%USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop`
-- 当 `http://127.0.0.1:4174/api/health` 不可达时，脚本会优先从 `ANT_BROWSER_WORKSPACE_SERVER_ROOT`、`WORKSPACE_SERVER_ROOT`、install root 向上两级推导出的主仓库、默认 `%USERPROFILE%\Codex\1688shopManager` 中自动寻找 workspace server 根并执行 `npm run server`
+- 当 `http://127.0.0.1:4174/api/health` 不可达时，脚本会优先从 `ANT_BROWSER_WORKSPACE_SERVER_ROOT`、`WORKSPACE_SERVER_ROOT`、install root 向上两级推导出的主仓库、默认 `%USERPROFILE%\Codex\1688shopManager` 中自动寻找 workspace server 根并执行 `node --experimental-sqlite server/index.mjs`
 - 如果脚本自己拉起了 workspace server，退出 `dev.bat` 时会一并清理该进程树
 - 稳定模式不依赖外部 Vite dev server，因此不会因为 watcher 或 `5218` 端口异常直接白屏
 - `live` 模式默认优先使用 `5218`，若端口被其他程序占用，会自动切换到下一个可用端口
