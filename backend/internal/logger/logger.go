@@ -185,6 +185,10 @@ func InitWithConfig(ctx context.Context, config LoggerConfig) {
 	globalLogger = logger
 }
 
+func GetBufferedEntries() []MemoryLogEntry {
+	return GetMemoryWriter().GetEntries()
+}
+
 // createFileWriterWithRotation 创建带分片功能的文件写入器
 func createFileWriterWithRotation(config LoggerConfig, formatter Formatter) (*FileWriter, *RotationManager, error) {
 	// 确保目录存在

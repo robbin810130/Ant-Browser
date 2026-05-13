@@ -2,11 +2,13 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/logger"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ant-chrome/backend/internal/release"
@@ -293,6 +295,44 @@ func TestApplyDesktopReleaseUpdateSwitchesPointerOnSuccess(t *testing.T) {
 	expected := `{"version":"2026.06.01","resourceVersion":"2026.06.01"}`
 	if string(data) != expected {
 		t.Fatalf("expected pointer to switch to new version, got %s", string(data))
+	}
+}
+
+func TestExportDesktopEnvironmentDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixture(t, root)
+	logger.Init(context.Background(), "info")
+	defer func() {
+		logger.GetMemoryWriter().Clear()
+		_ = logger.Close()
+	}()
+	logger.GetMemoryWriter().Clear()
+
+	log := logger.New("Release")
+	log.Error("runtime update failed", logger.F("accessToken", "secret-token"), logger.F("proxyPassword", "top-secret"))
+
+	app := newRuntimeStatusTestApp(t, root)
+	path, err := app.ExportDesktopEnvironmentDiagnostics()
+	if err != nil {
+		t.Fatalf("ExportDesktopEnvironmentDiagnostics returned error: %v", err)
+	}
+	if !strings.HasPrefix(path, layout.DiagnosticsRoot()) {
+		t.Fatalf("expected diagnostics path under %s, got %s", layout.DiagnosticsRoot(), path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read diagnostics bundle: %v", err)
+	}
+	content := string(data)
+	if strings.Contains(content, "secret-token") || strings.Contains(content, "top-secret") {
+		t.Fatal("expected exported diagnostics to redact sensitive values")
+	}
+	if !strings.Contains(content, "[REDACTED]") {
+		t.Fatal("expected exported diagnostics to contain redacted marker")
+	}
+	if !strings.Contains(content, "ENV-RUNTIME-POINTER-MISSING") {
+		t.Fatalf("expected diagnostics to include current environment failure code, got %s", content)
 	}
 }
 

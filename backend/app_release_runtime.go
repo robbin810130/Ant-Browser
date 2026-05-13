@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/fsutil"
+	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/release"
 	"context"
 	"crypto/sha256"
@@ -11,7 +12,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
+	"time"
 )
 
 type releaseRuntimeManager struct {
@@ -63,6 +66,14 @@ func (a *App) ApplyDesktopReleaseUpdate() (release.UpdateState, error) {
 		return release.UpdateState{}, err
 	}
 	return manager.ApplyConfirmedUpdate(a.ctx)
+}
+
+func (a *App) ExportDesktopEnvironmentDiagnostics() (string, error) {
+	manager, err := a.releaseManager()
+	if err != nil {
+		return "", err
+	}
+	return manager.ExportDiagnostics(a.ctx)
 }
 
 func (a *App) releaseManager() (*releaseRuntimeManager, error) {
@@ -193,6 +204,72 @@ func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (relea
 	return state, nil
 }
 
+func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, error) {
+	result, err := m.RunStartupCheck(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	layout := m.app.runtimeLayout()
+	manifest, _ := release.LoadManifest(m.manifestPath())
+	resourceVersion, version, _ := loadActiveRuntimeVersion(layout.ActivePointerPath())
+
+	errorCodes := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		if code := strings.TrimSpace(item.Code); code != "" {
+			errorCodes = append(errorCodes, code)
+		}
+	}
+
+	events := []release.DiagnosticEvent{{
+		EventTime:       time.Now().UTC().Format(time.RFC3339),
+		Stage:           "selfcheck",
+		Result:          diagnosticResultFromState(result.State),
+		ErrorCode:       strings.Join(errorCodes, ","),
+		AppVersion:      strings.TrimSpace(manifest.AppVersion),
+		ManifestVersion: strings.TrimSpace(manifest.MinimumResourceVersion),
+		ResourceVersion: strings.TrimSpace(resourceVersion),
+		Summary:         diagnosticSummary(result),
+		Fields: map[string]string{
+			"machineScope":       release.DefaultTarget(),
+			"environmentState":   string(result.State),
+			"activeRuntime":      strings.TrimSpace(version),
+			"runtimePointerPath": layout.ActivePointerPath(),
+		},
+	}}
+
+	logs := make([]release.DiagnosticLogEntry, 0, len(logger.GetBufferedEntries()))
+	for _, entry := range logger.GetBufferedEntries() {
+		logs = append(logs, release.DiagnosticLogEntry{
+			Time:      entry.Time,
+			Level:     entry.Level,
+			Component: entry.Component,
+			Message:   entry.Message,
+			Fields:    release.SanitizeLogFields(entry.Fields),
+		})
+	}
+
+	return release.WriteDiagnosticBundle(layout.DiagnosticsRoot(), release.DiagnosticBundle{
+		Platform:         fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH),
+		AppVersion:       strings.TrimSpace(manifest.AppVersion),
+		ManifestVersion:  strings.TrimSpace(manifest.MinimumResourceVersion),
+		ResourceVersion:  strings.TrimSpace(resourceVersion),
+		EnvironmentState: string(result.State),
+		ErrorCodes:       errorCodes,
+		Summary:          diagnosticSummary(result),
+		Paths: map[string]string{
+			"installRoot":     layout.InstallRoot,
+			"stateRoot":       layout.StateRoot,
+			"manifestPath":    m.manifestPath(),
+			"runtimeRoot":     layout.RuntimeRoot(),
+			"activePointer":   layout.ActivePointerPath(),
+			"diagnosticsRoot": layout.DiagnosticsRoot(),
+		},
+		Events: events,
+		Logs:   logs,
+	})
+}
+
 func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string, status activeRuntimePointerStatus) {
 	data, err := os.ReadFile(pointerPath)
 	if err != nil {
@@ -248,6 +325,24 @@ func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string
 		}
 	}
 	return ""
+}
+
+func diagnosticResultFromState(state release.CheckState) string {
+	switch state {
+	case release.StatePass:
+		return "success"
+	case release.StateRepairable:
+		return "warning"
+	default:
+		return "failure"
+	}
+}
+
+func diagnosticSummary(result release.CheckResult) string {
+	if len(result.Items) == 0 {
+		return fmt.Sprintf("environment state: %s", result.State)
+	}
+	return strings.TrimSpace(result.Items[0].Message)
 }
 
 func (m *releaseRuntimeManager) runtimeActivationProbeForManifest(manifest release.Manifest) func(string) error {
