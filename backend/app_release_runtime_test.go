@@ -121,6 +121,61 @@ func TestRepairDesktopEnvironmentRepairsMissingPointer(t *testing.T) {
 	}
 }
 
+func TestRepairDesktopEnvironmentRepairsMissingPointerByMaterializingRuntimePackage(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixture(t, root)
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.RepairDesktopEnvironment()
+	if err != nil {
+		t.Fatalf("RepairDesktopEnvironment returned error: %v", err)
+	}
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state after repair, got %s with items %#v", result.State, result.Items)
+	}
+
+	newVersionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("new version dir: %v", err)
+	}
+	runtimeFile := filepath.Join(newVersionDir, "bin", "test-runtime")
+	if _, err := os.Stat(runtimeFile); err != nil {
+		t.Fatalf("expected runtime package to be materialized, stat error: %v", err)
+	}
+
+	pointerData, err := os.ReadFile(layout.ActivePointerPath())
+	if err != nil {
+		t.Fatalf("read repaired active runtime pointer: %v", err)
+	}
+	expectedPointer := `{"version":"2026.05.12","resourceVersion":"2026.05.12"}`
+	if string(pointerData) != expectedPointer {
+		t.Fatalf("unexpected active runtime pointer content after repair: %s", string(pointerData))
+	}
+}
+
+func TestRepairDesktopEnvironmentFallsBackToWorkspaceRuntimeSource(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimePackageManifestFixtureWithoutPublishSource(t, root)
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.RepairDesktopEnvironment()
+	if err != nil {
+		t.Fatalf("RepairDesktopEnvironment returned error: %v", err)
+	}
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state after repair, got %s with items %#v", result.State, result.Items)
+	}
+
+	newVersionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("new version dir: %v", err)
+	}
+	runtimeFile := filepath.Join(newVersionDir, "bin", "test-runtime")
+	if _, err := os.Stat(runtimeFile); err != nil {
+		t.Fatalf("expected runtime package to be materialized from workspace source, stat error: %v", err)
+	}
+}
+
 func TestRepairDesktopEnvironmentRepairsOutdatedRuntimePackage(t *testing.T) {
 	root := t.TempDir()
 	layout := writeRuntimePackageManifestFixture(t, root)
@@ -382,6 +437,41 @@ func writeRuntimePackageManifestFixture(t *testing.T, root string) release.Runti
 	}
 	if err := os.WriteFile(publishRuntimePath, runtimeContent, 0o755); err != nil {
 		t.Fatalf("write publish runtime file: %v", err)
+	}
+
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 2,
+		"appVersion": "1.0.0",
+		"minimumResourceVersion": "2026.05.12",
+		"packages": [
+			{"id":"runtime-bin","target":"%s","kind":"runtime-binary","required":true,"version":"1.0.0","path":"bin/test-runtime","sha256":"%s"}
+		]
+	}`, release.DefaultTarget(), runtimeSHA)
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(layout.ActivePointerPath()), 0o755); err != nil {
+		t.Fatalf("mkdir runtime root: %v", err)
+	}
+	return layout
+}
+
+func writeRuntimePackageManifestFixtureWithoutPublishSource(t *testing.T, root string) release.RuntimeLayout {
+	t.Helper()
+	layout := RuntimeReleaseLayout(root)
+	manifestPath := filepath.Clean(filepath.Join(root, "publish", "runtime-manifest.json"))
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatalf("mkdir manifest dir: %v", err)
+	}
+
+	runtimeContent := []byte("runtime-binary")
+	runtimeSHA := fmt.Sprintf("%x", sha256.Sum256(runtimeContent))
+	workspaceRuntimePath := filepath.Join(root, "bin", "test-runtime")
+	if err := os.MkdirAll(filepath.Dir(workspaceRuntimePath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace runtime dir: %v", err)
+	}
+	if err := os.WriteFile(workspaceRuntimePath, runtimeContent, 0o755); err != nil {
+		t.Fatalf("write workspace runtime file: %v", err)
 	}
 
 	manifest := fmt.Sprintf(`{

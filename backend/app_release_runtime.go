@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,8 @@ const (
 	activeRuntimePointerMissing activeRuntimePointerStatus = "missing"
 	activeRuntimePointerInvalid activeRuntimePointerStatus = "invalid"
 )
+
+var errNoRuntimeVersionsAvailable = errors.New("no runtime versions available to repair pointer")
 
 func (a *App) GetDesktopEnvironmentStatus() (release.CheckResult, error) {
 	manager, err := a.releaseManager()
@@ -391,6 +394,9 @@ func (m *releaseRuntimeManager) rewriteActivePointer() error {
 
 	version, err := m.inferRepairVersion(layout, manifest)
 	if err != nil {
+		if errors.Is(err, errNoRuntimeVersionsAvailable) {
+			return m.syncRuntimePackages(context.Background())
+		}
 		return err
 	}
 	return writeActiveRuntimePointer(layout.ActivePointerPath(), activeRuntimePointer{
@@ -441,7 +447,10 @@ func (m *releaseRuntimeManager) syncRuntimePackages(ctx context.Context) error {
 		if pkg.Path == "" {
 			continue
 		}
-		src := filepath.Join(layout.InstallRoot, "publish", filepath.FromSlash(strings.TrimSpace(pkg.Path)))
+		src, err := resolveRuntimePackageSource(layout, pkg)
+		if err != nil {
+			return err
+		}
 		dst := release.ResolvePackagePath(versionDir, pkg)
 		if dst == "" {
 			return fmt.Errorf("invalid package path for %s", pkg.ID)
@@ -483,7 +492,7 @@ func (m *releaseRuntimeManager) inferRepairVersion(layout release.RuntimeLayout,
 	entries, err := os.ReadDir(layout.VersionsRoot())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no runtime versions available to repair pointer")
+			return "", errNoRuntimeVersionsAvailable
 		}
 		return "", err
 	}
@@ -539,6 +548,24 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	return out.Close()
+}
+
+func resolveRuntimePackageSource(layout release.RuntimeLayout, pkg release.RuntimePackage) (string, error) {
+	packagePath := filepath.FromSlash(strings.TrimSpace(pkg.Path))
+	if packagePath == "" {
+		return "", fmt.Errorf("runtime package path is required for %s", pkg.ID)
+	}
+
+	candidates := []string{
+		filepath.Join(layout.InstallRoot, "publish", packagePath),
+		filepath.Join(layout.InstallRoot, packagePath),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("runtime package source missing for %s", pkg.ID)
 }
 
 func verifySHA256(path, expected string) error {
