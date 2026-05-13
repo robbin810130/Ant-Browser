@@ -356,7 +356,7 @@ if errorlevel 1 (
 echo Workspace server: starting from %WORKSPACE_SERVER_ROOT%
 set "WORKSPACE_SERVER_OUT_LOG=%CD%\tmp-workspace-server.log"
 set "WORKSPACE_SERVER_ERR_LOG=%CD%\tmp-workspace-server.err.log"
-for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$root=$env:ANT_BROWSER_WORKSPACE_SERVER_ROOT; $out=$env:WORKSPACE_SERVER_OUT_LOG; $err=$env:WORKSPACE_SERVER_ERR_LOG; $p=Start-Process -FilePath 'npm.cmd' -ArgumentList @('run','server') -WorkingDirectory $root -RedirectStandardOutput $out -RedirectStandardError $err -PassThru; Write-Output $p.Id"`) do (
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$root=$env:ANT_BROWSER_WORKSPACE_SERVER_ROOT; $out=$env:WORKSPACE_SERVER_OUT_LOG; $err=$env:WORKSPACE_SERVER_ERR_LOG; $p=Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','server' -WorkingDirectory $root -RedirectStandardOutput $out -RedirectStandardError $err -PassThru; Write-Output $p.Id"`) do (
     if not defined WORKSPACE_SERVER_PID set "WORKSPACE_SERVER_PID=%%a"
 )
 if not defined WORKSPACE_SERVER_PID (
@@ -587,11 +587,11 @@ exit /b 0
 echo Starting frontend watcher...
 set "WATCHER_PID="
 if "%FRONTEND_LIMITED_MODE%"=="1" (
-    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/run-limited-frontend-dev.ps1','-WorkingDirectory','%CD%','-MemoryLimitMB','%FRONTEND_PROCESS_MEMORY_LIMIT_MB%','-MaxOldSpaceMB','%FRONTEND_NODE_MAX_OLD_SPACE_SIZE_MB%','-MaxSemiSpaceMB','%FRONTEND_NODE_MAX_SEMI_SPACE_SIZE_MB%','-PidFile','%LIMITED_WATCHER_PID_FILE%') -WorkingDirectory '%CD%' -RedirectStandardOutput 'tmp-npm-dev.log' -RedirectStandardError 'tmp-npm-dev.err.log' -PassThru; Write-Output $p.Id"`) do (
+    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/run-limited-frontend-dev.ps1','-WorkingDirectory','%CD%','-MemoryLimitMB','%FRONTEND_PROCESS_MEMORY_LIMIT_MB%','-MaxOldSpaceMB','%FRONTEND_NODE_MAX_OLD_SPACE_SIZE_MB%','-MaxSemiSpaceMB','%FRONTEND_NODE_MAX_SEMI_SPACE_SIZE_MB%','-PidFile','%LIMITED_WATCHER_PID_FILE%' -WorkingDirectory '%CD%' -RedirectStandardOutput 'tmp-npm-dev.log' -RedirectStandardError 'tmp-npm-dev.err.log' -PassThru; Write-Output $p.Id"`) do (
         if not defined WATCHER_PID set "WATCHER_PID=%%a"
     )
 ) else (
-    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$p = Start-Process -FilePath 'node' -ArgumentList @('frontend/scripts/dev-watcher.mjs') -WorkingDirectory '%CD%' -RedirectStandardOutput 'tmp-npm-dev.log' -RedirectStandardError 'tmp-npm-dev.err.log' -PassThru; Write-Output $p.Id"`) do (
+    for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$p = Start-Process -FilePath 'node' -ArgumentList 'frontend/scripts/dev-watcher.mjs' -WorkingDirectory '%CD%' -RedirectStandardOutput 'tmp-npm-dev.log' -RedirectStandardError 'tmp-npm-dev.err.log' -PassThru; Write-Output $p.Id"`) do (
         if not defined WATCHER_PID set "WATCHER_PID=%%a"
     )
 )
