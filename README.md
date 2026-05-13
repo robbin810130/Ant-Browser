@@ -140,19 +140,20 @@ Ant Browser 适合以下场景：
 
 1. 开发默认使用 `master` 分支；该分支不带测试用户数据，适合作为日常开发基线。
 2. 如需带测试库的演示环境，请切换到 `user_data` 分支。
-3. Windows 统一执行 `bat\dev.bat`；默认是稳定模式，如需前端 HMR 联调使用 `bat\dev.bat live`，如需受限内存复现使用 `bat\dev.bat limited`。
-4. macOS 开发可执行 `scripts/dev-mac.sh`；默认 `stable` 模式会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，默认尝试 `$HOME/Codex/1688shopManager/desktop-repos/1688shop-desktop`，也可手动传入 install root 参数或预先设置环境变量覆盖。
+3. Windows 统一执行 `bat\dev.bat`；默认是稳定模式，如需前端 HMR 联调使用 `bat\dev.bat live`，如需受限内存复现使用 `bat\dev.bat limited`。脚本会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，优先级为环境变量 > 位置参数 > 默认路径 `%USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop`；若 `http://127.0.0.1:4174/api/health` 不可达，还会优先从 `ANT_BROWSER_WORKSPACE_SERVER_ROOT` / `WORKSPACE_SERVER_ROOT` / install root 推导出的主仓库自动拉起 `npm run server`。
+4. macOS 开发可执行 `scripts/dev-mac.sh`；默认 `stable` 模式会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，默认尝试 `$HOME/Codex/1688shopManager/desktop-repos/1688shop-desktop`，也可手动传入 install root 参数或预先设置环境变量覆盖。若本地 `4174` 未启动，脚本也会尝试自动补起 workspace server。
 5. Windows 运行时使用 `bin/xray.exe`、`bin/sing-box.exe`；Linux 运行时使用 `bin/linux-<arch>/xray`、`bin/linux-<arch>/sing-box`。
 6. 运行时文件采用“仓库固定 + 哈希校验”，校验清单在 `publish/runtime-manifest.json`，固定来源清单在 `publish/runtime-sources.json`。
 7. 如需刷新 Linux 运行时，执行 `python3 tools/runtime/sync-runtime.py`（会按固定来源下载、校验归档并更新 manifest）。
 
 开发模式说明：
 
-- `bat\dev.bat`：默认稳定模式，先构建 `frontend/dist`，再以静态资源模式启动 Wails，不依赖外部 Vite dev server
+- `bat\dev.bat`：默认稳定模式，先自动解析 workspace install root、必要时自动补起本地 workspace server，再构建 `frontend/dist`，以静态资源模式启动 Wails，不依赖外部 Vite dev server
 - `bat\dev.bat live`：显式启动 Vite watcher，并通过 `-frontenddevserverurl` 接入桌面壳
 - `bat\dev.bat limited`：在 `live` 基础上为 watcher 与其子进程附加 Windows Job Object 内存限制
-- `scripts/dev-mac.sh`：macOS 开发入口；`stable` 模式先构建 `frontend/dist` 再启动 Wails，`live` 模式会先起 Vite dev server 再通过 `-frontenddevserverurl` 接入桌面壳
+- `scripts/dev-mac.sh`：macOS 开发入口；会自动解析 workspace install root，并在本地 workspace server 未健康时优先尝试自动补起。`stable` 模式先构建 `frontend/dist` 再启动 Wails，`live` 模式会先起 Vite dev server 再通过 `-frontenddevserverurl` 接入桌面壳
 - 如需为依赖下载配置代理，可在启动前设置 `DEV_PROXY_URL`、`DEV_NO_PROXY`、`DEV_GOPROXY`
+- 如需覆盖自动发现的 workspace 主仓库，可设置 `ANT_BROWSER_WORKSPACE_SERVER_ROOT` 或 `WORKSPACE_SERVER_ROOT`
 - Workspace 接入参数现在可写入 `config.yaml > workspace`：
   - `install_root`：外部 `1688shop-desktop` 安装根
   - `agent_base_url`：本地 agent 基础地址

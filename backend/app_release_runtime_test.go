@@ -2,10 +2,15 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +95,91 @@ func TestGetDesktopEnvironmentStatusPassesWhenPointerAndCoreAreHealthy(t *testin
 	}
 	if result.State != release.StatePass {
 		t.Fatalf("expected pass state, got %s with items %#v", result.State, result.Items)
+	}
+}
+
+func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	coreDir := filepath.Join(versionDir, "core")
+	writeCoreFixture(t, coreDir)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen closed test port: %v", err)
+	}
+	serverOrigin := "http://" + listener.Addr().String()
+	_ = listener.Close()
+
+	app := newRuntimeStatusTestApp(t, root)
+	app.config.Workspace.ServerOrigin = serverOrigin
+
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-HOST-UNREACHABLE" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if result.Items[0].Repairable {
+		t.Fatalf("workspace host unreachable must not be auto repairable: %#v", result.Items)
+	}
+	if !strings.Contains(result.Items[0].Message, serverOrigin) {
+		t.Fatalf("expected workspace host error to mention server origin %s, got %q", serverOrigin, result.Items[0].Message)
+	}
+}
+
+func TestGetDesktopEnvironmentStatusFallsBackToLegacyWorkspaceHealthEndpoint(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	coreDir := filepath.Join(versionDir, "core")
+	writeCoreFixture(t, coreDir)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+
+	legacyWorkspaceHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/client/health":
+			http.NotFound(w, r)
+		case "/api/health":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"status": "ok",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer legacyWorkspaceHost.Close()
+
+	app := newRuntimeStatusTestApp(t, root)
+	app.config.Workspace.ServerOrigin = legacyWorkspaceHost.URL
+
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state with legacy workspace health endpoint, got %s with items %#v", result.State, result.Items)
 	}
 }
 
@@ -393,8 +483,31 @@ func TestExportDesktopEnvironmentDiagnostics(t *testing.T) {
 
 func newRuntimeStatusTestApp(t *testing.T, root string) *App {
 	t.Helper()
+
+	workspaceHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/client/health", "/api/health":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"status": "ok",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(workspaceHost.Close)
+
 	app := NewApp(root)
 	app.ctx = context.Background()
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: workspaceHost.URL,
+		},
+	}
 	return app
 }
 

@@ -6,11 +6,13 @@ import (
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/workspace"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,6 +127,35 @@ func TestLoginDesktopUserUsesWorkspaceServerOrigin(t *testing.T) {
 	}
 	if got, _ := requestBody["password"].(string); got != "desktop-password" {
 		t.Fatalf("期望 password=desktop-password，实际=%q", got)
+	}
+}
+
+func TestLoginDesktopUserReturnsWorkspaceUnavailableErrorWhenServerCannotBeReached(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听测试端口失败: %v", err)
+	}
+	serverOrigin := "http://" + listener.Addr().String()
+	_ = listener.Close()
+
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: serverOrigin,
+		},
+	}
+
+	_, err = app.LoginDesktopUser("supervisor", "Admin@123")
+	if err == nil {
+		t.Fatal("期望 LoginDesktopUser 返回错误")
+	}
+	if !strings.Contains(err.Error(), "workspace 服务端不可达") {
+		t.Fatalf("期望错误提示包含服务端不可达，实际=%v", err)
+	}
+	if !strings.Contains(err.Error(), serverOrigin) {
+		t.Fatalf("期望错误提示包含 server origin=%s，实际=%v", serverOrigin, err)
 	}
 }
 
