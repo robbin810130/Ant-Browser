@@ -6,11 +6,23 @@ set "EXIT_CODE=0"
 set "NO_PAUSE=0"
 set "SHOW_USAGE=0"
 set "DEV_MODE=stable"
+set "DEFAULT_WORKSPACE_INSTALL_ROOT=%USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop"
+set "DEFAULT_WORKSPACE_SERVER_ROOT=%USERPROFILE%\Codex\1688shopManager"
+set "DEFAULT_WORKSPACE_SERVER_URL=http://127.0.0.1:4174/api/health"
+set "INSTALL_ROOT_ARG="
+set "INSTALL_ROOT="
+set "AGENT_ENTRY="
+set "WORKSPACE_SERVER_ROOT_ENV=%WORKSPACE_SERVER_ROOT%"
 set "LIMITED_WATCHER_PID_FILE=tmp-frontend-limited-watcher.pid"
 set "PREFERRED_FRONTEND_PORT=5218"
 set "FRONTEND_PORT="
 set "WATCHER_PID="
 set "WATCHER_STARTED=0"
+set "WORKSPACE_SERVER_ROOT="
+set "WORKSPACE_SERVER_OUT_LOG="
+set "WORKSPACE_SERVER_ERR_LOG="
+set "WORKSPACE_SERVER_PID="
+set "WORKSPACE_SERVER_STARTED=0"
 
 call :parse_args %*
 if errorlevel 1 (
@@ -46,6 +58,7 @@ set "EXIT_CODE=1"
 
 :finish
 if "%WATCHER_STARTED%"=="1" call :cleanup_watcher >nul 2>&1
+if "%WORKSPACE_SERVER_STARTED%"=="1" call :cleanup_workspace_server >nul 2>&1
 if "%NO_PAUSE%"=="1" exit /b %EXIT_CODE%
 if "%CI%"=="1" exit /b %EXIT_CODE%
 
@@ -84,15 +97,20 @@ if /I "%~1"=="limited" (
     shift
     goto :parse_args
 )
+if not defined INSTALL_ROOT_ARG (
+    set "INSTALL_ROOT_ARG=%~1"
+    shift
+    goto :parse_args
+)
 
-echo [ERROR] Unsupported argument: %~1
+echo [ERROR] Unsupported extra argument: %~1
 echo.
 call :print_usage
 exit /b 1
 
 :print_usage
 echo Usage:
-echo   bat\dev.bat [stable^|live^|limited] [--no-pause]
+echo   bat\dev.bat [stable^|live^|limited] [workspace-install-root] [--no-pause]
 echo.
 echo Modes:
 echo   stable   Default. Build frontend static assets and start Wails without Vite dev server.
@@ -102,7 +120,14 @@ echo.
 echo Examples:
 echo   bat\dev.bat
 echo   bat\dev.bat live
+echo   bat\dev.bat stable C:\Users\you\Codex\1688shopManager\desktop-repos\1688shop-desktop
 echo   bat\dev.bat limited --no-pause
+echo.
+echo Config priority:
+echo   1. ANT_BROWSER_WORKSPACE_INSTALL_ROOT
+echo   2. WORKSPACE_INSTALL_ROOT
+echo   3. workspace-install-root argument
+echo   4. %USERPROFILE%\Codex\1688shopManager\desktop-repos\1688shop-desktop
 exit /b 0
 
 :run_stable
@@ -116,6 +141,10 @@ echo.
 
 call :cleanup_dev_logs
 call :apply_proxy_settings
+call :resolve_workspace_install_root
+if errorlevel 1 exit /b 1
+call :ensure_workspace_server
+if errorlevel 1 exit /b 1
 
 echo Frontend mode: stable static assets
 echo Frontend build: one-shot npm run build
@@ -187,6 +216,10 @@ echo.
 
 call :cleanup_dev_logs
 call :apply_proxy_settings
+call :resolve_workspace_install_root
+if errorlevel 1 exit /b 1
+call :ensure_workspace_server
+if errorlevel 1 exit /b 1
 
 if "%FRONTEND_LIMITED_MODE%"=="1" (
     echo Frontend mode: live dev server with Job Object memory limit
@@ -258,6 +291,7 @@ if defined DEV_NO_PROXY (
 )
 if defined DEV_GOPROXY set "GOPROXY=%DEV_GOPROXY%"
 if not defined DEV_GOPROXY if not defined GOPROXY set "GOPROXY=https://goproxy.cn,direct"
+if not defined ANT_BROWSER_DEBUG_STARTUP set "ANT_BROWSER_DEBUG_STARTUP=1"
 exit /b 0
 
 :print_proxy_settings
@@ -271,6 +305,106 @@ if defined DEV_NO_PROXY (
 )
 echo Go proxy: %GOPROXY%
 echo.
+exit /b 0
+
+:resolve_workspace_install_root
+set "INSTALL_ROOT="
+if defined ANT_BROWSER_WORKSPACE_INSTALL_ROOT (
+    set "INSTALL_ROOT=%ANT_BROWSER_WORKSPACE_INSTALL_ROOT%"
+)
+if not defined INSTALL_ROOT if defined WORKSPACE_INSTALL_ROOT (
+    set "INSTALL_ROOT=%WORKSPACE_INSTALL_ROOT%"
+)
+if not defined INSTALL_ROOT if defined INSTALL_ROOT_ARG (
+    set "INSTALL_ROOT=%INSTALL_ROOT_ARG%"
+)
+if not defined INSTALL_ROOT if exist "%DEFAULT_WORKSPACE_INSTALL_ROOT%\apps\agent\src\server\index.mjs" (
+    set "INSTALL_ROOT=%DEFAULT_WORKSPACE_INSTALL_ROOT%"
+)
+if not defined INSTALL_ROOT (
+    echo [ERROR] Workspace install root is required.
+    echo         Set ANT_BROWSER_WORKSPACE_INSTALL_ROOT, WORKSPACE_INSTALL_ROOT,
+    echo         or pass [workspace-install-root] to bat\dev.bat.
+    exit /b 1
+)
+set "AGENT_ENTRY=%INSTALL_ROOT%\apps\agent\src\server\index.mjs"
+if not exist "%AGENT_ENTRY%" (
+    echo [ERROR] Invalid workspace install root: %INSTALL_ROOT%
+    echo         Missing: %AGENT_ENTRY%
+    exit /b 1
+)
+set "ANT_BROWSER_WORKSPACE_INSTALL_ROOT=%INSTALL_ROOT%"
+echo Workspace install root: %ANT_BROWSER_WORKSPACE_INSTALL_ROOT%
+exit /b 0
+
+:ensure_workspace_server
+call :check_workspace_server_health
+if not errorlevel 1 (
+    echo Workspace server: already healthy on %DEFAULT_WORKSPACE_SERVER_URL%
+    echo.
+    exit /b 0
+)
+
+call :resolve_workspace_server_root
+if errorlevel 1 (
+    echo [ERROR] Workspace server is not reachable at %DEFAULT_WORKSPACE_SERVER_URL%
+    echo         and no local server root was found.
+    echo         Set ANT_BROWSER_WORKSPACE_SERVER_ROOT or start npm run server manually.
+    exit /b 1
+)
+
+echo Workspace server: starting from %WORKSPACE_SERVER_ROOT%
+set "WORKSPACE_SERVER_OUT_LOG=%CD%\tmp-workspace-server.log"
+set "WORKSPACE_SERVER_ERR_LOG=%CD%\tmp-workspace-server.err.log"
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$root=$env:ANT_BROWSER_WORKSPACE_SERVER_ROOT; $out=$env:WORKSPACE_SERVER_OUT_LOG; $err=$env:WORKSPACE_SERVER_ERR_LOG; $p=Start-Process -FilePath 'npm.cmd' -ArgumentList @('run','server') -WorkingDirectory $root -RedirectStandardOutput $out -RedirectStandardError $err -PassThru; Write-Output $p.Id"`) do (
+    if not defined WORKSPACE_SERVER_PID set "WORKSPACE_SERVER_PID=%%a"
+)
+if not defined WORKSPACE_SERVER_PID (
+    echo [ERROR] Failed to start workspace server.
+    exit /b 1
+)
+set "WORKSPACE_SERVER_STARTED=1"
+call :wait_for_workspace_server_health
+if errorlevel 1 (
+    echo [ERROR] Workspace server did not become ready: %DEFAULT_WORKSPACE_SERVER_URL%
+    if exist "tmp-workspace-server.err.log" type "tmp-workspace-server.err.log"
+    if exist "tmp-workspace-server.log" type "tmp-workspace-server.log"
+    exit /b 1
+)
+echo [OK] Workspace server PID: %WORKSPACE_SERVER_PID%
+echo.
+exit /b 0
+
+:check_workspace_server_health
+powershell -NoProfile -Command "try { $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri '%DEFAULT_WORKSPACE_SERVER_URL%' -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
+exit /b %errorlevel%
+
+:wait_for_workspace_server_health
+powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(30); while((Get-Date) -lt $deadline){ try { $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri '%DEFAULT_WORKSPACE_SERVER_URL%' -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 500 } }; exit 1"
+exit /b %errorlevel%
+
+:resolve_workspace_server_root
+set "WORKSPACE_SERVER_ROOT="
+call :use_workspace_server_root "%ANT_BROWSER_WORKSPACE_SERVER_ROOT%"
+if not errorlevel 1 goto :workspace_server_root_ready
+call :use_workspace_server_root "%WORKSPACE_SERVER_ROOT_ENV%"
+if not errorlevel 1 goto :workspace_server_root_ready
+if not defined WORKSPACE_SERVER_ROOT for %%I in ("%ANT_BROWSER_WORKSPACE_INSTALL_ROOT%\..\..") do call :use_workspace_server_root "%%~fI"
+if defined WORKSPACE_SERVER_ROOT goto :workspace_server_root_ready
+call :use_workspace_server_root "%DEFAULT_WORKSPACE_SERVER_ROOT%"
+if errorlevel 1 exit /b 1
+
+:workspace_server_root_ready
+set "ANT_BROWSER_WORKSPACE_SERVER_ROOT=%WORKSPACE_SERVER_ROOT%"
+echo Workspace server root: %ANT_BROWSER_WORKSPACE_SERVER_ROOT%
+exit /b 0
+
+:use_workspace_server_root
+set "WORKSPACE_SERVER_ROOT_CANDIDATE=%~1"
+if not defined WORKSPACE_SERVER_ROOT_CANDIDATE exit /b 1
+if not exist "%WORKSPACE_SERVER_ROOT_CANDIDATE%\server\index.mjs" exit /b 1
+if not exist "%WORKSPACE_SERVER_ROOT_CANDIDATE%\package.json" exit /b 1
+set "WORKSPACE_SERVER_ROOT=%WORKSPACE_SERVER_ROOT_CANDIDATE%"
 exit /b 0
 
 :cleanup_app_processes
@@ -441,6 +575,14 @@ node frontend\scripts\dev-port-helper.mjs cleanup >nul 2>&1
 set "WATCHER_STARTED=0"
 exit /b 0
 
+:cleanup_workspace_server
+if defined WORKSPACE_SERVER_PID (
+    taskkill /F /T /PID %WORKSPACE_SERVER_PID% >nul 2>&1
+)
+set "WORKSPACE_SERVER_PID="
+set "WORKSPACE_SERVER_STARTED=0"
+exit /b 0
+
 :start_watcher
 echo Starting frontend watcher...
 set "WATCHER_PID="
@@ -470,6 +612,8 @@ for %%f in (
     "tmp-frontend-limited-watcher.pid"
     "tmp-wails-err.log"
     "tmp-wails-out.log"
+    "tmp-workspace-server.err.log"
+    "tmp-workspace-server.log"
     "tmp-wails2-err.log"
     "tmp-wails2-out.log"
     "tmp-wails3-err.log"

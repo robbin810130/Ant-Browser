@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -125,7 +127,7 @@ func (a *App) LoginDesktopUser(username, password string) (string, error) {
 		"username": strings.TrimSpace(username),
 		"password": strings.TrimSpace(password),
 	}, &envelope); err != nil {
-		return "", err
+		return "", normalizeDesktopWorkspaceRequestError(err, serverOrigin)
 	}
 
 	accessToken := strings.TrimSpace(envelope.Data.AccessToken)
@@ -151,7 +153,7 @@ func (a *App) FetchDesktopAuthProfile(accessToken string) (*DesktopAuthProfile, 
 
 	var envelope desktopAuthProfileEnvelope
 	if err := doWorkspaceJSON(request, &envelope); err != nil {
-		return nil, err
+		return nil, normalizeDesktopWorkspaceRequestError(err, serverOrigin)
 	}
 	if strings.TrimSpace(envelope.Data.User.ID) == "" {
 		return nil, fmt.Errorf("desktop auth profile user id is required")
@@ -340,7 +342,7 @@ func (a *App) doDesktopAuthedWorkspaceJSON(accessToken, method, path string, bod
 	request.Header.Set("accept", "application/json")
 	request.Header.Set("authorization", "Bearer "+accessToken)
 
-	return doWorkspaceJSON(request, dest)
+	return normalizeDesktopWorkspaceRequestError(doWorkspaceJSON(request, dest), serverOrigin)
 }
 
 func jsonMarshalWorkspaceBody(body any) (string, error) {
@@ -349,4 +351,37 @@ func jsonMarshalWorkspaceBody(body any) (string, error) {
 		return "", err
 	}
 	return string(raw), nil
+}
+
+func normalizeDesktopWorkspaceRequestError(err error, serverOrigin string) error {
+	if err == nil {
+		return nil
+	}
+	if !isDesktopWorkspaceConnectionError(err) {
+		return err
+	}
+
+	origin := strings.TrimRight(strings.TrimSpace(serverOrigin), "/")
+	if origin == "" {
+		return fmt.Errorf("workspace 服务端不可达: %w", err)
+	}
+	return fmt.Errorf("workspace 服务端不可达，请检查服务是否已启动 (%s): %w", origin, err)
+}
+
+func isDesktopWorkspaceConnectionError(err error) bool {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return false
+	}
+	if urlErr.Timeout() {
+		return true
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr)
 }

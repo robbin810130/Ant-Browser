@@ -7,16 +7,24 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEFAULT_WORKSPACE_INSTALL_ROOT="${HOME}/Codex/1688shopManager/desktop-repos/1688shop-desktop"
 DEFAULT_MODE="stable"
 DEFAULT_FRONTEND_PORT="5218"
+DEFAULT_WORKSPACE_SERVER_URL="http://127.0.0.1:4174/api/health"
 
 DEV_MODE="${DEFAULT_MODE}"
 INSTALL_ROOT_ARG=""
 WATCHER_PID=""
+WORKSPACE_SERVER_PID=""
 
 cleanup() {
   if [[ -n "${WATCHER_PID}" ]]; then
     kill "${WATCHER_PID}" >/dev/null 2>&1 || true
     wait "${WATCHER_PID}" >/dev/null 2>&1 || true
     WATCHER_PID=""
+  fi
+
+  if [[ -n "${WORKSPACE_SERVER_PID}" ]]; then
+    kill "${WORKSPACE_SERVER_PID}" >/dev/null 2>&1 || true
+    wait "${WORKSPACE_SERVER_PID}" >/dev/null 2>&1 || true
+    WORKSPACE_SERVER_PID=""
   fi
 }
 
@@ -103,6 +111,21 @@ wait_for_frontend_dev_server() {
   return 1
 }
 
+wait_for_http_health() {
+  local url="${1}"
+  local attempt
+
+  for attempt in $(seq 1 60); do
+    if curl -fsS "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  printf '[ERROR] HTTP endpoint did not become ready: %s\n' "${url}" >&2
+  return 1
+}
+
 resolve_wails_bin() {
   if [[ -n "${WAILS_BIN:-}" ]]; then
     printf '%s\n' "${WAILS_BIN}"
@@ -121,6 +144,52 @@ resolve_wails_bin() {
   fi
 
   return 1
+}
+
+workspace_server_root_looks_valid() {
+  local candidate="${1}"
+  [[ -n "${candidate}" ]] &&
+    [[ -f "${candidate}/server/index.mjs" ]] &&
+    [[ -f "${candidate}/package.json" ]]
+}
+
+resolve_workspace_server_root() {
+  local candidate
+
+  for candidate in \
+    "${ANT_BROWSER_WORKSPACE_SERVER_ROOT:-}" \
+    "${WORKSPACE_SERVER_ROOT:-}" \
+    "$(cd "${INSTALL_ROOT}/../.." >/dev/null 2>&1 && pwd || true)"; do
+    if workspace_server_root_looks_valid "${candidate}"; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_workspace_server() {
+  if curl -fsS "${DEFAULT_WORKSPACE_SERVER_URL}" >/dev/null 2>&1; then
+    printf 'Workspace server: already healthy on %s\n' "${DEFAULT_WORKSPACE_SERVER_URL}"
+    return 0
+  fi
+
+  local workspace_server_root
+  if ! workspace_server_root="$(resolve_workspace_server_root)"; then
+    printf '[WARN] Workspace server is not reachable at %s and no local server root was found.\n' "${DEFAULT_WORKSPACE_SERVER_URL}" >&2
+    printf '       Set ANT_BROWSER_WORKSPACE_SERVER_ROOT or start the server manually with `npm run server`.\n' >&2
+    return 0
+  fi
+
+  printf 'Workspace server: starting from %s\n' "${workspace_server_root}"
+  (
+    cd "${workspace_server_root}"
+    npm run server
+  ) &
+  WORKSPACE_SERVER_PID="$!"
+
+  wait_for_http_health "${DEFAULT_WORKSPACE_SERVER_URL}"
 }
 
 parse_args "$@"
@@ -153,6 +222,8 @@ printf 'Wails CLI: %s\n' "${WAILS_BIN_PATH}"
 printf '\n'
 
 cd "${REPO_ROOT}"
+
+ensure_workspace_server
 
 if [[ "${DEV_MODE}" == "stable" ]]; then
   npm --prefix frontend run build

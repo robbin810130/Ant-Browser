@@ -140,12 +140,21 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		browserCorePath = resolveBrowserCorePath(manifest, target, versionDir)
 	}
 
-	return release.Checker{Manifest: manifest}.Run(release.CheckInput{
+	result := release.Checker{Manifest: manifest}.Run(release.CheckInput{
 		ManifestPath:    manifestPath,
 		Target:          target,
 		ResourceVersion: resourceVersion,
 		BrowserCorePath: browserCorePath,
-	}), nil
+	})
+	if result.State != release.StatePass {
+		return result, nil
+	}
+
+	if workspaceResult := m.checkWorkspaceHostStatus(); workspaceResult.State != release.StatePass {
+		return workspaceResult, nil
+	}
+
+	return result, nil
 }
 
 func (m *releaseRuntimeManager) RepairAndRecheck(ctx context.Context) (release.CheckResult, error) {
@@ -271,6 +280,38 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		Events: events,
 		Logs:   logs,
 	})
+}
+
+func (m *releaseRuntimeManager) checkWorkspaceHostStatus() release.CheckResult {
+	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	serverOrigin = strings.TrimRight(strings.TrimSpace(serverOrigin), "/")
+	if serverOrigin == "" {
+		return release.CheckResult{
+			State: release.StateBlocked,
+			Items: []release.FailureItem{{
+				Code:       "ENV-WORKSPACE-HOST-UNREACHABLE",
+				Severity:   "error",
+				Message:    "workspace host 地址为空，无法继续登录",
+				Repairable: false,
+			}},
+		}
+	}
+
+	for _, path := range []string{"/api/client/health", "/api/health"} {
+		if err := getWorkspaceJSON(serverOrigin+path, nil); err == nil {
+			return release.CheckResult{State: release.StatePass}
+		}
+	}
+
+	return release.CheckResult{
+		State: release.StateBlocked,
+		Items: []release.FailureItem{{
+			Code:       "ENV-WORKSPACE-HOST-UNREACHABLE",
+			Severity:   "error",
+			Message:    fmt.Sprintf("workspace host 不可达，请确认服务端已启动并检查连接配置 (%s)", serverOrigin),
+			Repairable: false,
+		}},
+	}
 }
 
 func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string, status activeRuntimePointerStatus) {
