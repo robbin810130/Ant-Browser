@@ -153,6 +153,14 @@ call :print_proxy_settings
 
 call :cleanup_app_processes
 call :cleanup_frontend_dev_processes warn
+rem After cleanup_frontend_dev_processes, verify workspace server is still alive.
+rem The cleanup script may kill the workspace server if it detects it as a stale dev process.
+call :check_workspace_server_health
+if errorlevel 1 (
+    echo [WARN] Workspace server was killed by frontend cleanup. Restarting...
+    call :ensure_workspace_server
+    if errorlevel 1 exit /b 1
+)
 if errorlevel 1 exit /b 1
 
 call :cleanup_dev_binary
@@ -356,13 +364,20 @@ if errorlevel 1 (
 echo Workspace server: starting from %WORKSPACE_SERVER_ROOT%
 set "WORKSPACE_SERVER_OUT_LOG=%CD%\tmp-workspace-server.log"
 set "WORKSPACE_SERVER_ERR_LOG=%CD%\tmp-workspace-server.err.log"
-for /f "usebackq delims=" %%a in (`powershell -NoProfile -ExecutionPolicy Bypass -File "bat\start-workspace-server.ps1" -WorkspaceServerRoot "%WORKSPACE_SERVER_ROOT%" -StdoutLog "%WORKSPACE_SERVER_OUT_LOG%" -StderrLog "%WORKSPACE_SERVER_ERR_LOG%"`) do (
-    if not defined WORKSPACE_SERVER_PID set "WORKSPACE_SERVER_PID=%%a"
-)
-if not defined WORKSPACE_SERVER_PID (
+set "WORKSPACE_SERVER_PID_FILE=%CD%\tmp-workspace-server.pid"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "bat\start-workspace-server.ps1" -WorkspaceServerRoot "%WORKSPACE_SERVER_ROOT%" -PidFile "%WORKSPACE_SERVER_PID_FILE%" -StdoutLog "%WORKSPACE_SERVER_OUT_LOG%" -StderrLog "%WORKSPACE_SERVER_ERR_LOG%"
+if errorlevel 1 (
     echo [ERROR] Failed to start workspace server.
     exit /b 1
 )
+
+if not exist "%WORKSPACE_SERVER_PID_FILE%" (
+    echo [ERROR] Workspace server did not write PID file.
+    exit /b 1
+)
+
+set /p "WORKSPACE_SERVER_PID=" < "%WORKSPACE_SERVER_PID_FILE%"
 set "WORKSPACE_SERVER_STARTED=1"
 call :wait_for_workspace_server_health
 if errorlevel 1 (

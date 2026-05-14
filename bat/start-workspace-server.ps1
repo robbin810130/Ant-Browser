@@ -3,6 +3,9 @@ param(
     [string]$WorkspaceServerRoot,
 
     [Parameter(Mandatory = $true)]
+    [string]$PidFile,
+
+    [Parameter(Mandatory = $true)]
     [string]$StdoutLog,
 
     [Parameter(Mandatory = $true)]
@@ -31,4 +34,4 @@ $process = Start-Process `
     -RedirectStandardError $StderrLog `
     -PassThru
 
-Write-Output $process.Id
+$process.Id | Out-File -FilePath $PidFile -Encoding UTF8
