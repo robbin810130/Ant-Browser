@@ -1,7 +1,6 @@
 import { HardDrive, ShieldCheck } from 'lucide-react'
 import { toast } from '../../../shared/components'
 import { EnvironmentStatusCard } from '../components/EnvironmentStatusCard'
-import { UpdatePromptModal } from '../components/UpdatePromptModal'
 import { useRuntimeStore } from '../../../store/runtimeStore'
 
 export function EnvironmentGatePage() {
@@ -113,8 +112,6 @@ export function EnvironmentGatePage() {
           </div>
         </div>
       </div>
-
-      <UpdatePromptModal />
     </div>
   )
 }
