@@ -144,6 +144,11 @@ Ant Browser 适合以下场景：
 4. macOS 开发可执行 `scripts/dev-mac.sh`；默认 `stable` 模式会自动注入 `ANT_BROWSER_WORKSPACE_INSTALL_ROOT`，默认尝试 `$HOME/Codex/1688shopManager/desktop-repos/1688shop-desktop`，也可手动传入 install root 参数或预先设置环境变量覆盖。若本地 `4174` 未启动，脚本也会尝试自动补起 workspace server。
 5. Windows 运行时使用 `bin/xray.exe`、`bin/sing-box.exe`；Linux 运行时使用 `bin/linux-<arch>/xray`、`bin/linux-<arch>/sing-box`。
 6. 运行时文件采用“仓库固定 + 哈希校验”，校验清单在 `publish/runtime-manifest.json`，固定来源清单在 `publish/runtime-sources.json`。
+7. 启动时更新检查支持多层清单来源：
+   - `runtimeDir/config/release-update.json`
+   - 环境变量 `DESKTOP_UPDATE_MANIFEST_URL`
+   - `config.yaml -> release.update_manifest_url`
+   - 默认无远端更新
 7. 如需刷新 Linux 运行时，执行 `python3 tools/runtime/sync-runtime.py`（会按固定来源下载、校验归档并更新 manifest）。
 
 开发模式说明：

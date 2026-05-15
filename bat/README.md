@@ -181,6 +181,7 @@ publish\output\
 ```text
 NO_PAUSE=1  -> 运行结束不 pause（适合 CI 或脚本调用）
 CI=1        -> 同样不 pause
+DESKTOP_UPDATE_MANIFEST_URL -> 启动时更新清单地址，可为 file://、本地路径或 http(s) URL
 ```
 
 Windows 产物：

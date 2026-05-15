@@ -1,11 +1,12 @@
 import { Rocket, ShieldAlert } from 'lucide-react'
-import { Button, Modal } from '../../../shared/components'
+import { Alert, Button, Modal } from '../../../shared/components'
 import { useRuntimeStore } from '../../../store/runtimeStore'
 
 export function UpdatePromptModal() {
   const updateState = useRuntimeStore((state) => state.updateState)
   const open = useRuntimeStore((state) => state.updatePromptOpen)
   const updating = useRuntimeStore((state) => state.updating)
+  const updateError = useRuntimeStore((state) => state.updateError)
   const dismiss = useRuntimeStore((state) => state.dismissUpdatePrompt)
   const confirmUpdate = useRuntimeStore((state) => state.confirmUpdate)
 
@@ -61,6 +62,14 @@ export function UpdatePromptModal() {
             </div>
           </div>
         </div>
+
+        {updateError ? (
+          <Alert
+            type="warning"
+            title={required ? '更新未完成，仍需先升级' : '更新未完成'}
+            message={updateError}
+          />
+        ) : null}
 
         <div className="grid gap-3 rounded-2xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4">
           <div className="flex items-center justify-between gap-3 text-sm">
