@@ -14,6 +14,7 @@ import {
 } from './modules/auth/api'
 import type { DesktopAuthStrongCleanupReason } from './modules/auth/api'
 import { EnvironmentGatePage } from './modules/runtime/pages/EnvironmentGatePage'
+import { UpdatePromptModal } from './modules/runtime/components/UpdatePromptModal'
 import { useNotificationStore } from './store/notificationStore'
 import { useAuthStore } from './store/authStore'
 import { useBackupStore } from './store/backupStore'
@@ -428,6 +429,7 @@ function App() {
     return (
       <ThemeProvider>
         <EnvironmentGatePage />
+        <UpdatePromptModal />
         <ToastContainer />
       </ThemeProvider>
     )
@@ -439,6 +441,7 @@ function App() {
         <div className="flex min-h-screen items-center justify-center px-6">
           <Loading text="正在恢复登录状态..." />
         </div>
+        <UpdatePromptModal />
         <ToastContainer />
       </ThemeProvider>
     )
@@ -475,6 +478,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        <UpdatePromptModal />
         <ToastContainer />
         <CloseConfirmModal />
         <DevDesktopAuthCleanupPanel />
