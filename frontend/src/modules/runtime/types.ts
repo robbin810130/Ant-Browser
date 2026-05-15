@@ -7,6 +7,7 @@ export interface EnvironmentFailureItem {
   severity: EnvironmentSeverity
   message: string
   repairable: boolean
+  recommendedAction: string
 }
 
 export interface EnvironmentStatus {

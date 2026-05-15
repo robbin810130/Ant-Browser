@@ -25,6 +25,7 @@ interface RuntimeStoreState {
   updatePromptOpen: boolean
   updateError: string
   diagnosticsPath: string
+  diagnosticsError: string
   bootstrap: () => Promise<void>
   retryCheck: () => Promise<void>
   repairNow: () => Promise<void>
@@ -41,6 +42,7 @@ async function evaluateRuntime(set: (partial: Partial<RuntimeStoreState>) => voi
     checking: !repair,
     repairing: repair,
     updateError: '',
+    diagnosticsError: '',
   })
 
   const status = repair ? await repairDesktopEnvironment() : await getDesktopEnvironmentStatus()
@@ -98,6 +100,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   updatePromptOpen: false,
   updateError: '',
   diagnosticsPath: '',
+  diagnosticsError: '',
   bootstrap: async () => {
     if (get().checking || get().repairing || get().updating) {
       return
@@ -152,8 +155,12 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     set({ exporting: true })
     try {
       const path = await exportDesktopEnvironmentDiagnostics()
-      set({ diagnosticsPath: path })
+      set({ diagnosticsPath: path, diagnosticsError: '' })
       return path
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出诊断失败'
+      set({ diagnosticsError: message })
+      throw error
     } finally {
       set({ exporting: false })
     }

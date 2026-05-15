@@ -33,6 +33,12 @@ type workspaceServerConnectionConfig struct {
 	ServerPort   int    `json:"serverPort"`
 }
 
+type workspaceServerOriginResolution struct {
+	Origin     string
+	Source     string
+	ConfigPath string
+}
+
 type workspaceAuthIdentity struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
@@ -360,27 +366,44 @@ func resolveWorkspaceServerOrigin(runtimeDir string) string {
 }
 
 func resolveWorkspaceServerOriginWithConfig(runtimeDir string, cfg *config.Config) string {
+	return resolveWorkspaceServerOriginDetails(runtimeDir, cfg).Origin
+}
+
+func resolveWorkspaceServerOriginDetails(runtimeDir string, cfg *config.Config) workspaceServerOriginResolution {
 	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
 	data, err := os.ReadFile(configPath)
 	if err == nil {
 		var config workspaceServerConnectionConfig
 		if jsonErr := json.Unmarshal(data, &config); jsonErr == nil {
 			if origin := strings.TrimSpace(config.ServerOrigin); origin != "" {
-				return strings.TrimRight(origin, "/")
+				return workspaceServerOriginResolution{
+					Origin:     strings.TrimRight(origin, "/"),
+					Source:     "runtime-config",
+					ConfigPath: configPath,
+				}
 			}
 		}
 	}
 
 	if value := strings.TrimSpace(os.Getenv("DESKTOP_SERVER_BASE_URL")); value != "" {
-		return strings.TrimRight(value, "/")
+		return workspaceServerOriginResolution{
+			Origin: strings.TrimRight(value, "/"),
+			Source: "env:DESKTOP_SERVER_BASE_URL",
+		}
 	}
 	if cfg != nil {
 		if value := strings.TrimSpace(cfg.Workspace.ServerOrigin); value != "" {
-			return strings.TrimRight(value, "/")
+			return workspaceServerOriginResolution{
+				Origin: strings.TrimRight(value, "/"),
+				Source: "config.yaml",
+			}
 		}
 	}
 
-	return defaultWorkspaceServerOrigin
+	return workspaceServerOriginResolution{
+		Origin: defaultWorkspaceServerOrigin,
+		Source: "default",
+	}
 }
 
 func resolveWorkspaceLocalAgentBaseURL() string {

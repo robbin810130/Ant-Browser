@@ -30,6 +30,7 @@ function normalizeFailureItem(input: any): EnvironmentFailureItem {
     severity: severity === 'info' || severity === 'warning' || severity === 'error' ? severity : 'error',
     message: String(input?.message || ''),
     repairable: Boolean(input?.repairable),
+    recommendedAction: String(input?.recommendedAction || ''),
   }
 }
 

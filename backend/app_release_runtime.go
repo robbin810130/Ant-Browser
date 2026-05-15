@@ -90,6 +90,9 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	_ = ctx
 
 	layout := m.app.runtimeLayout()
+	if pathResult := m.checkLocalPathStatus(layout); pathResult.State != release.StatePass {
+		return pathResult, nil
+	}
 	manifestPath := m.manifestPath()
 	if _, err := os.Stat(manifestPath); err != nil {
 		return release.Checker{}.Run(release.CheckInput{
@@ -103,10 +106,11 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		return release.CheckResult{
 			State: release.StateBlocked,
 			Items: []release.FailureItem{{
-				Code:       "ENV-MANIFEST-INVALID",
-				Severity:   "error",
-				Message:    "运行时 manifest 无法解析",
-				Repairable: false,
+				Code:              "ENV-MANIFEST-INVALID",
+				Severity:          "error",
+				Message:           "运行时 manifest 无法解析",
+				Repairable:        false,
+				RecommendedAction: "请确认安装包内容完整，并导出诊断包给支持团队检查 manifest 与运行时目录。",
 			}},
 		}, nil
 	}
@@ -117,10 +121,11 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		return release.CheckResult{
 			State: release.StateRepairable,
 			Items: []release.FailureItem{{
-				Code:       "ENV-RUNTIME-POINTER-MISSING",
-				Severity:   "error",
-				Message:    "当前运行时指针缺失，需要修复",
-				Repairable: true,
+				Code:              "ENV-RUNTIME-POINTER-MISSING",
+				Severity:          "error",
+				Message:           "当前运行时指针缺失，需要修复",
+				Repairable:        true,
+				RecommendedAction: "先尝试自动修复；若修复后仍失败，请导出诊断包并检查 runtime/current.json 是否可创建。",
 			}},
 		}, nil
 	}
@@ -128,10 +133,11 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		return release.CheckResult{
 			State: release.StateRepairable,
 			Items: []release.FailureItem{{
-				Code:       "ENV-RUNTIME-POINTER-INVALID",
-				Severity:   "error",
-				Message:    "当前运行时指针损坏，需要修复",
-				Repairable: true,
+				Code:              "ENV-RUNTIME-POINTER-INVALID",
+				Severity:          "error",
+				Message:           "当前运行时指针损坏，需要修复",
+				Repairable:        true,
+				RecommendedAction: "先尝试自动修复；若仍失败，请删除损坏的 current.json 后重新检查，或导出诊断包给支持团队。",
 			}},
 		}, nil
 	}
@@ -155,6 +161,46 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	}
 
 	return result, nil
+}
+
+func (m *releaseRuntimeManager) checkLocalPathStatus(layout release.RuntimeLayout) release.CheckResult {
+	if result := ensureExistingDirectory(
+		layout.InstallRoot,
+		"ENV-INSTALL-ROOT-INVALID",
+		"应用安装目录无效，无法继续完成桌面环境初始化",
+		"请确认当前应用目录存在且完整；若是从压缩包运行，请先完整解压后再启动。",
+	); result.State != release.StatePass {
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.StateRoot,
+		"ENV-STATE-ROOT-UNWRITABLE",
+		"应用状态目录不可写，无法保存运行时配置与登录态",
+		"请检查当前用户对状态目录的写权限，必要时改到可写目录后重新启动，并导出诊断包。",
+	); result.State != release.StatePass {
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.RuntimeRoot(),
+		"ENV-RUNTIME-ROOT-UNWRITABLE",
+		"运行时目录不可写，无法生成 active pointer 或运行时版本目录",
+		"请检查 runtime 目录是否被文件占用、杀软拦截或权限限制，修复后重新检查。",
+	); result.State != release.StatePass {
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.DiagnosticsRoot(),
+		"ENV-DIAGNOSTICS-ROOT-UNWRITABLE",
+		"诊断目录不可写，环境失败时将无法导出诊断包",
+		"请检查 diagnostics 目录是否可创建和写入，修复后重新检查；如仍失败，请手工收集日志给支持团队。",
+	); result.State != release.StatePass {
+		return result
+	}
+
+	return release.CheckResult{State: release.StatePass}
 }
 
 func (m *releaseRuntimeManager) RepairAndRecheck(ctx context.Context) (release.CheckResult, error) {
@@ -261,6 +307,8 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		})
 	}
 
+	workspaceServerOriginDetails := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+
 	return release.WriteDiagnosticBundle(layout.DiagnosticsRoot(), release.DiagnosticBundle{
 		Platform:         fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH),
 		AppVersion:       strings.TrimSpace(manifest.AppVersion),
@@ -270,12 +318,16 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		ErrorCodes:       errorCodes,
 		Summary:          diagnosticSummary(result),
 		Paths: map[string]string{
-			"installRoot":     layout.InstallRoot,
-			"stateRoot":       layout.StateRoot,
-			"manifestPath":    m.manifestPath(),
-			"runtimeRoot":     layout.RuntimeRoot(),
-			"activePointer":   layout.ActivePointerPath(),
-			"diagnosticsRoot": layout.DiagnosticsRoot(),
+			"installRoot":                layout.InstallRoot,
+			"stateRoot":                  layout.StateRoot,
+			"manifestPath":               m.manifestPath(),
+			"runtimeRoot":                layout.RuntimeRoot(),
+			"activePointer":              layout.ActivePointerPath(),
+			"diagnosticsRoot":            layout.DiagnosticsRoot(),
+			"workspaceRuntimeDir":        resolveWorkspaceRuntimeDirWithConfig(m.app.config),
+			"workspaceServerOrigin":      workspaceServerOriginDetails.Origin,
+			"workspaceServerOriginSource": workspaceServerOriginDetails.Source,
+			"workspaceServerConfigPath":  workspaceServerOriginDetails.ConfigPath,
 		},
 		Events: events,
 		Logs:   logs,
@@ -283,16 +335,17 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 }
 
 func (m *releaseRuntimeManager) checkWorkspaceHostStatus() release.CheckResult {
-	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
-	serverOrigin = strings.TrimRight(strings.TrimSpace(serverOrigin), "/")
+	resolution := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	serverOrigin := strings.TrimRight(strings.TrimSpace(resolution.Origin), "/")
 	if serverOrigin == "" {
 		return release.CheckResult{
 			State: release.StateBlocked,
 			Items: []release.FailureItem{{
-				Code:       "ENV-WORKSPACE-HOST-UNREACHABLE",
-				Severity:   "error",
-				Message:    "workspace host 地址为空，无法继续登录",
-				Repairable: false,
+				Code:              workspaceHostFailureCode(resolution),
+				Severity:          "error",
+				Message:           "workspace host 地址为空，无法继续登录",
+				Repairable:        false,
+				RecommendedAction: workspaceServerOriginAction(resolution),
 			}},
 		}
 	}
@@ -306,10 +359,86 @@ func (m *releaseRuntimeManager) checkWorkspaceHostStatus() release.CheckResult {
 	return release.CheckResult{
 		State: release.StateBlocked,
 		Items: []release.FailureItem{{
-			Code:       "ENV-WORKSPACE-HOST-UNREACHABLE",
-			Severity:   "error",
-			Message:    fmt.Sprintf("workspace host 不可达，请确认服务端已启动并检查连接配置 (%s)", serverOrigin),
-			Repairable: false,
+			Code:              workspaceHostFailureCode(resolution),
+			Severity:          "error",
+			Message:           fmt.Sprintf("workspace host 不可达，请确认服务端已启动并检查连接配置 (%s)", serverOrigin),
+			Repairable:        false,
+			RecommendedAction: workspaceServerOriginAction(resolution),
+		}},
+	}
+}
+
+func workspaceHostFailureCode(resolution workspaceServerOriginResolution) string {
+	switch resolution.Source {
+	case "runtime-config":
+		return "ENV-WORKSPACE-HOST-RUNTIME-CONFIG-UNREACHABLE"
+	case "env:DESKTOP_SERVER_BASE_URL":
+		return "ENV-WORKSPACE-HOST-ENV-UNREACHABLE"
+	case "config.yaml":
+		return "ENV-WORKSPACE-HOST-APP-CONFIG-UNREACHABLE"
+	default:
+		return "ENV-WORKSPACE-HOST-DEFAULT-UNREACHABLE"
+	}
+}
+
+func workspaceServerOriginAction(resolution workspaceServerOriginResolution) string {
+	origin := strings.TrimSpace(resolution.Origin)
+	switch resolution.Source {
+	case "runtime-config":
+		return fmt.Sprintf("当前 workspace host 来自 server-connection.json：%s。请检查该文件中的地址是否正确，并确认对应服务已启动。", strings.TrimSpace(resolution.ConfigPath))
+	case "env:DESKTOP_SERVER_BASE_URL":
+		return fmt.Sprintf("当前 workspace host 来自环境变量 DESKTOP_SERVER_BASE_URL (%s)。请检查该变量值是否正确，并确认对应服务已启动。", origin)
+	case "config.yaml":
+		return fmt.Sprintf("当前 workspace host 来自 config.yaml 的 workspace.server_origin (%s)。请检查配置值是否正确，并确认对应服务已启动。", origin)
+	default:
+		return fmt.Sprintf("当前 workspace host 使用默认地址 (%s)。请确认本机 workspace server 已启动；若仍失败，请导出诊断包。", origin)
+	}
+}
+
+func ensureExistingDirectory(path, code, message, action string) release.CheckResult {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return blockedFailure(code, message, action)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return blockedFailure(code, message, action)
+	}
+
+	return release.CheckResult{State: release.StatePass}
+}
+
+func ensureWritableDirectory(path, code, message, action string) release.CheckResult {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return blockedFailure(code, message, action)
+	}
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return blockedFailure(code, message, action)
+	}
+
+	file, err := os.CreateTemp(path, ".write-check-*")
+	if err != nil {
+		return blockedFailure(code, message, action)
+	}
+	name := file.Name()
+	_ = file.Close()
+	_ = os.Remove(name)
+
+	return release.CheckResult{State: release.StatePass}
+}
+
+func blockedFailure(code, message, action string) release.CheckResult {
+	return release.CheckResult{
+		State: release.StateBlocked,
+		Items: []release.FailureItem{{
+			Code:              code,
+			Severity:          "error",
+			Message:           message,
+			Repairable:        false,
+			RecommendedAction: action,
 		}},
 	}
 }

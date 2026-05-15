@@ -128,7 +128,7 @@ func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *test
 	if result.State != release.StateBlocked {
 		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
 	}
-	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-HOST-UNREACHABLE" {
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-HOST-APP-CONFIG-UNREACHABLE" {
 		t.Fatalf("unexpected failure items: %#v", result.Items)
 	}
 	if result.Items[0].Repairable {
@@ -136,6 +136,161 @@ func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *test
 	}
 	if !strings.Contains(result.Items[0].Message, serverOrigin) {
 		t.Fatalf("expected workspace host error to mention server origin %s, got %q", serverOrigin, result.Items[0].Message)
+	}
+	if !strings.Contains(result.Items[0].RecommendedAction, serverOrigin) {
+		t.Fatalf("expected recommended action to mention server origin %s, got %q", serverOrigin, result.Items[0].RecommendedAction)
+	}
+	if !strings.Contains(result.Items[0].RecommendedAction, "config.yaml") {
+		t.Fatalf("expected recommended action to mention config source, got %q", result.Items[0].RecommendedAction)
+	}
+}
+
+func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromEnv(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	writeCoreFixture(t, filepath.Join(versionDir, "core"))
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen closed test port: %v", err)
+	}
+	serverOrigin := "http://" + listener.Addr().String()
+	_ = listener.Close()
+
+	t.Setenv("DESKTOP_SERVER_BASE_URL", serverOrigin)
+	app := newRuntimeStatusTestApp(t, root)
+	app.config.Workspace.ServerOrigin = ""
+
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-HOST-ENV-UNREACHABLE" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if !strings.Contains(result.Items[0].RecommendedAction, "DESKTOP_SERVER_BASE_URL") {
+		t.Fatalf("expected env-specific recommended action, got %q", result.Items[0].RecommendedAction)
+	}
+}
+
+func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromRuntimeConfig(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	writeCoreFixture(t, filepath.Join(versionDir, "core"))
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+
+	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(nil)
+	t.Setenv("ProgramData", filepath.Join(root, "program-data"))
+	runtimeDir = resolveWorkspaceRuntimeDirWithConfig(nil)
+	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir runtime config: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen closed test port: %v", err)
+	}
+	serverOrigin := "http://" + listener.Addr().String()
+	_ = listener.Close()
+
+	payload, err := json.Marshal(workspaceServerConnectionConfig{ServerOrigin: serverOrigin})
+	if err != nil {
+		t.Fatalf("marshal runtime server config: %v", err)
+	}
+	if err := os.WriteFile(configPath, payload, 0o644); err != nil {
+		t.Fatalf("write runtime server config: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	app.config.Workspace.ServerOrigin = ""
+
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-HOST-RUNTIME-CONFIG-UNREACHABLE" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if !strings.Contains(result.Items[0].RecommendedAction, "server-connection.json") {
+		t.Fatalf("expected runtime-config specific action, got %q", result.Items[0].RecommendedAction)
+	}
+}
+
+func TestGetDesktopEnvironmentStatusBlocksWhenRuntimeRootIsNotWritable(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	if err := os.RemoveAll(layout.RuntimeRoot()); err != nil {
+		t.Fatalf("remove runtime root: %v", err)
+	}
+	if err := os.WriteFile(layout.RuntimeRoot(), []byte("occupied"), 0o600); err != nil {
+		t.Fatalf("write blocking runtime root file: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-RUNTIME-ROOT-UNWRITABLE" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if strings.TrimSpace(result.Items[0].RecommendedAction) == "" {
+		t.Fatalf("expected recommended action, got %#v", result.Items[0])
+	}
+}
+
+func TestGetDesktopEnvironmentStatusBlocksWhenDiagnosticsRootIsNotWritable(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	coreDir := filepath.Join(versionDir, "core")
+	writeCoreFixture(t, coreDir)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+	if err := os.WriteFile(layout.DiagnosticsRoot(), []byte("occupied"), 0o600); err != nil {
+		t.Fatalf("write blocking diagnostics file: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-DIAGNOSTICS-ROOT-UNWRITABLE" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if strings.TrimSpace(result.Items[0].RecommendedAction) == "" {
+		t.Fatalf("expected recommended action, got %#v", result.Items[0])
 	}
 }
 

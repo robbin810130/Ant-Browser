@@ -8,6 +8,7 @@ interface EnvironmentStatusCardProps {
   repairing: boolean
   exporting: boolean
   diagnosticsPath: string
+  diagnosticsError: string
   updateBlocking: boolean
   updateError: string
   onRetry: () => void
@@ -73,6 +74,7 @@ export function EnvironmentStatusCard({
   repairing,
   exporting,
   diagnosticsPath,
+  diagnosticsError,
   updateBlocking,
   updateError,
   onRetry,
@@ -140,6 +142,15 @@ export function EnvironmentStatusCard({
           />
         ) : null}
 
+        {diagnosticsError ? (
+          <Alert
+            type="warning"
+            title="诊断导出未完成"
+            message={diagnosticsError}
+            className="border-white/80 bg-white/80"
+          />
+        ) : null}
+
         <div className="grid gap-3">
           {status.items.length > 0 ? (
             status.items.map((item) => (
@@ -154,6 +165,11 @@ export function EnvironmentStatusCard({
                   {item.repairable ? <Badge variant="success">可自动修复</Badge> : <Badge variant="default">需人工处理</Badge>}
                 </div>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{item.message}</p>
+                {item.recommendedAction ? (
+                  <p className="mt-2 text-xs leading-6 text-slate-500">
+                    建议处理：{item.recommendedAction}
+                  </p>
+                ) : null}
               </div>
             ))
           ) : (
