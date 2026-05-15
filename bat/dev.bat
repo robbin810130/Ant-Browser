@@ -152,7 +152,7 @@ echo Wails frontend dev server: disabled
 call :print_proxy_settings
 
 call :cleanup_app_processes
-call :cleanup_frontend_dev_processes warn
+call bat\cleanup-frontend-dev-processes.cmd warn
 if errorlevel 1 exit /b 1
 
 call :cleanup_dev_binary
@@ -242,7 +242,7 @@ if "%FRONTEND_LIMITED_MODE%"=="1" echo Frontend process memory limit: %FRONTEND_
 call :print_proxy_settings
 
 call :cleanup_app_processes
-call :cleanup_frontend_dev_processes strict
+call bat\cleanup-frontend-dev-processes.cmd strict
 if errorlevel 1 exit /b 1
 
 call :cleanup_dev_binary
@@ -410,22 +410,6 @@ exit /b 0
 :cleanup_app_processes
 echo Cleaning stale app processes...
 taskkill /F /IM ant-chrome-dev.exe >nul 2>&1
-echo.
-exit /b 0
-
-:cleanup_frontend_dev_processes
-echo Cleaning stale frontend dev processes...
-node frontend\scripts\dev-port-helper.mjs cleanup
-if errorlevel 1 (
-    if /I "%~1"=="warn" (
-        echo [WARN] Failed to clean stale frontend dev processes. Continuing...
-        echo.
-        exit /b 0
-    )
-    echo [ERROR] Failed to clean stale frontend dev processes.
-    echo.
-    exit /b 1
-)
 echo.
 exit /b 0
 

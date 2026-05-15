@@ -90,15 +90,17 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	_ = ctx
 
 	layout := m.app.runtimeLayout()
-	if pathResult := m.checkLocalPathStatus(layout); pathResult.State != release.StatePass {
+	pathResult := m.checkLocalPathStatus(layout)
+	if pathResult.State != release.StatePass {
 		return pathResult, nil
 	}
 	manifestPath := m.manifestPath()
 	if _, err := os.Stat(manifestPath); err != nil {
-		return release.Checker{}.Run(release.CheckInput{
+		result := release.Checker{}.Run(release.CheckInput{
 			ManifestPath: manifestPath,
 			Target:       release.DefaultTarget(),
-		}), nil
+		})
+		return mergeCheckResultItems(result, pathResult.Items), nil
 	}
 
 	manifest, err := release.LoadManifest(manifestPath)
@@ -116,7 +118,7 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	}
 
 	target := release.DefaultTarget()
-	resourceVersion, version, pointerStatus := loadActiveRuntimeVersion(layout.ActivePointerPath())
+	resourceVersion, _, pointerStatus := loadActiveRuntimeVersion(layout.ActivePointerPath())
 	if pointerStatus == activeRuntimePointerMissing {
 		return release.CheckResult{
 			State: release.StateRepairable,
@@ -141,26 +143,20 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 			}},
 		}, nil
 	}
-	browserCorePath := ""
-	if versionDir, err := layout.VersionDir(version); err == nil {
-		browserCorePath = resolveBrowserCorePath(manifest, target, versionDir)
-	}
-
 	result := release.Checker{Manifest: manifest}.Run(release.CheckInput{
 		ManifestPath:    manifestPath,
 		Target:          target,
 		ResourceVersion: resourceVersion,
-		BrowserCorePath: browserCorePath,
 	})
 	if result.State != release.StatePass {
-		return result, nil
+		return mergeCheckResultItems(result, pathResult.Items), nil
 	}
 
 	if workspaceResult := m.checkWorkspaceHostStatus(); workspaceResult.State != release.StatePass {
-		return workspaceResult, nil
+		return mergeCheckResultItems(workspaceResult, pathResult.Items), nil
 	}
 
-	return result, nil
+	return mergeCheckResultItems(result, pathResult.Items), nil
 }
 
 func (m *releaseRuntimeManager) checkLocalPathStatus(layout release.RuntimeLayout) release.CheckResult {
@@ -198,13 +194,29 @@ func (m *releaseRuntimeManager) checkLocalPathStatus(layout release.RuntimeLayou
 		layout.DiagnosticsRoot(),
 		"ENV-DIAGNOSTICS-ROOT-UNWRITABLE",
 		"诊断目录不可写，环境失败时将无法导出诊断包",
-		"请检查 diagnostics 目录是否可创建和写入，修复后重新检查；如仍失败，请手工收集日志给支持团队。",
+		"请检查 diagnostics 目录是否可创建和写入；若暂时无法修复，仍可继续登录，但需要手工收集日志给支持团队。",
 	); result.State != release.StatePass {
-		attachFailureDetails(result.Items, map[string]string{"diagnosticsRoot": layout.DiagnosticsRoot()})
-		return result
+		warning := release.CheckResult{
+			State: release.StatePass,
+			Items: []release.FailureItem{release.WarningItem(
+				"ENV-DIAGNOSTICS-ROOT-UNWRITABLE",
+				"诊断目录不可写，当前无法导出诊断包",
+				"请检查 diagnostics 目录是否可创建和写入；若暂时无法修复，仍可继续使用，但排障时需要手工收集日志。",
+			)},
+		}
+		attachFailureDetails(warning.Items, map[string]string{"diagnosticsRoot": layout.DiagnosticsRoot()})
+		return warning
 	}
 
 	return release.CheckResult{State: release.StatePass}
+}
+
+func mergeCheckResultItems(result release.CheckResult, extra []release.FailureItem) release.CheckResult {
+	if len(extra) == 0 {
+		return result
+	}
+	result.Items = append(result.Items, extra...)
+	return result
 }
 
 func (m *releaseRuntimeManager) RepairAndRecheck(ctx context.Context) (release.CheckResult, error) {
@@ -520,19 +532,6 @@ func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Mana
 		RemoteManifest: remoteManifest,
 		Layout:         m.app.runtimeLayout(),
 	}, nil
-}
-
-func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string) string {
-	packages, err := manifest.RequiredPackages(target)
-	if err != nil {
-		return ""
-	}
-	for _, pkg := range packages {
-		if strings.EqualFold(strings.TrimSpace(pkg.Kind), "browser-core") {
-			return release.ResolvePackagePath(versionDir, pkg)
-		}
-	}
-	return ""
 }
 
 func diagnosticResultFromState(state release.CheckState) string {
