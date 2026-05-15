@@ -104,6 +104,10 @@ require_cmd ditto
 require_cmd hdiutil
 require_cmd wails
 
+echo "[0/4] Verifying publish contract..."
+python3 "$ROOT_DIR/tools/runtime/verify-publish-contract.py"
+echo
+
 if [[ -z "$VERSION" ]]; then
   VERSION="$(python3 - "$ROOT_DIR/wails.json" <<'PY'
 import json

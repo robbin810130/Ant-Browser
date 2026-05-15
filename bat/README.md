@@ -158,6 +158,7 @@ Windows 分支使用的项目路径：
 - Windows 安装包包含应用本体、默认配置和代理运行时。
 - 如果 `chrome\` 根目录或其一级子目录中检测到有效的 Windows `chrome.exe`，会自动一起打进 EXE 安装包。
 - 如果未检测到 Windows 内核，安装包仍会保留 `chrome\README.md` 说明文件。
+- 打包前会自动执行 `python3 tools/runtime/verify-publish-contract.py`，确认 `publish/runtime-manifest.json`、`publish/runtime-sources.json`、NSIS staging 规则和 release README 的 runtime contract 仍保持一致。
 
 Linux 分支会通过 Docker Desktop 调用：
 
