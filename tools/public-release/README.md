@@ -41,3 +41,4 @@ Behavior:
 - packaged Windows and macOS bundles stage required payloads under `publish/bin/...` according to manifest `packages`
 - optional source metadata lives in `publish/runtime-sources.json`
 - `runtime/current.json` is created in the writable state root after the first validated activation, not committed into release snapshots
+- `tools/runtime/verify-publish-contract.py` is the release gate that validates these assumptions before Windows/macOS packaging proceeds

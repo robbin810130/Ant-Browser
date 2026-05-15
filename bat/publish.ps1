@@ -62,6 +62,13 @@ function Invoke-NativeCommand {
     }
 }
 
+function Assert-PublishContract {
+    Write-Host "[Windows] 校验发布契约..."
+    Invoke-NativeCommand -FilePath "python3" -Arguments @("tools/runtime/verify-publish-contract.py")
+    Write-Host "✓ 发布契约校验通过"
+    Write-Host ""
+}
+
 function Assert-RequiredSourceFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -602,6 +609,7 @@ function Publish-Windows {
     Write-Host ""
 
     $makensisPath = Resolve-NsisPath
+    Assert-PublishContract
     Assert-RuntimeHashes -Target "windows-amd64"
     Build-WindowsBinary
 
