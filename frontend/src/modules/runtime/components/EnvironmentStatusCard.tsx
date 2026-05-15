@@ -170,6 +170,16 @@ export function EnvironmentStatusCard({
                     建议处理：{item.recommendedAction}
                   </p>
                 ) : null}
+                {Object.keys(item.details).length > 0 ? (
+                  <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                    {Object.entries(item.details).map(([key, value]) => (
+                      <div key={`${item.code}-${key}`} className="flex flex-wrap gap-2 leading-6">
+                        <span className="font-medium text-slate-700">{key}:</span>
+                        <span className="break-all">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))
           ) : (

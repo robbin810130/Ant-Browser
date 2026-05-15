@@ -8,6 +8,7 @@ export interface EnvironmentFailureItem {
   message: string
   repairable: boolean
   recommendedAction: string
+  details: Record<string, string>
 }
 
 export interface EnvironmentStatus {

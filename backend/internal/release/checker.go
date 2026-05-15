@@ -23,6 +23,7 @@ type FailureItem struct {
 	Message           string `json:"message"`
 	Repairable        bool   `json:"repairable"`
 	RecommendedAction string `json:"recommendedAction,omitempty"`
+	Details           map[string]string `json:"details,omitempty"`
 }
 
 type CheckInput struct {
