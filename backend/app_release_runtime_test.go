@@ -98,6 +98,23 @@ func TestGetDesktopEnvironmentStatusPassesWhenPointerAndCoreAreHealthy(t *testin
 	}
 }
 
+func TestGetDesktopEnvironmentStatusPassesWhenBrowserCoreIsMissingAtStartup(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state, got %s with items %#v", result.State, result.Items)
+	}
+}
+
 func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *testing.T) {
 	root := t.TempDir()
 	layout := writeRuntimeManifestFixture(t, root)
@@ -277,7 +294,7 @@ func TestGetDesktopEnvironmentStatusBlocksWhenRuntimeRootIsNotWritable(t *testin
 	}
 }
 
-func TestGetDesktopEnvironmentStatusBlocksWhenDiagnosticsRootIsNotWritable(t *testing.T) {
+func TestGetDesktopEnvironmentStatusWarnsWhenDiagnosticsRootIsNotWritable(t *testing.T) {
 	root := t.TempDir()
 	layout := writeRuntimeManifestFixture(t, root)
 	versionDir, err := layout.VersionDir("2026.05.12")
@@ -298,11 +315,14 @@ func TestGetDesktopEnvironmentStatusBlocksWhenDiagnosticsRootIsNotWritable(t *te
 	if err != nil {
 		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
 	}
-	if result.State != release.StateBlocked {
-		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	if result.State != release.StatePass {
+		t.Fatalf("expected pass state, got %s with items %#v", result.State, result.Items)
 	}
 	if len(result.Items) == 0 || result.Items[0].Code != "ENV-DIAGNOSTICS-ROOT-UNWRITABLE" {
 		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+	if result.Items[0].Severity != "warning" {
+		t.Fatalf("expected warning severity, got %#v", result.Items[0])
 	}
 	if strings.TrimSpace(result.Items[0].RecommendedAction) == "" {
 		t.Fatalf("expected recommended action, got %#v", result.Items[0])

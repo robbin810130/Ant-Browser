@@ -1,7 +1,6 @@
 package release
 
 import (
-	"ant-chrome/backend/internal/browser"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,7 +29,6 @@ type CheckInput struct {
 	ManifestPath    string
 	Target          string
 	ResourceVersion string
-	BrowserCorePath string
 }
 
 type CheckResult struct {
@@ -63,24 +61,11 @@ func (c Checker) Run(input CheckInput) CheckResult {
 		target = DefaultTarget()
 	}
 
-	requiredPackages, err := c.Manifest.RequiredPackages(target)
-	if err != nil {
+	if _, err := c.Manifest.RequiredPackages(target); err != nil {
 		return blockedResult("PKG-TARGET-MISSING", fmt.Sprintf("当前平台 %s 缺少必需运行时包或未受支持", target), "请确认当前安装包包含本平台运行时资源，必要时更换正确的安装包。")
 	}
 	if !c.Manifest.ResourceCompatible(input.ResourceVersion) {
 		return repairableResult("PKG-RESOURCE-OUTDATED", "资源版本过旧，需要修复", "请先尝试自动修复；若仍失败，请导出诊断包并核对 runtime 资源版本。")
-	}
-
-	for _, pkg := range requiredPackages {
-		if !pkg.Required {
-			continue
-		}
-		if !strings.EqualFold(pkg.Kind, "browser-core") {
-			continue
-		}
-		if result := browser.ValidateCoreDirectory(input.BrowserCorePath); !result.Valid {
-			return repairableResult("PKG-BROWSER-CORE-MISSING", result.Message, "请补齐或重新下载浏览器内核后再试。")
-		}
 	}
 
 	return CheckResult{State: StatePass}
@@ -104,6 +89,16 @@ func repairableResult(code, message, recommendedAction string) CheckResult {
 		Repairable:        true,
 		RecommendedAction: strings.TrimSpace(recommendedAction),
 	}}}
+}
+
+func WarningItem(code, message, recommendedAction string) FailureItem {
+	return FailureItem{
+		Code:              code,
+		Severity:          "warning",
+		Message:           message,
+		Repairable:        false,
+		RecommendedAction: strings.TrimSpace(recommendedAction),
+	}
 }
 
 func ResolvePackagePath(versionDir string, pkg RuntimePackage) string {

@@ -17,6 +17,8 @@ interface EnvironmentStatusCardProps {
 }
 
 function stateMeta(status: EnvironmentStatus, updateBlocking: boolean) {
+  const hasWarnings = status.items.some((item) => item.severity === 'warning' || item.severity === 'error')
+
   if (updateBlocking) {
     return {
       title: '需要完成更新后才能进入应用',
@@ -30,6 +32,16 @@ function stateMeta(status: EnvironmentStatus, updateBlocking: boolean) {
 
   switch (status.state) {
     case 'pass':
+      if (hasWarnings) {
+        return {
+          title: '运行环境已就绪，但还有附带提醒',
+          subtitle: '登录和主界面可以继续进入，但建议顺手处理下面这些环境提醒，避免后续排障信息缺失。',
+          badgeVariant: 'warning' as const,
+          badgeText: '通过（有提醒）',
+          icon: ShieldCheck,
+          panelClassName: 'border-amber-200/70 bg-amber-50/70',
+        }
+      }
       return {
         title: '运行环境已就绪',
         subtitle: '可以继续进入 Ant-Browser，后续如遇异常仍可在设置里重新检查。',
