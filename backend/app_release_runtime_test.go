@@ -602,6 +602,77 @@ func TestCheckDesktopReleaseUpdateUsesRuntimeConfigManifestSource(t *testing.T) 
 	}
 }
 
+func TestCheckDesktopReleaseUpdateUsesConfigManifestSource(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	remoteManifestPath := writeRemoteUpdateManifestFixture(t, root, "1.1.1", "2026.05.12")
+
+	app := newRuntimeStatusTestApp(t, root)
+	app.config.Release.UpdateManifestURL = remoteManifestPath
+
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "soft" {
+		t.Fatalf("expected soft update, got %#v", state)
+	}
+	if state.ManifestSource != "config.yaml" {
+		t.Fatalf("expected config manifest source, got %#v", state)
+	}
+	if filepath.Clean(state.ManifestURL) != filepath.Clean(remoteManifestPath) {
+		t.Fatalf("expected manifest path %s, got %s", remoteManifestPath, state.ManifestURL)
+	}
+}
+
+func TestCheckDesktopReleaseUpdateUsesHTTPManifestSource(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"schemaVersion": 2,
+			"appVersion": "1.1.1",
+			"minimumResourceVersion": "2026.05.12",
+			"packages": [
+				{"id":"runtime-bin","target":"` + release.DefaultTarget() + `","kind":"runtime-binary","required":true,"version":"1.0.0","path":"bin/test-runtime","sha256":"ignored"}
+			]
+		}`))
+	}))
+	defer server.Close()
+	t.Setenv("DESKTOP_UPDATE_MANIFEST_URL", server.URL)
+
+	app := newRuntimeStatusTestApp(t, root)
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "soft" {
+		t.Fatalf("expected soft update, got %#v", state)
+	}
+	if state.ManifestSource != "env:DESKTOP_UPDATE_MANIFEST_URL" {
+		t.Fatalf("expected env manifest source, got %#v", state)
+	}
+	if state.ManifestURL != server.URL {
+		t.Fatalf("expected manifest url %s, got %s", server.URL, state.ManifestURL)
+	}
+}
+
+func TestCheckDesktopReleaseUpdateWrapsManifestLoadError(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	t.Setenv("DESKTOP_UPDATE_MANIFEST_URL", filepath.Join(root, "missing-remote-manifest.json"))
+
+	app := newRuntimeStatusTestApp(t, root)
+	_, err := app.CheckDesktopReleaseUpdate()
+	if err == nil {
+		t.Fatal("expected CheckDesktopReleaseUpdate to fail")
+	}
+	if !strings.Contains(err.Error(), "load update manifest from env:DESKTOP_UPDATE_MANIFEST_URL") {
+		t.Fatalf("expected wrapped manifest load error, got %v", err)
+	}
+}
+
 func TestCheckDesktopReleaseUpdateReturnsNoneWithoutRemoteSource(t *testing.T) {
 	root := t.TempDir()
 	_ = writeRuntimePackageManifestFixture(t, root)
