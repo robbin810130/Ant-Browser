@@ -143,6 +143,9 @@ func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *test
 	if !strings.Contains(result.Items[0].RecommendedAction, "config.yaml") {
 		t.Fatalf("expected recommended action to mention config source, got %q", result.Items[0].RecommendedAction)
 	}
+	if got := result.Items[0].Details["source"]; got != "config.yaml" {
+		t.Fatalf("expected details.source=config.yaml, got %q", got)
+	}
 }
 
 func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromEnv(t *testing.T) {
@@ -180,6 +183,9 @@ func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromEnv(t *tes
 	}
 	if !strings.Contains(result.Items[0].RecommendedAction, "DESKTOP_SERVER_BASE_URL") {
 		t.Fatalf("expected env-specific recommended action, got %q", result.Items[0].RecommendedAction)
+	}
+	if got := result.Items[0].Details["source"]; got != "env:DESKTOP_SERVER_BASE_URL" {
+		t.Fatalf("expected env source detail, got %q", got)
 	}
 }
 
@@ -234,6 +240,12 @@ func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromRuntimeCon
 	if !strings.Contains(result.Items[0].RecommendedAction, "server-connection.json") {
 		t.Fatalf("expected runtime-config specific action, got %q", result.Items[0].RecommendedAction)
 	}
+	if got := result.Items[0].Details["source"]; got != "runtime-config" {
+		t.Fatalf("expected runtime-config source detail, got %q", got)
+	}
+	if got := result.Items[0].Details["configPath"]; filepath.Clean(got) != filepath.Clean(configPath) {
+		t.Fatalf("expected configPath detail=%s, got %q", configPath, got)
+	}
 }
 
 func TestGetDesktopEnvironmentStatusBlocksWhenRuntimeRootIsNotWritable(t *testing.T) {
@@ -259,6 +271,9 @@ func TestGetDesktopEnvironmentStatusBlocksWhenRuntimeRootIsNotWritable(t *testin
 	}
 	if strings.TrimSpace(result.Items[0].RecommendedAction) == "" {
 		t.Fatalf("expected recommended action, got %#v", result.Items[0])
+	}
+	if got := result.Items[0].Details["runtimeRoot"]; filepath.Clean(got) != filepath.Clean(layout.RuntimeRoot()) {
+		t.Fatalf("expected runtimeRoot detail=%s, got %q", layout.RuntimeRoot(), got)
 	}
 }
 
@@ -291,6 +306,9 @@ func TestGetDesktopEnvironmentStatusBlocksWhenDiagnosticsRootIsNotWritable(t *te
 	}
 	if strings.TrimSpace(result.Items[0].RecommendedAction) == "" {
 		t.Fatalf("expected recommended action, got %#v", result.Items[0])
+	}
+	if got := result.Items[0].Details["diagnosticsRoot"]; filepath.Clean(got) != filepath.Clean(layout.DiagnosticsRoot()) {
+		t.Fatalf("expected diagnosticsRoot detail=%s, got %q", layout.DiagnosticsRoot(), got)
 	}
 }
 

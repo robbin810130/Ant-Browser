@@ -31,6 +31,10 @@ function normalizeFailureItem(input: any): EnvironmentFailureItem {
     message: String(input?.message || ''),
     repairable: Boolean(input?.repairable),
     recommendedAction: String(input?.recommendedAction || ''),
+    details:
+      input?.details && typeof input.details === 'object'
+        ? Object.fromEntries(Object.entries(input.details).map(([key, value]) => [String(key), String(value ?? '').trim()]))
+        : {},
   }
 }
 

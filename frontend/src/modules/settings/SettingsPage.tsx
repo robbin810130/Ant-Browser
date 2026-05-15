@@ -577,6 +577,16 @@ export function SettingsPage() {
                 {item.recommendedAction ? (
                   <p className="mt-2 text-xs text-[var(--color-text-muted)]">建议处理：{item.recommendedAction}</p>
                 ) : null}
+                {Object.keys(item.details).length > 0 ? (
+                  <div className="mt-3 rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+                    {Object.entries(item.details).map(([key, value]) => (
+                      <div key={`${item.code}-${key}`} className="flex flex-wrap gap-2 leading-6">
+                        <span className="font-medium text-[var(--color-text-secondary)]">{key}:</span>
+                        <span className="break-all">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             )) : (
               <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3">
