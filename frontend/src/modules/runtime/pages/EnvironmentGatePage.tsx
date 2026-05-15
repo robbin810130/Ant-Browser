@@ -10,6 +10,7 @@ export function EnvironmentGatePage() {
   const repairing = useRuntimeStore((state) => state.repairing)
   const exporting = useRuntimeStore((state) => state.exporting)
   const diagnosticsPath = useRuntimeStore((state) => state.diagnosticsPath)
+  const diagnosticsError = useRuntimeStore((state) => state.diagnosticsError)
   const updateState = useRuntimeStore((state) => state.updateState)
   const updatePromptOpen = useRuntimeStore((state) => state.updatePromptOpen)
   const updateError = useRuntimeStore((state) => state.updateError)
@@ -70,6 +71,7 @@ export function EnvironmentGatePage() {
             repairing={repairing}
             exporting={exporting}
             diagnosticsPath={diagnosticsPath}
+            diagnosticsError={diagnosticsError}
             updateBlocking={updateBlocking}
             updateError={updateError}
             onRetry={() => void handleRetry()}

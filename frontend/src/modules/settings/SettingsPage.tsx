@@ -44,6 +44,7 @@ export function SettingsPage() {
   const runtimeRepairing = useRuntimeStore((s) => s.repairing)
   const runtimeExporting = useRuntimeStore((s) => s.exporting)
   const diagnosticsPath = useRuntimeStore((s) => s.diagnosticsPath)
+  const diagnosticsError = useRuntimeStore((s) => s.diagnosticsError)
   const updateError = useRuntimeStore((s) => s.updateError)
   const retryEnvironmentCheck = useRuntimeStore((s) => s.retryCheck)
   const repairRuntimeNow = useRuntimeStore((s) => s.repairNow)
@@ -556,6 +557,10 @@ export function SettingsPage() {
             <Alert type="info" title="最近一次诊断导出" message={diagnosticsPath} />
           ) : null}
 
+          {diagnosticsError ? (
+            <Alert type="warning" title="诊断导出失败" message={diagnosticsError} />
+          ) : null}
+
           <div className="grid gap-3">
             {runtimeStatus.items.length > 0 ? runtimeStatus.items.map((item) => (
               <div
@@ -569,6 +574,9 @@ export function SettingsPage() {
                   {item.repairable ? <Badge variant="success">可自动修复</Badge> : <Badge variant="default">需人工处理</Badge>}
                 </div>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{item.message}</p>
+                {item.recommendedAction ? (
+                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">建议处理：{item.recommendedAction}</p>
+                ) : null}
               </div>
             )) : (
               <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3">
