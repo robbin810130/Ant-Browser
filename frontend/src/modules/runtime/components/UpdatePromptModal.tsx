@@ -75,6 +75,18 @@ export function UpdatePromptModal() {
             <span className="text-[var(--color-text-secondary)]">目标运行时资源</span>
             <span className="font-medium text-[var(--color-text-primary)]">{updateState.resourceVersion || '未知'}</span>
           </div>
+          {updateState.manifestSource ? (
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-[var(--color-text-secondary)]">更新清单来源</span>
+              <span className="font-medium text-[var(--color-text-primary)]">{updateState.manifestSource}</span>
+            </div>
+          ) : null}
+          {updateState.manifestUrl ? (
+            <div className="grid gap-1 text-sm">
+              <span className="text-[var(--color-text-secondary)]">更新清单地址</span>
+              <span className="break-all font-medium text-[var(--color-text-primary)]">{updateState.manifestUrl}</span>
+            </div>
+          ) : null}
         </div>
       </div>
     </Modal>

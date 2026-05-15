@@ -21,4 +21,6 @@ export interface ReleaseUpdateState {
   localAppVersion: string
   remoteAppVersion: string
   resourceVersion: string
+  manifestSource: string
+  manifestUrl: string
 }

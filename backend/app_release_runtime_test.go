@@ -545,6 +545,80 @@ func TestCheckDesktopReleaseUpdateReturnsRequired(t *testing.T) {
 	}
 }
 
+func TestCheckDesktopReleaseUpdateUsesEnvManifestSource(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	remoteManifestPath := writeRemoteUpdateManifestFixture(t, root, "1.1.1", "2026.05.12")
+	t.Setenv("DESKTOP_UPDATE_MANIFEST_URL", remoteManifestPath)
+
+	app := newRuntimeStatusTestApp(t, root)
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "soft" {
+		t.Fatalf("expected soft update, got %#v", state)
+	}
+	if state.ManifestSource != "env:DESKTOP_UPDATE_MANIFEST_URL" {
+		t.Fatalf("expected env manifest source, got %#v", state)
+	}
+	if filepath.Clean(state.ManifestURL) != filepath.Clean(remoteManifestPath) {
+		t.Fatalf("expected manifest path %s, got %s", remoteManifestPath, state.ManifestURL)
+	}
+}
+
+func TestCheckDesktopReleaseUpdateUsesRuntimeConfigManifestSource(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	remoteManifestPath := writeRemoteUpdateManifestFixture(t, root, "1.2.0", "2026.06.01")
+
+	t.Setenv("ProgramData", filepath.Join(root, "program-data"))
+	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(nil)
+	configPath := filepath.Join(runtimeDir, "config", "release-update.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir runtime config dir: %v", err)
+	}
+	payload, err := json.Marshal(releaseUpdateConfig{ManifestURL: remoteManifestPath})
+	if err != nil {
+		t.Fatalf("marshal release update config: %v", err)
+	}
+	if err := os.WriteFile(configPath, payload, 0o644); err != nil {
+		t.Fatalf("write release update config: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "required" {
+		t.Fatalf("expected required update, got %#v", state)
+	}
+	if state.ManifestSource != "runtime-config" {
+		t.Fatalf("expected runtime-config source, got %#v", state)
+	}
+	if filepath.Clean(state.ManifestURL) != filepath.Clean(remoteManifestPath) {
+		t.Fatalf("expected manifest path %s, got %s", remoteManifestPath, state.ManifestURL)
+	}
+}
+
+func TestCheckDesktopReleaseUpdateReturnsNoneWithoutRemoteSource(t *testing.T) {
+	root := t.TempDir()
+	_ = writeRuntimePackageManifestFixture(t, root)
+	app := newRuntimeStatusTestApp(t, root)
+
+	state, err := app.CheckDesktopReleaseUpdate()
+	if err != nil {
+		t.Fatalf("CheckDesktopReleaseUpdate returned error: %v", err)
+	}
+	if state.Kind != "none" {
+		t.Fatalf("expected no update, got %#v", state)
+	}
+	if state.ManifestSource != "" || state.ManifestURL != "" {
+		t.Fatalf("expected empty manifest source details, got %#v", state)
+	}
+}
+
 func TestApplyDesktopReleaseUpdateRollsBackOnProbeFailure(t *testing.T) {
 	root := t.TempDir()
 	layout := writeRuntimePackageManifestFixture(t, root)
@@ -672,6 +746,9 @@ func TestExportDesktopEnvironmentDiagnostics(t *testing.T) {
 	if !strings.Contains(content, "ENV-RUNTIME-POINTER-MISSING") {
 		t.Fatalf("expected diagnostics to include current environment failure code, got %s", content)
 	}
+	if !strings.Contains(content, "\"updateManifestSource\": \"\"") {
+		t.Fatalf("expected diagnostics to include update manifest source, got %s", content)
+	}
 }
 
 func newRuntimeStatusTestApp(t *testing.T, root string) *App {
@@ -795,6 +872,23 @@ func writeRuntimePackageManifestFixtureWithoutPublishSource(t *testing.T, root s
 		t.Fatalf("mkdir runtime root: %v", err)
 	}
 	return layout
+}
+
+func writeRemoteUpdateManifestFixture(t *testing.T, root, appVersion, resourceVersion string) string {
+	t.Helper()
+	manifestPath := filepath.Join(root, "remote-runtime-manifest.json")
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 2,
+		"appVersion": %q,
+		"minimumResourceVersion": %q,
+		"packages": [
+			{"id":"runtime-bin","target":"%s","kind":"runtime-binary","required":true,"version":"1.0.0","path":"bin/test-runtime","sha256":"ignored"}
+		]
+	}`, appVersion, resourceVersion, release.DefaultTarget())
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+		t.Fatalf("write remote manifest: %v", err)
+	}
+	return manifestPath
 }
 
 func writeCoreFixture(t *testing.T, coreDir string) {
