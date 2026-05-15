@@ -72,6 +72,10 @@ type WorkspaceConfig struct {
 	RuntimeDir   string `yaml:"runtime_dir"`
 }
 
+type ReleaseConfig struct {
+	UpdateManifestURL string `yaml:"update_manifest_url"`
+}
+
 // Config 应用配置
 type Config struct {
 	Database     DatabaseConfig     `yaml:"database"`
@@ -81,6 +85,7 @@ type Config struct {
 	Browser      BrowserConfig      `yaml:"browser"`
 	LaunchServer LaunchServerConfig `yaml:"launch_server"`
 	Workspace    WorkspaceConfig    `yaml:"workspace"`
+	Release      ReleaseConfig      `yaml:"release"`
 }
 
 // DatabaseConfig 数据库配置

@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/release"
@@ -11,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -38,6 +40,16 @@ const (
 )
 
 var errNoRuntimeVersionsAvailable = errors.New("no runtime versions available to repair pointer")
+
+type releaseUpdateConfig struct {
+	ManifestURL string `json:"manifestUrl"`
+}
+
+type releaseUpdateManifestResolution struct {
+	URL        string
+	Source     string
+	ConfigPath string
+}
 
 func (a *App) GetDesktopEnvironmentStatus() (release.CheckResult, error) {
 	manager, err := a.releaseManager()
@@ -241,20 +253,7 @@ func (m *releaseRuntimeManager) ApplyRepairAction(ctx context.Context, action re
 }
 
 func (m *releaseRuntimeManager) CheckForUpdate(ctx context.Context) (release.UpdateState, error) {
-	manager, err := m.updateManager(ctx)
-	if err != nil {
-		return release.UpdateState{}, err
-	}
-
-	localResourceVersion := manager.CurrentResourceVersion()
-	if strings.TrimSpace(localResourceVersion) == "" {
-		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
-	}
-	return manager.ClassifyUpdate(localResourceVersion), nil
-}
-
-func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (release.UpdateState, error) {
-	manager, err := m.updateManager(ctx)
+	manager, resolution, err := m.updateManager(ctx)
 	if err != nil {
 		return release.UpdateState{}, err
 	}
@@ -264,6 +263,24 @@ func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (relea
 		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
 	}
 	state := manager.ClassifyUpdate(localResourceVersion)
+	state.ManifestSource = strings.TrimSpace(resolution.Source)
+	state.ManifestURL = strings.TrimSpace(resolution.URL)
+	return state, nil
+}
+
+func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (release.UpdateState, error) {
+	manager, resolution, err := m.updateManager(ctx)
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+
+	localResourceVersion := manager.CurrentResourceVersion()
+	if strings.TrimSpace(localResourceVersion) == "" {
+		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
+	}
+	state := manager.ClassifyUpdate(localResourceVersion)
+	state.ManifestSource = strings.TrimSpace(resolution.Source)
+	state.ManifestURL = strings.TrimSpace(resolution.URL)
 	if state.Kind == "none" {
 		return state, nil
 	}
@@ -324,6 +341,7 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 	}
 
 	workspaceServerOriginDetails := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	updateManifestResolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
 
 	return release.WriteDiagnosticBundle(layout.DiagnosticsRoot(), release.DiagnosticBundle{
 		Platform:         fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH),
@@ -344,6 +362,9 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 			"workspaceServerOrigin":      workspaceServerOriginDetails.Origin,
 			"workspaceServerOriginSource": workspaceServerOriginDetails.Source,
 			"workspaceServerConfigPath":  workspaceServerOriginDetails.ConfigPath,
+			"updateManifestURL":          updateManifestResolution.URL,
+			"updateManifestSource":       updateManifestResolution.Source,
+			"updateManifestConfigPath":   updateManifestResolution.ConfigPath,
 		},
 		Events: events,
 		Logs:   logs,
@@ -512,18 +533,27 @@ func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, versi
 	return resourceVersion, version, activeRuntimePointerOK
 }
 
-func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Manager, error) {
+func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Manager, releaseUpdateManifestResolution, error) {
 	_ = ctx
 	localManifest, err := release.LoadManifest(m.manifestPath())
 	if err != nil {
-		return release.Manager{}, err
+		return release.Manager{}, releaseUpdateManifestResolution{}, err
 	}
 
 	remoteManifest := localManifest
+	resolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
 	if m.remoteManifestProvider != nil {
 		remoteManifest, err = m.remoteManifestProvider(ctx)
 		if err != nil {
-			return release.Manager{}, err
+			return release.Manager{}, releaseUpdateManifestResolution{}, err
+		}
+		if strings.TrimSpace(resolution.Source) == "" {
+			resolution.Source = "override"
+		}
+	} else if strings.TrimSpace(resolution.URL) != "" {
+		remoteManifest, err = loadReleaseManifestFromSource(ctx, resolution.URL)
+		if err != nil {
+			return release.Manager{}, resolution, fmt.Errorf("load update manifest from %s (%s): %w", strings.TrimSpace(resolution.Source), strings.TrimSpace(resolution.URL), err)
 		}
 	}
 
@@ -531,7 +561,7 @@ func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Mana
 		LocalManifest:  localManifest,
 		RemoteManifest: remoteManifest,
 		Layout:         m.app.runtimeLayout(),
-	}, nil
+	}, resolution, nil
 }
 
 func diagnosticResultFromState(state release.CheckState) string {
@@ -770,6 +800,81 @@ func resolveRuntimePackageSource(layout release.RuntimeLayout, pkg release.Runti
 		}
 	}
 	return "", fmt.Errorf("runtime package source missing for %s", pkg.ID)
+}
+
+func resolveReleaseUpdateManifestDetails(runtimeDir string, cfg *config.Config) releaseUpdateManifestResolution {
+	configPath := filepath.Join(runtimeDir, "config", "release-update.json")
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		var fileConfig releaseUpdateConfig
+		if jsonErr := json.Unmarshal(data, &fileConfig); jsonErr == nil {
+			if url := strings.TrimSpace(fileConfig.ManifestURL); url != "" {
+				return releaseUpdateManifestResolution{
+					URL:        url,
+					Source:     "runtime-config",
+					ConfigPath: configPath,
+				}
+			}
+		}
+	}
+
+	if value := strings.TrimSpace(os.Getenv("DESKTOP_UPDATE_MANIFEST_URL")); value != "" {
+		return releaseUpdateManifestResolution{
+			URL:    value,
+			Source: "env:DESKTOP_UPDATE_MANIFEST_URL",
+		}
+	}
+
+	if cfg != nil {
+		if value := strings.TrimSpace(cfg.Release.UpdateManifestURL); value != "" {
+			return releaseUpdateManifestResolution{
+				URL:    value,
+				Source: "config.yaml",
+			}
+		}
+	}
+
+	return releaseUpdateManifestResolution{}
+}
+
+func loadReleaseManifestFromSource(ctx context.Context, source string) (release.Manifest, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return release.Manifest{}, fmt.Errorf("update manifest source is required")
+	}
+
+	if strings.HasPrefix(strings.ToLower(source), "http://") || strings.HasPrefix(strings.ToLower(source), "https://") {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		request.Header.Set("accept", "application/json")
+		client := &http.Client{Timeout: 8 * time.Second}
+		response, err := client.Do(request)
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+			return release.Manifest{}, fmt.Errorf("update manifest request failed: %s (%d): %s", source, response.StatusCode, strings.TrimSpace(string(body)))
+		}
+		body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		var manifest release.Manifest
+		if err := json.Unmarshal(body, &manifest); err != nil {
+			return release.Manifest{}, fmt.Errorf("parse update manifest failed: %w", err)
+		}
+		if manifest.SchemaVersion != 2 {
+			return release.Manifest{}, fmt.Errorf("unsupported manifest schema: %d", manifest.SchemaVersion)
+		}
+		return manifest, nil
+	}
+
+	path := strings.TrimPrefix(source, "file://")
+	return release.LoadManifest(path)
 }
 
 func verifySHA256(path, expected string) error {

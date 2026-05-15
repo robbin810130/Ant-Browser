@@ -75,6 +75,9 @@ browser: {}
 	if cfg.Workspace.InstallRoot != "" || cfg.Workspace.AgentBaseURL != "" || cfg.Workspace.ServerOrigin != "" || cfg.Workspace.RuntimeDir != "" {
 		t.Fatalf("Workspace 默认配置应为空: got=%+v", cfg.Workspace)
 	}
+	if cfg.Release.UpdateManifestURL != "" {
+		t.Fatalf("Release.UpdateManifestURL 默认应为空: got=%q", cfg.Release.UpdateManifestURL)
+	}
 }
 
 func TestLoadPreservesExplicitConfig(t *testing.T) {
@@ -140,6 +143,8 @@ workspace:
   agent_base_url: http://127.0.0.1:49000/
   server_origin: http://127.0.0.1:4317/
   runtime_dir: /tmp/1688shop-runtime
+release:
+  update_manifest_url: https://updates.example.com/runtime-manifest.json
 `
 	if err := os.WriteFile(configPath, []byte(customConfig), 0o644); err != nil {
 		t.Fatalf("写入测试配置失败: %v", err)
@@ -194,6 +199,9 @@ workspace:
 	}
 	if cfg.Workspace.RuntimeDir != "/tmp/1688shop-runtime" {
 		t.Fatalf("Workspace.RuntimeDir 显式配置被覆盖: got=%q", cfg.Workspace.RuntimeDir)
+	}
+	if cfg.Release.UpdateManifestURL != "https://updates.example.com/runtime-manifest.json" {
+		t.Fatalf("Release.UpdateManifestURL 显式配置被覆盖: got=%q", cfg.Release.UpdateManifestURL)
 	}
 }
 

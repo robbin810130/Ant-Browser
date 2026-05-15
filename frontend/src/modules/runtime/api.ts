@@ -56,6 +56,8 @@ function normalizeReleaseUpdateState(input: any): ReleaseUpdateState {
     localAppVersion: String(input?.localAppVersion || ''),
     remoteAppVersion: String(input?.remoteAppVersion || ''),
     resourceVersion: String(input?.resourceVersion || ''),
+    manifestSource: String(input?.manifestSource || ''),
+    manifestUrl: String(input?.manifestUrl || ''),
   }
 }
 

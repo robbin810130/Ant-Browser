@@ -63,3 +63,5 @@ workspace:
     agent_base_url: ""
     server_origin: ""
     runtime_dir: ""
+release:
+    update_manifest_url: ""
