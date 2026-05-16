@@ -22,6 +22,10 @@ type ApplyPlan struct {
 }
 
 func WritePlan(layout Layout, plan ApplyPlan) (string, error) {
+	if err := layout.Validate(); err != nil {
+		return "", err
+	}
+
 	path := layout.PlanPath()
 	if err := writeJSONFile(path, plan); err != nil {
 		return "", err
