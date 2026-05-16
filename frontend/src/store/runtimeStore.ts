@@ -34,6 +34,18 @@ interface RuntimeStoreState {
   exportDiagnostics: () => Promise<string>
 }
 
+function resolveRuntimeErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'string') {
+    const message = error.trim()
+    return message || fallback
+  }
+  if (error instanceof Error) {
+    const message = error.message.trim()
+    return message || fallback
+  }
+  return fallback
+}
+
 async function evaluateRuntime(set: (partial: Partial<RuntimeStoreState>) => void, repair = false) {
   set({
     status: checkingStatus,
@@ -83,7 +95,7 @@ async function evaluateRuntime(set: (partial: Partial<RuntimeStoreState>) => voi
       repairing: false,
       updateState: null,
       updatePromptOpen: true,
-      updateError: error instanceof Error ? error.message : '更新检查失败',
+      updateError: resolveRuntimeErrorMessage(error, '更新检查失败'),
     })
   }
 }
@@ -131,7 +143,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
     } catch (error) {
       set({
         updating: false,
-        updateError: error instanceof Error ? error.message : '更新失败',
+        updateError: resolveRuntimeErrorMessage(error, '更新失败'),
       })
       throw error
     } finally {
@@ -159,7 +171,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
       set({ diagnosticsPath: path, diagnosticsError: '' })
       return path
     } catch (error) {
-      const message = error instanceof Error ? error.message : '导出诊断失败'
+      const message = resolveRuntimeErrorMessage(error, '导出诊断失败')
       set({ diagnosticsError: message })
       throw error
     } finally {
