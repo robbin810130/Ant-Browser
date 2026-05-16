@@ -1,6 +1,10 @@
 package appupdate
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+)
 
 type Layout struct {
 	InstallRoot string
@@ -9,9 +13,19 @@ type Layout struct {
 
 func NewLayout(installRoot string, stateRoot string) Layout {
 	return Layout{
-		InstallRoot: filepath.Clean(installRoot),
-		StateRoot:   filepath.Clean(stateRoot),
+		InstallRoot: cleanRoot(installRoot),
+		StateRoot:   cleanRoot(stateRoot),
 	}
+}
+
+func (l Layout) Validate() error {
+	if isUnsafeRoot(l.InstallRoot) {
+		return fmt.Errorf("app update install root is required")
+	}
+	if isUnsafeRoot(l.StateRoot) {
+		return fmt.Errorf("app update state root is required")
+	}
+	return nil
 }
 
 func (l Layout) Root() string {
@@ -44,4 +58,16 @@ func (l Layout) RunnerRoot() string {
 
 func (l Layout) LogsRoot() string {
 	return filepath.Join(l.Root(), "logs")
+}
+
+func cleanRoot(root string) string {
+	if strings.TrimSpace(root) == "" {
+		return ""
+	}
+	return filepath.Clean(root)
+}
+
+func isUnsafeRoot(root string) bool {
+	trimmed := strings.TrimSpace(root)
+	return trimmed == "" || trimmed == "."
 }

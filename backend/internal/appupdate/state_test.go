@@ -1,6 +1,7 @@
 package appupdate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,7 @@ func TestWriteAndReadPersistentState(t *testing.T) {
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("state file permissions incorrect: got=%#o want=%#o", got, 0o600)
 	}
+	assertDirMode(t, layout.Root(), 0o700)
 
 	read, err := ReadState(layout)
 	if err != nil {
@@ -96,6 +98,66 @@ func TestWriteAndReadPersistentState(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339, read.UpdatedAt); err != nil {
 		t.Fatalf("UpdatedAt should be RFC3339: %q", read.UpdatedAt)
 	}
+}
+
+func TestWriteStateRejectsEmptyRoots(t *testing.T) {
+	tests := []struct {
+		name   string
+		layout Layout
+	}{
+		{
+			name:   "install root",
+			layout: NewLayout("", filepath.Join(t.TempDir(), "state")),
+		},
+		{
+			name:   "state root",
+			layout: NewLayout(filepath.Join(t.TempDir(), "install"), ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := WriteState(tt.layout, PersistentState{Status: PersistentStatusIdle}); err == nil {
+				t.Fatalf("WriteState should reject empty %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestWriteStateOverwriteKeepsLatestValidJSON(t *testing.T) {
+	layout := NewLayout(filepath.Join(t.TempDir(), "install"), filepath.Join(t.TempDir(), "state"))
+
+	if err := WriteState(layout, PersistentState{
+		Status:           PersistentStatusDownloading,
+		LocalAppVersion:  "1.0.0",
+		RemoteAppVersion: "1.1.0",
+	}); err != nil {
+		t.Fatalf("first WriteState returned error: %v", err)
+	}
+	if err := WriteState(layout, PersistentState{
+		Status:           PersistentStatusSucceeded,
+		LocalAppVersion:  "1.1.0",
+		RemoteAppVersion: "1.1.0",
+	}); err != nil {
+		t.Fatalf("second WriteState returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(layout.StatePath())
+	if err != nil {
+		t.Fatalf("read overwritten state: %v", err)
+	}
+
+	var state PersistentState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("overwritten state should be valid JSON: %v", err)
+	}
+	if state.Status != PersistentStatusSucceeded {
+		t.Fatalf("overwritten state should contain latest content: got=%q", state.Status)
+	}
+	if state.LocalAppVersion != "1.1.0" {
+		t.Fatalf("overwritten state local version incorrect: got=%q", state.LocalAppVersion)
+	}
+	assertFileMode(t, layout.StatePath(), 0o600)
 }
 
 func TestWriteAndReadApplyPlan(t *testing.T) {
@@ -140,6 +202,7 @@ func TestWriteAndReadApplyPlan(t *testing.T) {
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("plan file permissions incorrect: got=%#o want=%#o", got, 0o600)
 	}
+	assertDirMode(t, layout.Root(), 0o700)
 
 	read, err := ReadPlan(path)
 	if err != nil {
@@ -153,9 +216,60 @@ func TestWriteAndReadApplyPlan(t *testing.T) {
 	}
 }
 
+func TestWritePlanRejectsEmptyRoots(t *testing.T) {
+	tests := []struct {
+		name   string
+		layout Layout
+	}{
+		{
+			name:   "install root",
+			layout: NewLayout("", filepath.Join(t.TempDir(), "state")),
+		},
+		{
+			name:   "state root",
+			layout: NewLayout(filepath.Join(t.TempDir(), "install"), ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := WritePlan(tt.layout, ApplyPlan{}); err == nil {
+				t.Fatalf("WritePlan should reject empty %s", tt.name)
+			}
+		})
+	}
+}
+
 func assertPath(t *testing.T, got string, want string) {
 	t.Helper()
 	if got != want {
 		t.Fatalf("path incorrect: got=%q want=%q", got, want)
+	}
+}
+
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("file permissions incorrect: got=%#o want=%#o", got, want)
+	}
+}
+
+func assertDirMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat dir %s: %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s should be a directory", path)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("dir permissions incorrect: got=%#o want=%#o", got, want)
 	}
 }
