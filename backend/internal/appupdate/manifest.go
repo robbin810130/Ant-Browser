@@ -80,6 +80,10 @@ func LoadManifest(path string) (Manifest, error) {
 
 func (m Manifest) PackageForTarget(target string) (Package, error) {
 	target = strings.TrimSpace(target)
+	if target == "" {
+		return Package{}, fmt.Errorf("target is required")
+	}
+
 	for _, pkg := range m.Packages {
 		if strings.TrimSpace(pkg.Target) != target {
 			continue
@@ -91,6 +95,12 @@ func (m Manifest) PackageForTarget(target string) (Package, error) {
 		pkg.PayloadType = strings.TrimSpace(pkg.PayloadType)
 		pkg.URL = strings.TrimSpace(pkg.URL)
 		pkg.SHA256 = strings.ToLower(strings.TrimSpace(pkg.SHA256))
+		if pkg.URL == "" {
+			return Package{}, fmt.Errorf("app update package url is required for target %s", target)
+		}
+		if pkg.SHA256 == "" {
+			return Package{}, fmt.Errorf("app update package sha256 is required for target %s", target)
+		}
 		return pkg, nil
 	}
 	return Package{}, fmt.Errorf("no app update package for target: %s", target)
