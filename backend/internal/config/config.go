@@ -73,7 +73,8 @@ type WorkspaceConfig struct {
 }
 
 type ReleaseConfig struct {
-	UpdateManifestURL string `yaml:"update_manifest_url"`
+	UpdateManifestURL    string `yaml:"update_manifest_url"`
+	AppUpdateManifestURL string `yaml:"app_update_manifest_url"`
 }
 
 // Config 应用配置
@@ -387,6 +388,8 @@ func normalizeConfig(config *Config) {
 	config.Workspace.AgentBaseURL = strings.TrimRight(strings.TrimSpace(config.Workspace.AgentBaseURL), "/")
 	config.Workspace.ServerOrigin = strings.TrimRight(strings.TrimSpace(config.Workspace.ServerOrigin), "/")
 	config.Workspace.RuntimeDir = strings.TrimSpace(config.Workspace.RuntimeDir)
+	config.Release.UpdateManifestURL = strings.TrimSpace(config.Release.UpdateManifestURL)
+	config.Release.AppUpdateManifestURL = strings.TrimSpace(config.Release.AppUpdateManifestURL)
 }
 
 func cloneInterceptorConfig(src InterceptorConfig) InterceptorConfig {
