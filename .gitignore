@@ -53,6 +53,14 @@ publish/output/
 
 # Internal docs / scratch files
 docs/
+!docs/
+docs/*
+!docs/release/
+docs/release/*
+!docs/release/windows-packaging-and-update-runbook.md
+!docs/reports/
+docs/reports/*
+!docs/reports/2026-05-16-windows-release-stability-phase-report.md
 DEPLOYMENT_GUIDE.md
 plan.md
 pic/
