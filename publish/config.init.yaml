@@ -53,3 +53,4 @@ launch_server:
   port: 19876
 release:
   update_manifest_url: ""
+  app_update_manifest_url: ""

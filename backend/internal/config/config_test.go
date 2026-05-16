@@ -78,6 +78,42 @@ browser: {}
 	if cfg.Release.UpdateManifestURL != "" {
 		t.Fatalf("Release.UpdateManifestURL 默认应为空: got=%q", cfg.Release.UpdateManifestURL)
 	}
+	if cfg.Release.AppUpdateManifestURL != "" {
+		t.Fatalf("Release.AppUpdateManifestURL 默认应为空: got=%q", cfg.Release.AppUpdateManifestURL)
+	}
+}
+
+func TestReleaseAppUpdateManifestURLDefaultsEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+
+	if cfg.Release.AppUpdateManifestURL != "" {
+		t.Fatalf("Release.AppUpdateManifestURL 默认应为空: got=%q", cfg.Release.AppUpdateManifestURL)
+	}
+}
+
+func TestReleaseAppUpdateManifestURLIsLoaded(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	customConfig := `
+release:
+  app_update_manifest_url: " https://updates.example.com/app-update.json "
+`
+	if err := os.WriteFile(configPath, []byte(customConfig), 0o644); err != nil {
+		t.Fatalf("写入测试配置失败: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	if cfg.Release.AppUpdateManifestURL != "https://updates.example.com/app-update.json" {
+		t.Fatalf("Release.AppUpdateManifestURL 未加载或未规范化: got=%q", cfg.Release.AppUpdateManifestURL)
+	}
 }
 
 func TestLoadPreservesExplicitConfig(t *testing.T) {
