@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const validSHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 func TestLoadManifestAcceptsSchemaOne(t *testing.T) {
 	path := writeManifest(t, `{
 		"schemaVersion": 1,
@@ -20,7 +22,7 @@ func TestLoadManifestAcceptsSchemaOne(t *testing.T) {
 				"target": "windows-x64",
 				"payloadType": "full",
 				"url": "https://example.test/full.zip",
-				"sha256": "ABCDEF",
+				"sha256": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 				"size": 123
 			}
 		]
@@ -73,14 +75,14 @@ func TestPackageForTargetSelectsFullPayload(t *testing.T) {
 				Target:      "darwin-arm64",
 				PayloadType: PayloadTypeFull,
 				URL:         "https://example.test/mac.zip",
-				SHA256:      "aaaa",
+				SHA256:      validSHA256,
 				Size:        10,
 			},
 			{
 				Target:      "windows-x64",
 				PayloadType: PayloadTypeFull,
 				URL:         " https://example.test/win.zip ",
-				SHA256:      " ABCDEF1234 ",
+				SHA256:      " 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF ",
 				Size:        20,
 			},
 		},
@@ -100,11 +102,43 @@ func TestPackageForTargetSelectsFullPayload(t *testing.T) {
 	if pkg.URL != "https://example.test/win.zip" {
 		t.Fatalf("url 未 trim: %q", pkg.URL)
 	}
-	if pkg.SHA256 != "abcdef1234" {
+	if pkg.SHA256 != validSHA256 {
 		t.Fatalf("sha256 未规范化: %q", pkg.SHA256)
 	}
 	if pkg.Size != 20 {
 		t.Fatalf("size 不正确: %d", pkg.Size)
+	}
+}
+
+func TestPackageForTargetAcceptsSupportedSources(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "http", url: "http://example.test/full.zip"},
+		{name: "https", url: "https://example.test/full.zip"},
+		{name: "file", url: "file:///tmp/full.zip"},
+		{name: "absolute path", url: filepath.Join(t.TempDir(), "full.zip")},
+		{name: "relative path", url: filepath.Join("updates", "full.zip")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := Manifest{
+				Packages: []Package{
+					{
+						Target:      "windows-x64",
+						PayloadType: PayloadTypeFull,
+						URL:         tt.url,
+						SHA256:      validSHA256,
+					},
+				},
+			}
+
+			if _, err := manifest.PackageForTarget("windows-x64"); err != nil {
+				t.Fatalf("PackageForTarget 返回错误: %v", err)
+			}
+		})
 	}
 }
 
@@ -115,7 +149,7 @@ func TestPackageForTargetRejectsDeltaInPhaseOne(t *testing.T) {
 				Target:      "windows-x64",
 				PayloadType: "delta",
 				URL:         "https://example.test/delta.zip",
-				SHA256:      "abc",
+				SHA256:      validSHA256,
 			},
 		},
 	}
@@ -133,7 +167,7 @@ func TestPackageForTargetRejectsEmptyTarget(t *testing.T) {
 				Target:      "windows-x64",
 				PayloadType: PayloadTypeFull,
 				URL:         "https://example.test/full.zip",
-				SHA256:      "abc",
+				SHA256:      validSHA256,
 			},
 		},
 	}
@@ -151,7 +185,7 @@ func TestPackageForTargetRejectsEmptyURL(t *testing.T) {
 				Target:      "windows-x64",
 				PayloadType: PayloadTypeFull,
 				URL:         " ",
-				SHA256:      "abc",
+				SHA256:      validSHA256,
 			},
 		},
 	}
@@ -159,6 +193,24 @@ func TestPackageForTargetRejectsEmptyURL(t *testing.T) {
 	_, err := manifest.PackageForTarget("windows-x64")
 	if err == nil {
 		t.Fatalf("PackageForTarget 应拒绝空 url")
+	}
+}
+
+func TestPackageForTargetRejectsWhitespaceURL(t *testing.T) {
+	manifest := Manifest{
+		Packages: []Package{
+			{
+				Target:      "windows-x64",
+				PayloadType: PayloadTypeFull,
+				URL:         "\t\n ",
+				SHA256:      validSHA256,
+			},
+		},
+	}
+
+	_, err := manifest.PackageForTarget("windows-x64")
+	if err == nil {
+		t.Fatalf("PackageForTarget 应拒绝纯空白 url")
 	}
 }
 
@@ -177,6 +229,24 @@ func TestPackageForTargetRejectsEmptySHA256(t *testing.T) {
 	_, err := manifest.PackageForTarget("windows-x64")
 	if err == nil {
 		t.Fatalf("PackageForTarget 应拒绝空 sha256")
+	}
+}
+
+func TestPackageForTargetRejectsInvalidSHA256(t *testing.T) {
+	manifest := Manifest{
+		Packages: []Package{
+			{
+				Target:      "windows-x64",
+				PayloadType: PayloadTypeFull,
+				URL:         "https://example.test/full.zip",
+				SHA256:      "abc",
+			},
+		},
+	}
+
+	_, err := manifest.PackageForTarget("windows-x64")
+	if err == nil {
+		t.Fatalf("PackageForTarget 应拒绝无效 sha256")
 	}
 }
 

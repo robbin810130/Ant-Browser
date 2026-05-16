@@ -3,9 +3,12 @@ package appupdate
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -101,9 +104,87 @@ func (m Manifest) PackageForTarget(target string) (Package, error) {
 		if pkg.SHA256 == "" {
 			return Package{}, fmt.Errorf("app update package sha256 is required for target %s", target)
 		}
+		if !isValidSHA256(pkg.SHA256) {
+			return Package{}, fmt.Errorf("app update package sha256 must be 64 hex characters for target %s", target)
+		}
+		if err := validatePackageSource(pkg.URL); err != nil {
+			return Package{}, fmt.Errorf("app update package url is invalid for target %s: %w", target, err)
+		}
 		return pkg, nil
 	}
 	return Package{}, fmt.Errorf("no app update package for target: %s", target)
+}
+
+func isValidSHA256(sum string) bool {
+	if len(sum) != 64 {
+		return false
+	}
+	for _, r := range sum {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validatePackageSource(source string) error {
+	if source == "" {
+		return fmt.Errorf("source is required")
+	}
+	for _, r := range source {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("source contains control characters")
+		}
+	}
+	if isWindowsAbsolutePath(source) || filepath.IsAbs(source) {
+		return nil
+	}
+
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme == "" {
+		return nil
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	switch scheme {
+	case "http", "https":
+		if parsed.Host == "" {
+			return fmt.Errorf("%s url host is required", scheme)
+		}
+		if containsSpace(source) {
+			return fmt.Errorf("%s url contains whitespace", scheme)
+		}
+		return nil
+	case "file":
+		if parsed.Host == "" && parsed.Path == "" {
+			return fmt.Errorf("file url path is required")
+		}
+		if containsSpace(source) {
+			return fmt.Errorf("file url contains whitespace")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported source scheme %s", parsed.Scheme)
+	}
+}
+
+func containsSpace(value string) bool {
+	return strings.IndexFunc(value, unicode.IsSpace) >= 0
+}
+
+func isWindowsAbsolutePath(path string) bool {
+	if len(path) >= 3 && isASCIIAlpha(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
+		return true
+	}
+	return strings.HasPrefix(path, `\\`)
+}
+
+func isASCIIAlpha(ch byte) bool {
+	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
 }
 
 func Classify(localVersion string, manifest Manifest) UpdateKind {
