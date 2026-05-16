@@ -165,6 +165,34 @@ func TestGetDesktopEnvironmentStatusBlocksWhenWorkspaceHostIsUnavailable(t *test
 	}
 }
 
+func TestGetDesktopEnvironmentStatusBlocksWhenPackagedWorkspaceAgentPayloadIsMissing(t *testing.T) {
+	root := t.TempDir()
+	layout := writeRuntimeManifestFixture(t, root)
+	versionDir, err := layout.VersionDir("2026.05.12")
+	if err != nil {
+		t.Fatalf("version dir: %v", err)
+	}
+	writeCoreFixture(t, filepath.Join(versionDir, "core"))
+	if err := os.WriteFile(layout.ActivePointerPath(), []byte(`{"version":"2026.05.12","resourceVersion":"2026.05.12"}`), 0o600); err != nil {
+		t.Fatalf("write active runtime pointer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ant-chrome.exe"), []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write packaged app stub: %v", err)
+	}
+
+	app := newRuntimeStatusTestApp(t, root)
+	result, err := app.GetDesktopEnvironmentStatus()
+	if err != nil {
+		t.Fatalf("GetDesktopEnvironmentStatus returned error: %v", err)
+	}
+	if result.State != release.StateBlocked {
+		t.Fatalf("expected blocked state, got %s with items %#v", result.State, result.Items)
+	}
+	if len(result.Items) == 0 || result.Items[0].Code != "ENV-WORKSPACE-AGENT-PAYLOAD-MISSING" {
+		t.Fatalf("unexpected failure items: %#v", result.Items)
+	}
+}
+
 func TestGetDesktopEnvironmentStatusClassifiesWorkspaceHostFailureFromEnv(t *testing.T) {
 	root := t.TempDir()
 	layout := writeRuntimeManifestFixture(t, root)

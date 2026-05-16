@@ -62,11 +62,15 @@ def main() -> None:
     installer_text = installer_path.read_text(encoding="utf-8-sig")
     assert_contains(installer_text, 'File /r "${STAGINGDIR}\\publish\\*"', "publish/installer.nsi")
     assert_contains(installer_text, 'SetOutPath "$INSTDIR\\publish"', "publish/installer.nsi")
+    assert_contains(installer_text, 'File /r "${STAGINGDIR}\\apps\\*"', "publish/installer.nsi")
+    assert_contains(installer_text, 'File /r "${STAGINGDIR}\\runtime\\*"', "publish/installer.nsi")
     assert_contains(installer_text, 'CreateDirectory "$INSTDIR\\data"', "publish/installer.nsi")
 
     windows_publish_text = windows_publish_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_publish_text, 'Copy-RuntimePublishPayload -Target "windows-amd64"', "bat/publish.ps1")
     assert_contains(windows_publish_text, 'Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir', "bat/publish.ps1")
+    assert_contains(windows_publish_text, 'Copy-WorkspaceAgentPayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir', "bat/publish.ps1")
+    assert_contains(windows_publish_text, 'Copy-BundledWorkspaceNodePayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir', "bat/publish.ps1")
     assert_contains(windows_publish_text, 'runtime/current.json 将在首次通过环境检查后写入用户状态目录', "bat/publish.ps1")
 
     mac_publish_text = mac_publish_path.read_text(encoding="utf-8")

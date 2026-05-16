@@ -220,6 +220,21 @@ func (m *releaseRuntimeManager) checkLocalPathStatus(layout release.RuntimeLayou
 		return warning
 	}
 
+	if err := validateBundledWorkspaceAgentPayload(layout.InstallRoot); err != nil {
+		result := blockedFailure(
+			"ENV-WORKSPACE-AGENT-PAYLOAD-MISSING",
+			"安装包缺少本地 workspace agent 运行时，登录后无法拉起桌面工作区服务",
+			"请重新安装包含 apps/agent 与 runtime/node 的完整安装包；若是内部测试包，请重新执行 Windows 打包并确认 payload 已随包安装。",
+		)
+		attachFailureDetails(result.Items, map[string]string{
+			"installRoot":     layout.InstallRoot,
+			"workspaceAgent":  workspaceAgentEntryPath(layout.InstallRoot),
+			"bundledNodePath": bundledWorkspaceNodePath(layout.InstallRoot),
+			"validationError": err.Error(),
+		})
+		return result
+	}
+
 	return release.CheckResult{State: release.StatePass}
 }
 
@@ -352,19 +367,19 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		ErrorCodes:       errorCodes,
 		Summary:          diagnosticSummary(result),
 		Paths: map[string]string{
-			"installRoot":                layout.InstallRoot,
-			"stateRoot":                  layout.StateRoot,
-			"manifestPath":               m.manifestPath(),
-			"runtimeRoot":                layout.RuntimeRoot(),
-			"activePointer":              layout.ActivePointerPath(),
-			"diagnosticsRoot":            layout.DiagnosticsRoot(),
-			"workspaceRuntimeDir":        resolveWorkspaceRuntimeDirWithConfig(m.app.config),
-			"workspaceServerOrigin":      workspaceServerOriginDetails.Origin,
+			"installRoot":                 layout.InstallRoot,
+			"stateRoot":                   layout.StateRoot,
+			"manifestPath":                m.manifestPath(),
+			"runtimeRoot":                 layout.RuntimeRoot(),
+			"activePointer":               layout.ActivePointerPath(),
+			"diagnosticsRoot":             layout.DiagnosticsRoot(),
+			"workspaceRuntimeDir":         resolveWorkspaceRuntimeDirWithConfig(m.app.config),
+			"workspaceServerOrigin":       workspaceServerOriginDetails.Origin,
 			"workspaceServerOriginSource": workspaceServerOriginDetails.Source,
-			"workspaceServerConfigPath":  workspaceServerOriginDetails.ConfigPath,
-			"updateManifestURL":          updateManifestResolution.URL,
-			"updateManifestSource":       updateManifestResolution.Source,
-			"updateManifestConfigPath":   updateManifestResolution.ConfigPath,
+			"workspaceServerConfigPath":   workspaceServerOriginDetails.ConfigPath,
+			"updateManifestURL":           updateManifestResolution.URL,
+			"updateManifestSource":        updateManifestResolution.Source,
+			"updateManifestConfigPath":    updateManifestResolution.ConfigPath,
 		},
 		Events: events,
 		Logs:   logs,
