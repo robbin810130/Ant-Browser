@@ -121,6 +121,11 @@ Ant Browser 适合以下场景：
 
 ## 快速开始
 
+Windows 发布 / 安装 / 更新回归内部说明见：
+
+- [docs/release/windows-packaging-and-update-runbook.md](docs/release/windows-packaging-and-update-runbook.md)
+- [docs/reports/2026-05-16-windows-release-stability-phase-report.md](docs/reports/2026-05-16-windows-release-stability-phase-report.md)
+
 ### 环境要求
 
 - 操作系统：

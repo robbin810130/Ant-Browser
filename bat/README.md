@@ -2,6 +2,10 @@
 
 > 脚本入口运行于 Windows。`publish.bat` 支持 Windows 打包，也可通过 Docker Desktop 调用 Linux 发布脚本。
 
+Windows 发布 / 安装 / 更新回归请优先查看：
+
+- [`docs/release/windows-packaging-and-update-runbook.md`](../docs/release/windows-packaging-and-update-runbook.md)
+
 ## 用途
 
 - `dev.bat`：统一的本地开发入口
@@ -189,6 +193,10 @@ Windows 产物：
 ```text
 publish\output\AntBrowser-Setup-<version>.exe
 ```
+
+完整发布与真机回归步骤见：
+
+- [`docs/release/windows-packaging-and-update-runbook.md`](../docs/release/windows-packaging-and-update-runbook.md)
 
 ### `recover-profiles.ps1`
 
