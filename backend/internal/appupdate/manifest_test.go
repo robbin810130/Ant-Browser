@@ -126,6 +126,60 @@ func TestPackageForTargetRejectsDeltaInPhaseOne(t *testing.T) {
 	}
 }
 
+func TestPackageForTargetRejectsEmptyTarget(t *testing.T) {
+	manifest := Manifest{
+		Packages: []Package{
+			{
+				Target:      "windows-x64",
+				PayloadType: PayloadTypeFull,
+				URL:         "https://example.test/full.zip",
+				SHA256:      "abc",
+			},
+		},
+	}
+
+	_, err := manifest.PackageForTarget(" ")
+	if err == nil {
+		t.Fatalf("PackageForTarget 应拒绝空 target")
+	}
+}
+
+func TestPackageForTargetRejectsEmptyURL(t *testing.T) {
+	manifest := Manifest{
+		Packages: []Package{
+			{
+				Target:      "windows-x64",
+				PayloadType: PayloadTypeFull,
+				URL:         " ",
+				SHA256:      "abc",
+			},
+		},
+	}
+
+	_, err := manifest.PackageForTarget("windows-x64")
+	if err == nil {
+		t.Fatalf("PackageForTarget 应拒绝空 url")
+	}
+}
+
+func TestPackageForTargetRejectsEmptySHA256(t *testing.T) {
+	manifest := Manifest{
+		Packages: []Package{
+			{
+				Target:      "windows-x64",
+				PayloadType: PayloadTypeFull,
+				URL:         "https://example.test/full.zip",
+				SHA256:      " ",
+			},
+		},
+	}
+
+	_, err := manifest.PackageForTarget("windows-x64")
+	if err == nil {
+		t.Fatalf("PackageForTarget 应拒绝空 sha256")
+	}
+}
+
 func TestClassifyUsesRemoteAndMinimumAppVersions(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -186,6 +240,42 @@ func TestClassifyUsesRemoteAndMinimumAppVersions(t *testing.T) {
 				MinimumAppVersion: "1.2.0",
 			},
 			want: UpdateKindSoft,
+		},
+		{
+			name:         "numeric segments are compared numerically",
+			localVersion: "1.10.0",
+			manifest: Manifest{
+				Version:           "1.2.0",
+				MinimumAppVersion: "1.0.0",
+			},
+			want: UpdateKindNone,
+		},
+		{
+			name:         "missing patch segment equals zero",
+			localVersion: "1.2",
+			manifest: Manifest{
+				Version:           "1.2.0",
+				MinimumAppVersion: "1.0.0",
+			},
+			want: UpdateKindNone,
+		},
+		{
+			name:         "malformed remote is none",
+			localVersion: "1.0.0",
+			manifest: Manifest{
+				Version:           "new",
+				MinimumAppVersion: "0.9.0",
+			},
+			want: UpdateKindNone,
+		},
+		{
+			name:         "malformed minimum is none",
+			localVersion: "1.0.0",
+			manifest: Manifest{
+				Version:           "2.0.0",
+				MinimumAppVersion: "old",
+			},
+			want: UpdateKindNone,
 		},
 	}
 
