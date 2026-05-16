@@ -101,28 +101,62 @@ func TestLoadManifestFromSourceSupportsFileURL(t *testing.T) {
 }
 
 func TestLoadManifestFromSourceTreatsWindowsPathAsLocal(t *testing.T) {
-	originalLoadManifestFile := loadManifestFile
-	t.Cleanup(func() {
-		loadManifestFile = originalLoadManifestFile
-	})
-
-	var gotPath string
-	loadManifestFile = func(path string) (Manifest, error) {
-		gotPath = path
-		return Manifest{SchemaVersion: SchemaVersion, Version: "1.2.3"}, nil
-	}
-
 	const windowsPath = `C:\updates\app-update.json`
-	manifest, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: windowsPath})
+	kind, path, err := resolveManifestSourceLocation(windowsPath)
 	if err != nil {
-		t.Fatalf("LoadManifestFromSource 返回错误: %v", err)
+		t.Fatalf("resolveManifestSourceLocation 返回错误: %v", err)
+	}
+	if kind != manifestSourceLocal {
+		t.Fatalf("Windows 本地路径应被识别为 local: got=%q", kind)
+	}
+	if path != windowsPath {
+		t.Fatalf("Windows 本地路径不应被改写: got=%q want=%q", path, windowsPath)
+	}
+}
+
+func TestResolveManifestSourceLocationClassifiesSupportedSources(t *testing.T) {
+	localPath := filepath.Join("updates", "app-update.json")
+	filePath := filepath.Join(t.TempDir(), "app-update.json")
+
+	tests := []struct {
+		name     string
+		source   string
+		wantKind manifestSourceKind
+		wantPath string
+	}{
+		{
+			name:     "http",
+			source:   "https://updates.example.com/app-update.json",
+			wantKind: manifestSourceHTTP,
+			wantPath: "https://updates.example.com/app-update.json",
+		},
+		{
+			name:     "file url",
+			source:   "file://" + filePath,
+			wantKind: manifestSourceFile,
+			wantPath: filePath,
+		},
+		{
+			name:     "local path",
+			source:   localPath,
+			wantKind: manifestSourceLocal,
+			wantPath: localPath,
+		},
 	}
 
-	if manifest.SchemaVersion != SchemaVersion || manifest.Version != "1.2.3" {
-		t.Fatalf("manifest 不正确: got=%+v", manifest)
-	}
-	if gotPath != windowsPath {
-		t.Fatalf("Windows 本地路径未路由到本地 loader: got=%q want=%q", gotPath, windowsPath)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kind, path, err := resolveManifestSourceLocation(tt.source)
+			if err != nil {
+				t.Fatalf("resolveManifestSourceLocation 返回错误: %v", err)
+			}
+			if kind != tt.wantKind {
+				t.Fatalf("kind 不正确: got=%q want=%q", kind, tt.wantKind)
+			}
+			if path != tt.wantPath {
+				t.Fatalf("path 不正确: got=%q want=%q", path, tt.wantPath)
+			}
+		})
 	}
 }
 
