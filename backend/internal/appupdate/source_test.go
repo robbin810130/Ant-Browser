@@ -100,6 +100,32 @@ func TestLoadManifestFromSourceSupportsFileURL(t *testing.T) {
 	}
 }
 
+func TestLoadManifestFromSourceTreatsWindowsPathAsLocal(t *testing.T) {
+	originalLoadManifestFile := loadManifestFile
+	t.Cleanup(func() {
+		loadManifestFile = originalLoadManifestFile
+	})
+
+	var gotPath string
+	loadManifestFile = func(path string) (Manifest, error) {
+		gotPath = path
+		return Manifest{SchemaVersion: SchemaVersion, Version: "1.2.3"}, nil
+	}
+
+	const windowsPath = `C:\updates\app-update.json`
+	manifest, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: windowsPath})
+	if err != nil {
+		t.Fatalf("LoadManifestFromSource 返回错误: %v", err)
+	}
+
+	if manifest.SchemaVersion != SchemaVersion || manifest.Version != "1.2.3" {
+		t.Fatalf("manifest 不正确: got=%+v", manifest)
+	}
+	if gotPath != windowsPath {
+		t.Fatalf("Windows 本地路径未路由到本地 loader: got=%q want=%q", gotPath, windowsPath)
+	}
+}
+
 func validManifestJSON() string {
 	return `{
 		"schemaVersion": 1,

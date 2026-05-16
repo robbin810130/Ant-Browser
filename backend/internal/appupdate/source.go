@@ -15,6 +15,8 @@ import (
 
 const envManifestURL = "DESKTOP_APP_UPDATE_MANIFEST_URL"
 
+var loadManifestFile = LoadManifest
+
 type ManifestSourceResolution struct {
 	URL        string
 	Source     string
@@ -74,6 +76,9 @@ func LoadManifestFromSource(ctx context.Context, source ManifestSourceResolution
 	if manifestURL == "" {
 		return Manifest{}, fmt.Errorf("app update manifest source is empty")
 	}
+	if isWindowsDriveAbsolutePath(manifestURL) {
+		return loadManifestFile(manifestURL)
+	}
 
 	parsed, err := url.Parse(manifestURL)
 	if err != nil {
@@ -88,9 +93,9 @@ func LoadManifestFromSource(ctx context.Context, source ManifestSourceResolution
 		if err != nil {
 			return Manifest{}, err
 		}
-		return LoadManifest(path)
+		return loadManifestFile(path)
 	case "":
-		return LoadManifest(manifestURL)
+		return loadManifestFile(manifestURL)
 	default:
 		return Manifest{}, fmt.Errorf("unsupported app update manifest source scheme: %s", parsed.Scheme)
 	}
@@ -135,4 +140,15 @@ func fileURLPath(parsed *url.URL) (string, error) {
 		path = "//" + parsed.Host + path
 	}
 	return path, nil
+}
+
+func isWindowsDriveAbsolutePath(path string) bool {
+	if len(path) < 3 {
+		return false
+	}
+	drive := path[0]
+	if !((drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z')) {
+		return false
+	}
+	return path[1] == ':' && (path[2] == '\\' || path[2] == '/')
 }
