@@ -198,7 +198,11 @@ func (a *App) startup(ctx context.Context) {
 	a.loadProxies()
 	a.reconcileProfileProxyBindings()
 	a.initWorkspaceService()
-	a.ensureWorkspaceAgentBootstrapped()
+	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
+		log.Warn("workspace agent bootstrap deferred",
+			logger.F("error", err.Error()),
+		)
+	}
 
 	// 初始化 LaunchCode 服务
 	launchCodeDAO := launchcode.NewSQLiteLaunchCodeDAO(a.db.GetConn())

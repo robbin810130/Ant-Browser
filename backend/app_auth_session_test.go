@@ -583,3 +583,23 @@ func TestBootstrapDesktopAuthRuntimeBootstrapsAndReadsAuthorizedShops(t *testing
 		t.Fatalf("期望 shops 至少被读取 2 次（warmup + 显式校验），实际=%d", shopsCalls)
 	}
 }
+
+func TestBootstrapDesktopAuthRuntimeReturnsWorkspaceBootstrapError(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			InstallRoot:  root,
+			RuntimeDir:   t.TempDir(),
+			ServerOrigin: "http://workspace-server.invalid",
+		},
+	}
+
+	err := app.BootstrapDesktopAuthRuntime()
+	if err == nil {
+		t.Fatal("期望 BootstrapDesktopAuthRuntime 在 workspace agent payload 缺失时返回错误")
+	}
+	if !strings.Contains(err.Error(), "workspace") {
+		t.Fatalf("期望错误信息包含 workspace 上下文，实际=%v", err)
+	}
+}

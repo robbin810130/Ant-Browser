@@ -203,7 +203,9 @@ func (a *App) FetchDesktopSharedLoginBindSession(accessToken, bindSessionID stri
 }
 
 func (a *App) BootstrapDesktopAuthRuntime() error {
-	a.ensureWorkspaceAgentBootstrapped()
+	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
+		return err
+	}
 	_, err := a.WorkspaceAuthorizedShops()
 	return err
 }

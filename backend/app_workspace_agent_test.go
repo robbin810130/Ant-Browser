@@ -348,7 +348,9 @@ func TestEnsureWorkspaceAgentBootstrappedUsesPersistedDesktopAccessToken(t *test
 		t.Fatalf("保存 desktop auth session 失败: %v", err)
 	}
 
-	app.ensureWorkspaceAgentBootstrapped()
+	if err := app.ensureWorkspaceAgentBootstrapped(); err != nil {
+		t.Fatalf("ensureWorkspaceAgentBootstrapped 返回错误: %v", err)
+	}
 
 	if meAuthHeader != "Bearer persisted-token-xyz" {
 		t.Fatalf("期望 auth/me 使用 Bearer persisted-token-xyz，实际=%q", meAuthHeader)
