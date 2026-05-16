@@ -15,8 +15,6 @@ import (
 
 const envManifestURL = "DESKTOP_APP_UPDATE_MANIFEST_URL"
 
-var loadManifestFile = LoadManifest
-
 type ManifestSourceResolution struct {
 	URL        string
 	Source     string
@@ -26,6 +24,14 @@ type ManifestSourceResolution struct {
 type runtimeManifestConfig struct {
 	ManifestURL string `json:"manifestUrl"`
 }
+
+type manifestSourceKind string
+
+const (
+	manifestSourceHTTP  manifestSourceKind = "http"
+	manifestSourceFile  manifestSourceKind = "file"
+	manifestSourceLocal manifestSourceKind = "local"
+)
 
 func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSourceResolution {
 	if strings.TrimSpace(runtimeDir) != "" {
@@ -72,32 +78,47 @@ func readRuntimeManifestURL(configPath string) string {
 }
 
 func LoadManifestFromSource(ctx context.Context, source ManifestSourceResolution) (Manifest, error) {
-	manifestURL := strings.TrimSpace(source.URL)
-	if manifestURL == "" {
-		return Manifest{}, fmt.Errorf("app update manifest source is empty")
-	}
-	if isWindowsDriveAbsolutePath(manifestURL) {
-		return loadManifestFile(manifestURL)
-	}
-
-	parsed, err := url.Parse(manifestURL)
+	kind, location, err := resolveManifestSourceLocation(source.URL)
 	if err != nil {
 		return Manifest{}, err
 	}
 
+	switch kind {
+	case manifestSourceHTTP:
+		return loadManifestFromHTTP(ctx, location)
+	case manifestSourceFile, manifestSourceLocal:
+		return LoadManifest(location)
+	default:
+		return Manifest{}, fmt.Errorf("unsupported app update manifest source kind: %s", kind)
+	}
+}
+
+func resolveManifestSourceLocation(source string) (manifestSourceKind, string, error) {
+	manifestURL := strings.TrimSpace(source)
+	if manifestURL == "" {
+		return "", "", fmt.Errorf("app update manifest source is empty")
+	}
+	if isWindowsAbsolutePath(manifestURL) {
+		return manifestSourceLocal, manifestURL, nil
+	}
+
+	parsed, err := url.Parse(manifestURL)
+	if err != nil {
+		return "", "", err
+	}
 	switch strings.ToLower(parsed.Scheme) {
 	case "http", "https":
-		return loadManifestFromHTTP(ctx, manifestURL)
+		return manifestSourceHTTP, manifestURL, nil
 	case "file":
 		path, err := fileURLPath(parsed)
 		if err != nil {
-			return Manifest{}, err
+			return "", "", err
 		}
-		return loadManifestFile(path)
+		return manifestSourceFile, path, nil
 	case "":
-		return loadManifestFile(manifestURL)
+		return manifestSourceLocal, manifestURL, nil
 	default:
-		return Manifest{}, fmt.Errorf("unsupported app update manifest source scheme: %s", parsed.Scheme)
+		return "", "", fmt.Errorf("unsupported app update manifest source scheme: %s", parsed.Scheme)
 	}
 }
 
@@ -140,15 +161,4 @@ func fileURLPath(parsed *url.URL) (string, error) {
 		path = "//" + parsed.Host + path
 	}
 	return path, nil
-}
-
-func isWindowsDriveAbsolutePath(path string) bool {
-	if len(path) < 3 {
-		return false
-	}
-	drive := path[0]
-	if !((drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z')) {
-		return false
-	}
-	return path[1] == ':' && (path[2] == '\\' || path[2] == '/')
 }
