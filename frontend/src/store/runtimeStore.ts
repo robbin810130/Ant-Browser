@@ -82,7 +82,7 @@ async function evaluateRuntime(set: (partial: Partial<RuntimeStoreState>) => voi
       checking: false,
       repairing: false,
       updateState: null,
-      updatePromptOpen: false,
+      updatePromptOpen: true,
       updateError: error instanceof Error ? error.message : '更新检查失败',
     })
   }
@@ -145,6 +145,7 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
       }
       return {
         updatePromptOpen: false,
+        updateError: '',
       }
     }),
   exportDiagnostics: async () => {
