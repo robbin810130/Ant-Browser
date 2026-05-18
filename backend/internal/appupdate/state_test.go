@@ -160,6 +160,18 @@ func TestWriteStateOverwriteKeepsLatestValidJSON(t *testing.T) {
 	assertFileMode(t, layout.StatePath(), 0o600)
 }
 
+func TestUnsupportedDirSyncErrorIncludesWindowsAccessDenied(t *testing.T) {
+	if !isUnsupportedDirSyncError(os.ErrInvalid) {
+		t.Fatal("os.ErrInvalid should be treated as unsupported dir sync")
+	}
+	if !isUnsupportedDirSyncError(os.ErrPermission) {
+		t.Fatal("os.ErrPermission should be treated as unsupported dir sync")
+	}
+	if !isUnsupportedDirSyncError(&os.PathError{Op: "sync", Path: `C:\state\app-update`, Err: os.ErrPermission}) {
+		t.Fatal("Windows access denied dir sync should be treated as unsupported")
+	}
+}
+
 func TestWriteAndReadApplyPlan(t *testing.T) {
 	layout := NewLayout(filepath.Join(t.TempDir(), "install"), filepath.Join(t.TempDir(), "state"))
 	plan := ApplyPlan{

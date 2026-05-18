@@ -143,7 +143,7 @@ func syncDir(dir string) error {
 }
 
 func isUnsupportedDirSyncError(err error) bool {
-	if errors.Is(err, os.ErrInvalid) {
+	if errors.Is(err, os.ErrInvalid) || errors.Is(err, os.ErrPermission) {
 		return true
 	}
 
@@ -151,5 +151,6 @@ func isUnsupportedDirSyncError(err error) bool {
 	return strings.Contains(message, "not supported") ||
 		strings.Contains(message, "operation not supported") ||
 		strings.Contains(message, "invalid argument") ||
+		strings.Contains(message, "access is denied") ||
 		strings.Contains(message, "inappropriate ioctl")
 }
