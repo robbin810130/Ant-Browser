@@ -2,6 +2,7 @@ import { HardDrive, ShieldCheck } from 'lucide-react'
 import { toast } from '../../../shared/components'
 import { EnvironmentStatusCard } from '../components/EnvironmentStatusCard'
 import { useRuntimeStore } from '../../../store/runtimeStore'
+import { useAppUpdateStore } from '../../../store/appUpdateStore'
 
 export function EnvironmentGatePage() {
   const status = useRuntimeStore((state) => state.status)
@@ -13,11 +14,17 @@ export function EnvironmentGatePage() {
   const updateState = useRuntimeStore((state) => state.updateState)
   const updatePromptOpen = useRuntimeStore((state) => state.updatePromptOpen)
   const updateError = useRuntimeStore((state) => state.updateError)
+  const appUpdateState = useAppUpdateStore((state) => state.state)
+  const appUpdatePromptOpen = useAppUpdateStore((state) => state.promptOpen)
+  const appUpdateError = useAppUpdateStore((state) => state.error)
   const retryCheck = useRuntimeStore((state) => state.retryCheck)
   const repairNow = useRuntimeStore((state) => state.repairNow)
   const exportDiagnostics = useRuntimeStore((state) => state.exportDiagnostics)
 
-  const updateBlocking = updatePromptOpen && updateState?.kind === 'required'
+  const updateBlocking =
+    (updatePromptOpen && updateState?.kind === 'required') ||
+    (appUpdatePromptOpen && (appUpdateState.kind === 'required' || appUpdateState.kind === 'unsupported_install'))
+  const combinedUpdateError = updateError || appUpdateError || appUpdateState.errorMessage
 
   const handleExport = async () => {
     try {
@@ -72,7 +79,7 @@ export function EnvironmentGatePage() {
             diagnosticsPath={diagnosticsPath}
             diagnosticsError={diagnosticsError}
             updateBlocking={updateBlocking}
-            updateError={updateError}
+            updateError={combinedUpdateError}
             onRetry={() => void handleRetry()}
             onRepair={() => void handleRepair()}
             onExport={() => void handleExport()}

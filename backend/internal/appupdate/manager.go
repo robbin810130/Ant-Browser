@@ -2,6 +2,7 @@ package appupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -178,6 +179,14 @@ func (m Manager) loadUpdate(ctx context.Context) (Manifest, ManifestSourceResolu
 
 	manifest, resolution, err := m.ManifestProvider(ctx)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && resolution.URL == "" {
+			state := State{
+				Kind:            UpdateKindNone,
+				Status:          PersistentStatusIdle,
+				LocalAppVersion: m.LocalAppVersion,
+			}
+			return Manifest{}, resolution, Package{}, state, err
+		}
 		state := State{
 			Kind:            UpdateKindFailed,
 			LocalAppVersion: m.LocalAppVersion,

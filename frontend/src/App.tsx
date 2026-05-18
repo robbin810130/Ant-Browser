@@ -15,10 +15,12 @@ import {
 import type { DesktopAuthStrongCleanupReason } from './modules/auth/api'
 import { EnvironmentGatePage } from './modules/runtime/pages/EnvironmentGatePage'
 import { UpdatePromptModal } from './modules/runtime/components/UpdatePromptModal'
+import { AppUpdatePromptModal } from './modules/appUpdate/components/AppUpdatePromptModal'
 import { useNotificationStore } from './store/notificationStore'
 import { useAuthStore } from './store/authStore'
 import { useBackupStore } from './store/backupStore'
 import { useRuntimeStore } from './store/runtimeStore'
+import { useAppUpdateStore } from './store/appUpdateStore'
 import { ForceQuit as ForceQuitApp, QuitAppOnly as QuitAppOnlyApp } from './wailsjs/go/main/App'
 import { Environment, Quit, WindowHide, WindowMinimise } from './wailsjs/runtime/runtime'
 
@@ -317,6 +319,11 @@ function App() {
   const runtimeBootstrapped = useRuntimeStore((state) => state.bootstrapped)
   const environmentReady = useRuntimeStore((state) => state.environmentReady)
   const bootstrapRuntime = useRuntimeStore((state) => state.bootstrap)
+  const appUpdateState = useAppUpdateStore((state) => state.state)
+  const appUpdatePromptOpen = useAppUpdateStore((state) => state.promptOpen)
+  const bootstrapAppUpdate = useAppUpdateStore((state) => state.bootstrap)
+  const appUpdateBlocking =
+    appUpdatePromptOpen && (appUpdateState.kind === 'required' || appUpdateState.kind === 'unsupported_install')
   const routeFallback = (
     <div className="flex min-h-[240px] items-center justify-center py-10">
       <Loading text="页面加载中..." />
@@ -328,7 +335,11 @@ function App() {
   }, [bootstrapRuntime])
 
   useEffect(() => {
-    if (!runtimeBootstrapped || !environmentReady) {
+    void bootstrapAppUpdate()
+  }, [bootstrapAppUpdate])
+
+  useEffect(() => {
+    if (!runtimeBootstrapped || !environmentReady || appUpdateBlocking) {
       return
     }
 
@@ -382,7 +393,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [environmentReady, runtimeBootstrapped, setAnonymous, setAuthenticated, setAuthenticating])
+  }, [appUpdateBlocking, environmentReady, runtimeBootstrapped, setAnonymous, setAuthenticated, setAuthenticating])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -425,11 +436,12 @@ function App() {
     void run()
   }, [setAnonymous])
 
-  if (!runtimeBootstrapped || !environmentReady) {
+  if (!runtimeBootstrapped || !environmentReady || appUpdateBlocking) {
     return (
       <ThemeProvider>
         <EnvironmentGatePage />
         <UpdatePromptModal />
+        <AppUpdatePromptModal />
         <ToastContainer />
       </ThemeProvider>
     )
@@ -442,6 +454,7 @@ function App() {
           <Loading text="正在恢复登录状态..." />
         </div>
         <UpdatePromptModal />
+        <AppUpdatePromptModal />
         <ToastContainer />
       </ThemeProvider>
     )
@@ -479,6 +492,7 @@ function App() {
           </Routes>
         </Suspense>
         <UpdatePromptModal />
+        <AppUpdatePromptModal />
         <ToastContainer />
         <CloseConfirmModal />
         <DevDesktopAuthCleanupPanel />

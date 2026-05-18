@@ -46,7 +46,7 @@ func TestDownloadDesktopAppUpdateUsesManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DownloadDesktopAppUpdate returned error: %v", err)
 	}
-	if state.Kind != appupdate.UpdateKindFailed || state.ErrorCode != "APP-UPDATE-MANIFEST-LOAD-FAILED" {
-		t.Fatalf("expected missing manifest source failure state, got %+v", state)
+	if state.Kind != appupdate.UpdateKindNone || state.Status != appupdate.PersistentStatusIdle {
+		t.Fatalf("expected missing manifest source to disable app update, got %+v", state)
 	}
 }
