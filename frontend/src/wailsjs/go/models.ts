@@ -17,6 +17,47 @@ export namespace authsession {
 
 }
 
+export namespace appupdate {
+	
+	export class State {
+	    kind: string;
+	    status: string;
+	    localAppVersion: string;
+	    remoteAppVersion: string;
+	    minimumRuntimeResourceVersion: string;
+	    manifestSource: string;
+	    manifestUrl: string;
+	    payloadUrl: string;
+	    target: string;
+	    notes: string;
+	    errorCode: string;
+	    errorMessage: string;
+	    details: {[key: string]: string};
+	
+	    static createFrom(source: any = {}) {
+	        return new State(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.status = source["status"];
+	        this.localAppVersion = source["localAppVersion"];
+	        this.remoteAppVersion = source["remoteAppVersion"];
+	        this.minimumRuntimeResourceVersion = source["minimumRuntimeResourceVersion"];
+	        this.manifestSource = source["manifestSource"];
+	        this.manifestUrl = source["manifestUrl"];
+	        this.payloadUrl = source["payloadUrl"];
+	        this.target = source["target"];
+	        this.notes = source["notes"];
+	        this.errorCode = source["errorCode"];
+	        this.errorMessage = source["errorMessage"];
+	        this.details = source["details"];
+	    }
+	}
+
+}
+
 export namespace backend {
 
 	export class CookieInfo {
@@ -1131,4 +1172,3 @@ export namespace workspace {
 	}
 
 }
-

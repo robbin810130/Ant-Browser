@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/appupdate"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/fsutil"
@@ -357,6 +358,7 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 
 	workspaceServerOriginDetails := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
 	updateManifestResolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	appUpdateLayout := appupdate.NewLayout(layout.InstallRoot, layout.StateRoot)
 
 	return release.WriteDiagnosticBundle(layout.DiagnosticsRoot(), release.DiagnosticBundle{
 		Platform:         fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH),
@@ -380,6 +382,9 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 			"updateManifestURL":           updateManifestResolution.URL,
 			"updateManifestSource":        updateManifestResolution.Source,
 			"updateManifestConfigPath":    updateManifestResolution.ConfigPath,
+			"appUpdateRoot":               appUpdateLayout.Root(),
+			"appUpdateStatePath":          appUpdateLayout.StatePath(),
+			"appUpdatePlanPath":           appUpdateLayout.PlanPath(),
 		},
 		Events: events,
 		Logs:   logs,
