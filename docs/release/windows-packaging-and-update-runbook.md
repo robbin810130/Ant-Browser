@@ -12,6 +12,10 @@
 2. **运行时更新**
    - 启动检查更新
    - `soft / required / manifest load fail` 三类场景可回归
+3. **应用本体自更新**
+   - 生成 `publish/output/app-update-stable.json`
+   - 生成 `publish/output/AntBrowser-<version>-windows-amd64.zip`
+   - 客户端内执行下载、hash 校验、staging、runner 替换与重启
 
 ## 当前边界
 
@@ -20,16 +24,15 @@
 - runtime 更新检查与弹窗链路
 - `runtime/current.json` 切换
 - 更新失败在弹窗内展示完整错误
-
-**未完成：**
-
 - 应用本体自更新
 - 安装包级别的客户端下载、替换与重启
+- Windows 新安装默认使用 `%LOCALAPPDATA%\Programs\Ant Browser`
 
 结论：
 
 - 现在可以做到“更新运行时资源”
-- 还不能宣称“以后所有 bugfix 都能只靠客户端点更新完成”
+- 现在也具备“更新客户端本体”的代码与发布产物链路
+- 真机发布前仍必须跑完本 runbook 的应用本体自更新回归场景
 
 ## 发布前检查
 
@@ -78,7 +81,9 @@ bat\publish.bat W -Version 1.1.0
 6. 组装 `publish/staging/`
 7. 调用 `publish/installer.nsi`
 8. 输出 `publish/output/AntBrowser-Setup-<version>.exe`
-9. 清理 `publish/staging/`
+9. 生成应用本体更新 zip 与 manifest
+10. 运行 `tools/app-update/verify-app-update-package.py`
+11. 清理 `publish/staging/`
 
 ## Windows 打包成功判定
 
@@ -89,8 +94,13 @@ bat\publish.bat W -Version 1.1.0
    - `发布契约校验通过`
    - `运行时哈希校验通过`
    - `Windows 安装包生成成功`
+   - `应用本体更新包生成成功`
 3. 产物存在：
    - `publish/output/AntBrowser-Setup-<version>.exe`
+   - `publish/output/app-update-stable.json`
+   - `publish/output/app-update-stable.json.sha256`
+   - `publish/output/AntBrowser-<version>-windows-amd64.zip`
+   - `publish/output/AntBrowser-<version>-windows-amd64.zip.sha256`
 
 ## Windows 真机安装回归
 
@@ -100,7 +110,8 @@ bat\publish.bat W -Version 1.1.0
 
 1. 安装程序可启动
 2. 安装流程可完成
-3. 安装目录存在：
+3. 新安装默认目录为 `%LOCALAPPDATA%\Programs\Ant Browser`
+4. 安装目录存在：
    - `ant-chrome.exe`
    - `publish/runtime-manifest.json`
    - `publish/runtime-sources.json`
@@ -129,6 +140,8 @@ bat\publish.bat W -Version 1.1.0
 2. 应用进入登录页或后续正常流程
 
 ## 更新回归场景
+
+本节只覆盖 runtime/resource 更新，不替换 `ant-chrome.exe`。
 
 ### A：soft update
 
@@ -169,8 +182,99 @@ bat\publish.bat W -Version 1.1.0
 2. 错误直接显示在弹窗里
 3. 文案里能看到：
    - 来源（如 `env:DESKTOP_UPDATE_MANIFEST_URL`）
-   - manifest 路径
-   - 文件不存在 / load failed 信息
+    - manifest 路径
+    - 文件不存在 / load failed 信息
+
+## 应用本体自更新回归场景
+
+应用本体更新与 runtime 更新分开验证。runtime 更新只切换 `runtime/current.json`；应用本体更新会替换用户态安装目录中的 `ant-chrome.exe` 与随包 payload。
+
+### 前置条件
+
+1. 新安装默认目录为 `%LOCALAPPDATA%\Programs\Ant Browser`
+2. `publish/output/app-update-stable.json` 存在
+3. `publish/output/AntBrowser-<version>-windows-amd64.zip` 存在
+4. manifest 中的 `sha256` 与 zip 文件一致
+5. 执行以下命令通过：
+
+```powershell
+python3 tools/app-update/verify-app-update-package.py publish/output/app-update-stable.json publish/output/AntBrowser-<version>-windows-amd64.zip windows-amd64
+```
+
+### A：soft app update success
+
+构造规则：
+
+- 本地 app version 小于 manifest `version`
+- 本地 app version 大于等于 manifest `minimumAppVersion`
+- payload 为 `payloadType: full`
+
+预期：
+
+1. 弹窗显示客户端更新
+2. 用户可稍后处理
+3. 点击更新后应用先下载、校验并 staging
+4. 应用退出，runner 替换用户态安装目录
+5. 应用自动重启
+6. 新版本号等于 manifest `version`
+7. `stateRoot/app-update/state.json` 最终为 `succeeded`
+
+### B：required app update success
+
+构造规则：
+
+- 本地 app version 小于 manifest `minimumAppVersion`
+- manifest `version` 大于本地 app version
+
+预期：
+
+1. 弹窗显示 required 客户端更新
+2. 没有“稍后再说”
+3. 登录恢复和主工作台被阻断
+4. 点击更新后完成下载、staging、替换与重启
+5. 新版本通过 `--post-update-check`
+
+### C：unsupported install
+
+构造规则：
+
+- 当前安装目录位于 `C:\Program Files` 或其他不可写目录
+- app-update manifest 指向可用的新版本
+
+预期：
+
+1. 弹窗显示当前安装位置不支持自动更新
+2. 不执行下载与替换
+3. 提示迁移到用户态安装目录
+4. 诊断包包含：
+   - `appUpdateRoot`
+   - `appUpdateStatePath`
+   - `appUpdatePlanPath`
+
+### D：manifest load fail
+
+构造规则：
+
+- 设置 `DESKTOP_APP_UPDATE_MANIFEST_URL` 为不存在的路径
+
+预期：
+
+1. 弹窗显示客户端更新检查失败
+2. 错误码为 `APP-UPDATE-MANIFEST-LOAD-FAILED`
+3. 不影响 runtime 更新 API 的状态
+
+### E：checksum mismatch
+
+构造规则：
+
+- manifest package `sha256` 与 zip 实际 hash 不一致
+
+预期：
+
+1. 下载后拒绝进入 staging
+2. `state.json` 保留错误码 `APP-UPDATE-DOWNLOAD-FAILED`
+3. 不启动 apply runner
+4. 安装目录没有变化
 
 ## 小Q 的 Windows 安装包任务
 
@@ -224,4 +328,3 @@ bat\publish.bat W
 
 - 前端是否跑的是旧 bundle
 - Wails 绑定是否重新生成
-
