@@ -13,7 +13,7 @@ Unicode True
 !define PRODUCT_NAME    "Ant Browser"
 !define PRODUCT_EXE     "ant-chrome.exe"
 !define UNINSTALL_KEY   "Software\Microsoft\Windows\CurrentVersion\Uninstall\AntBrowser"
-!define INSTALL_DIR     "$PROGRAMFILES64\Ant Browser"
+!define INSTALL_DIR     "$LOCALAPPDATA\Programs\Ant Browser"
 !define POWERSHELL_EXE  "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
 
 !include "MUI2.nsh"
@@ -122,8 +122,8 @@ FunctionEnd
 Name "${PRODUCT_NAME} ${VERSION}"
 OutFile "..\publish\output\AntBrowser-Setup-${VERSION}.exe"
 InstallDir "${INSTALL_DIR}"
-InstallDirRegKey HKLM "${UNINSTALL_KEY}" "InstallLocation"
-RequestExecutionLevel admin
+InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
+RequestExecutionLevel user
 !ifdef BESTCOMPRESSION
   SetCompressor /SOLID lzma
 !else
@@ -184,14 +184,14 @@ Section "Ant Browser (required)" SecMain
   SetOutPath "$INSTDIR"
 !endif
   CreateDirectory "$INSTDIR\data"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName"     "${PRODUCT_NAME}"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayVersion"  "${VERSION}"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "Publisher"       "Ant Chrome Team"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayIcon"     "$INSTDIR\${PRODUCT_EXE}"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "NoModify"        "1"
-  WriteRegStr HKLM "${UNINSTALL_KEY}" "NoRepair"        "1"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName"     "${PRODUCT_NAME}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion"  "${VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher"       "Ant Chrome Team"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon"     "$INSTDIR\${PRODUCT_EXE}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "NoModify"        "1"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "NoRepair"        "1"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\${PRODUCT_EXE}"
@@ -232,7 +232,7 @@ Section "Uninstall"
   Delete /REBOOTOK "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall.lnk"
   RMDir /REBOOTOK "$SMPROGRAMS\${PRODUCT_NAME}"
   Delete /REBOOTOK "$DESKTOP\${PRODUCT_NAME}.lnk"
-  DeleteRegKey HKLM "${UNINSTALL_KEY}"
+  DeleteRegKey HKCU "${UNINSTALL_KEY}"
   MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "是否彻底清理所有用户数据？$\r$\n$\r$\n选择“是”将删除 data 目录（含数据库/实例数据）以及安装目录残留文件。$\r$\n此操作不可恢复。" IDYES un_remove_all_data IDNO un_keep_user_data
 
 un_remove_all_data:

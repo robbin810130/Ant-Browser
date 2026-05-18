@@ -684,6 +684,65 @@ function Invoke-WindowsPackaging {
     Write-Host ""
 }
 
+function New-AppUpdateZip {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StagingDir
+    )
+
+    $outputDir = Join-Path $repoRoot "publish/output"
+    if (-not (Test-Path -LiteralPath $outputDir)) {
+        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    }
+
+    $zipPath = Join-Path $outputDir "AntBrowser-$script:Version-windows-amd64.zip"
+    if (Test-Path -LiteralPath $zipPath) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+
+    $payloadPaths = @(Get-ChildItem -LiteralPath $StagingDir -Force | Where-Object { $_.Name -ne "data" } | ForEach-Object { $_.FullName })
+    if ($payloadPaths.Count -eq 0) {
+        throw "app update zip payload is empty"
+    }
+    Compress-Archive -LiteralPath $payloadPaths -DestinationPath $zipPath -Force
+    return $zipPath
+}
+
+function New-AppUpdateManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ZipPath
+    )
+
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash.ToLowerInvariant()
+    $size = (Get-Item -LiteralPath $ZipPath).Length
+    $manifestPath = Join-Path $repoRoot "publish/output/app-update-stable.json"
+    $zipName = Split-Path -Leaf $ZipPath
+    $manifest = [ordered]@{
+        schemaVersion = 1
+        channel = "stable"
+        version = $script:Version
+        minimumRuntimeResourceVersion = $script:Version
+        minimumAppVersion = $script:Version
+        publishedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        notes = "Ant Browser $script:Version"
+        packages = @(@{
+            target = "windows-amd64"
+            payloadType = "full"
+            url = $zipName
+            sha256 = $hash
+            size = $size
+        })
+    }
+    $json = $manifest | ConvertTo-Json -Depth 20
+    [System.IO.File]::WriteAllText($manifestPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
+
+    $manifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText("$manifestPath.sha256", "$manifestHash  app-update-stable.json`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText("$ZipPath.sha256", "$hash  $zipName`n", [System.Text.UTF8Encoding]::new($false))
+    return $manifestPath
+}
+
 function Remove-WindowsStaging {
     param([string]$StagingDir)
 
@@ -708,6 +767,11 @@ function Publish-Windows {
     try {
         $stagingDir = New-WindowsStaging
         Invoke-WindowsPackaging -MakensisPath $makensisPath -StagingDir $stagingDir
+        $appUpdateZip = New-AppUpdateZip -StagingDir $stagingDir
+        $appUpdateManifest = New-AppUpdateManifest -ZipPath $appUpdateZip
+        Invoke-NativeCommand -FilePath "python3" -Arguments @("tools/app-update/verify-app-update-package.py", $appUpdateManifest, $appUpdateZip, "windows-amd64")
+        Write-Host "✓ 应用本体更新包生成成功"
+        Write-Host ""
     }
     finally {
         Remove-WindowsStaging -StagingDir $stagingDir
