@@ -61,6 +61,26 @@ func TestExtractFullPayloadExtractsFiles(t *testing.T) {
 	assertDirMode(t, dest, 0o700)
 }
 
+func TestExtractFullPayloadHandlesFileDirectoryConflict(t *testing.T) {
+	zipPath := writeZip(t, map[string]string{
+		"publish":                       "file that blocks publish directory",
+		"publish/runtime-manifest.json": `{"schemaVersion":2}`,
+		"ant-chrome.exe":                "MZ",
+	})
+	dest := filepath.Join(t.TempDir(), "out")
+
+	if err := ExtractFullPayload(zipPath, dest); err != nil {
+		t.Fatalf("ExtractFullPayload returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "publish", "runtime-manifest.json"))
+	if err != nil {
+		t.Fatalf("read runtime manifest: %v", err)
+	}
+	if string(data) != `{"schemaVersion":2}` {
+		t.Fatalf("unexpected runtime manifest: %q", string(data))
+	}
+}
+
 func TestValidateStagedWindowsPayloadRequiresCoreFiles(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "publish"), 0o755); err != nil {

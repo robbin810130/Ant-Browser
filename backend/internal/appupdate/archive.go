@@ -28,6 +28,10 @@ func ExtractFullPayload(zipPath, destination string) error {
 			return fmt.Errorf("zip symlink entries are not supported: %s", file.Name)
 		}
 	}
+	requiredDirs, err := requiredZipDirs(destination, reader.File)
+	if err != nil {
+		return err
+	}
 
 	if err := os.RemoveAll(destination); err != nil {
 		return err
@@ -42,12 +46,15 @@ func ExtractFullPayload(zipPath, destination string) error {
 			return err
 		}
 		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, dirMode(file.Mode())); err != nil {
+			if err := mkdirAllSafe(destination, target, dirMode(file.Mode())); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		if requiredDirs[filepath.Clean(target)] {
+			continue
+		}
+		if err := mkdirAllSafe(destination, filepath.Dir(target), 0o700); err != nil {
 			return err
 		}
 		if err := extractZipFile(file, target); err != nil {
@@ -100,6 +107,71 @@ func safeZipEntryPath(destination, name string) (string, error) {
 		return "", fmt.Errorf("zip entry escapes destination: %s", name)
 	}
 	return target, nil
+}
+
+func requiredZipDirs(destination string, files []*zip.File) (map[string]bool, error) {
+	dirs := map[string]bool{
+		filepath.Clean(destination): true,
+	}
+	for _, file := range files {
+		target, err := safeZipEntryPath(destination, file.Name)
+		if err != nil {
+			return nil, err
+		}
+		if file.FileInfo().IsDir() {
+			dirs[filepath.Clean(target)] = true
+			continue
+		}
+		dir := filepath.Clean(filepath.Dir(target))
+		for {
+			dirs[dir] = true
+			parent := filepath.Dir(dir)
+			if parent == dir || dir == filepath.Clean(destination) {
+				break
+			}
+			dir = parent
+		}
+	}
+	return dirs, nil
+}
+
+func mkdirAllSafe(root, path string, mode os.FileMode) error {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if path == root {
+		return os.MkdirAll(root, mode)
+	}
+
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("directory escapes destination: %s", path)
+	}
+
+	current := root
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err == nil {
+			if info.IsDir() {
+				continue
+			}
+			if err := os.RemoveAll(current); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Mkdir(current, mode); err != nil && !os.IsExist(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func extractZipFile(file *zip.File, target string) error {
