@@ -207,6 +207,9 @@ func (b WindowsBackend) launchPostUpdateCheck(plan ApplyPlan, planPath string) e
 }
 
 func runnerExePath(plan ApplyPlan) string {
+	if path := strings.TrimSpace(plan.RunnerPath); path != "" {
+		return filepath.Clean(path)
+	}
 	return filepath.Join(NewLayout(plan.InstallRoot, plan.StateRoot).RunnerRoot(), "ant-chrome-update-runner.exe")
 }
 

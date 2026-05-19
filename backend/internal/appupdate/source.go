@@ -1,6 +1,7 @@
 package appupdate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -69,6 +70,7 @@ func readRuntimeManifestURL(configPath string) string {
 	if err != nil {
 		return ""
 	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 
 	var runtimeConfig runtimeManifestConfig
 	if err := json.Unmarshal(data, &runtimeConfig); err != nil {

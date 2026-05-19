@@ -154,4 +154,20 @@ func TestManagerApplySpawnsRunnerForStagedUpdate(t *testing.T) {
 	if platform.preparedPlan.StagedPath != staged {
 		t.Fatalf("unexpected staged path in plan: %q", platform.preparedPlan.StagedPath)
 	}
+	if platform.preparedPlan.RunnerPath == "" {
+		t.Fatal("expected runner path in prepared plan")
+	}
+	if filepath.Dir(platform.preparedPlan.RunnerPath) == layout.RunnerRoot() {
+		t.Fatalf("expected runner path to use an attempt-specific directory, got %q", platform.preparedPlan.RunnerPath)
+	}
+	if rel, err := filepath.Rel(layout.RunnerRoot(), platform.preparedPlan.RunnerPath); err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) {
+		t.Fatalf("runner path should stay under runner root: path=%q rel=%q err=%v", platform.preparedPlan.RunnerPath, rel, err)
+	}
+	plan, err := ReadPlan(layout.PlanPath())
+	if err != nil {
+		t.Fatalf("ReadPlan returned error: %v", err)
+	}
+	if plan.RunnerPath != platform.preparedPlan.RunnerPath {
+		t.Fatalf("written plan runner path mismatch: got=%q want=%q", plan.RunnerPath, platform.preparedPlan.RunnerPath)
+	}
 }
