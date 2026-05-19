@@ -19,6 +19,7 @@ type ApplyPlan struct {
 	ManifestURL      string `json:"manifestUrl"`
 	PayloadURL       string `json:"payloadUrl"`
 	WaitForProcessID int    `json:"waitForProcessId"`
+	RunnerPath       string `json:"runnerPath"`
 }
 
 func WritePlan(layout Layout, plan ApplyPlan) (string, error) {

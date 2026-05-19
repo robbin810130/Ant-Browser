@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 type ManifestProvider func(context.Context) (Manifest, ManifestSourceResolution, error)
@@ -140,6 +142,7 @@ func (m Manager) Apply(ctx context.Context) (State, error) {
 		PayloadURL:       persistent.PayloadURL,
 		WaitForProcessID: os.Getpid(),
 	}
+	plan.RunnerPath = newRunnerPath(m.Layout, plan)
 	if err := m.Platform.PrepareApply(plan); err != nil {
 		return State{}, err
 	}
@@ -159,6 +162,37 @@ func (m Manager) Apply(ctx context.Context) (State, error) {
 		return State{}, err
 	}
 	return persistentStateToState(next, UpdateKindSoft), nil
+}
+
+func newRunnerPath(layout Layout, plan ApplyPlan) string {
+	segment := safeRunnerPathSegment(plan.NewAppVersion)
+	if segment == "" {
+		segment = "update"
+	}
+	return filepath.Join(layout.RunnerRoot(), fmt.Sprintf("%s-%d-%d", segment, plan.WaitForProcessID, time.Now().UnixNano()), "ant-chrome-update-runner.exe")
+}
+
+func safeRunnerPathSegment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var builder strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == '.', r == '-', r == '_':
+			builder.WriteRune(r)
+		default:
+			builder.WriteRune('-')
+		}
+	}
+	return strings.Trim(builder.String(), ".-_")
 }
 
 func DefaultManifestProvider(source func() ManifestSourceResolution) ManifestProvider {

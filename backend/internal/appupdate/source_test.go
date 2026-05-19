@@ -39,6 +39,31 @@ func TestResolveManifestSourcePrefersRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestResolveManifestSourceAcceptsRuntimeConfigWithBOM(t *testing.T) {
+	runtimeDir := t.TempDir()
+	configDir := filepath.Join(runtimeDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("创建 runtime config 目录失败: %v", err)
+	}
+	configPath := filepath.Join(configDir, "app-update.json")
+	data := append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"manifestUrl":"http://127.0.0.1:8080/app-update-stable.json"}`)...)
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatalf("写入 runtime config 失败: %v", err)
+	}
+
+	resolution := ResolveManifestSource(runtimeDir, &config.Config{})
+
+	if resolution.URL != "http://127.0.0.1:8080/app-update-stable.json" {
+		t.Fatalf("URL 不正确: got=%q", resolution.URL)
+	}
+	if resolution.Source != "runtime-config" {
+		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+	if resolution.ConfigPath != configPath {
+		t.Fatalf("ConfigPath 不正确: got=%q want=%q", resolution.ConfigPath, configPath)
+	}
+}
+
 func TestResolveManifestSourceUsesEnvBeforeConfig(t *testing.T) {
 	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", " https://updates.example.com/env.json ")
 

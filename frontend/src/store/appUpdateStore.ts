@@ -7,6 +7,7 @@ import {
   getDesktopAppUpdateState,
 } from '../modules/appUpdate/api'
 import type { AppUpdateState } from '../modules/appUpdate/types'
+import { QuitAppOnly } from '../wailsjs/go/main/App'
 
 const noneState: AppUpdateState = {
   kind: 'none',
@@ -83,6 +84,11 @@ export const useAppUpdateStore = create<AppUpdateStoreState>((set, get) => ({
       }
       const state = await applyDesktopAppUpdate()
       set({ state, promptOpen: true, applying: false })
+      if (state.status === 'applying') {
+        void QuitAppOnly().catch((error) => {
+          console.error('QuitAppOnly after app update apply failed', error)
+        })
+      }
     } catch (error) {
       set({ applying: false, error: message(error, '应用更新启动失败') })
       throw error
