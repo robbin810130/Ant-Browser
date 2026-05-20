@@ -442,6 +442,7 @@ function App() {
         <EnvironmentGatePage />
         <UpdatePromptModal />
         <AppUpdatePromptModal />
+        <CloseConfirmModal />
         <ToastContainer />
       </ThemeProvider>
     )
@@ -455,6 +456,7 @@ function App() {
         </div>
         <UpdatePromptModal />
         <AppUpdatePromptModal />
+        <CloseConfirmModal />
         <ToastContainer />
       </ThemeProvider>
     )
