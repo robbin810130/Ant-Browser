@@ -6,8 +6,8 @@ import (
 	"ant-chrome/backend/internal/appupdate"
 )
 
-func RunAppUpdateCLI(mode, planPath string) error {
-	backend := appupdate.WindowsBackend{}
+func RunAppUpdateCLI(mode, planPath, appVersion string) error {
+	backend := appupdate.WindowsBackend{CurrentAppVersion: appVersion}
 	switch mode {
 	case "apply":
 		return backend.RunApply(planPath)

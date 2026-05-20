@@ -50,3 +50,32 @@ func TestDownloadDesktopAppUpdateUsesManager(t *testing.T) {
 		t.Fatalf("expected missing manifest source to disable app update, got %+v", state)
 	}
 }
+
+func TestAppUpdateStateRootForWindowsUsesLocalAppDataOutsideInstallRoot(t *testing.T) {
+	localAppData := filepath.Join(t.TempDir(), "LocalAppData")
+	t.Setenv("LOCALAPPDATA", localAppData)
+
+	installRoot := filepath.Join(localAppData, "Programs", "Ant Browser")
+	fallback := installRoot
+	got := appUpdateStateRootForOS("windows", installRoot, fallback)
+	want := filepath.Join(localAppData, "Ant Browser")
+
+	if got != want {
+		t.Fatalf("unexpected app update state root: got=%s want=%s", got, want)
+	}
+	if pathInsideRoot(got, installRoot) {
+		t.Fatalf("app update state root must stay outside install root: state=%s install=%s", got, installRoot)
+	}
+}
+
+func TestAppUpdateStateRootFallsBackWhenWindowsStateWouldBeInsideInstallRoot(t *testing.T) {
+	installRoot := filepath.Join(t.TempDir(), "Ant Browser")
+	t.Setenv("LOCALAPPDATA", installRoot)
+
+	fallback := filepath.Join(t.TempDir(), "state")
+	got := appUpdateStateRootForOS("windows", installRoot, fallback)
+
+	if got != fallback {
+		t.Fatalf("expected fallback state root when LOCALAPPDATA is inside install root: got=%s want=%s", got, fallback)
+	}
+}

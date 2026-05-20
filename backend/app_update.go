@@ -3,13 +3,16 @@ package backend
 import (
 	"context"
 	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"strings"
 
 	"ant-chrome/backend/internal/appupdate"
 )
 
 func (a *App) appUpdateLayout() appupdate.Layout {
 	layout := a.runtimeLayout()
-	return appupdate.NewLayout(layout.InstallRoot, layout.StateRoot)
+	return appupdate.NewLayout(layout.InstallRoot, appUpdateStateRootForOS(goruntime.GOOS, layout.InstallRoot, layout.StateRoot))
 }
 
 func (a *App) appUpdateManager() appupdate.Manager {
@@ -69,6 +72,44 @@ func (a *App) appUpdateContext() context.Context {
 		return a.ctx
 	}
 	return context.Background()
+}
+
+func appUpdateStateRootForOS(goos, installRoot, fallbackStateRoot string) string {
+	if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		if root := windowsAppUpdateStateRoot(); strings.TrimSpace(root) != "" && !pathInsideRoot(root, installRoot) {
+			return root
+		}
+	}
+	return fallbackStateRoot
+}
+
+func windowsAppUpdateStateRoot() string {
+	if base := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); base != "" {
+		return filepath.Join(base, "Ant Browser")
+	}
+	if base, err := os.UserConfigDir(); err == nil && strings.TrimSpace(base) != "" {
+		return filepath.Join(base, "Ant Browser")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, "AppData", "Local", "Ant Browser")
+	}
+	return ""
+}
+
+func pathInsideRoot(path, root string) bool {
+	path = filepath.Clean(strings.TrimSpace(path))
+	root = filepath.Clean(strings.TrimSpace(root))
+	if path == "" || root == "" {
+		return false
+	}
+	if strings.EqualFold(path, root) {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func appUpdatePersistentStateToAPI(persistent appupdate.PersistentState, fallbackLocalVersion string) appupdate.State {

@@ -39,6 +39,15 @@ func TestWindowsBackendBackupReplaceAndRollback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(install, "publish", "runtime-manifest.json"), []byte(`{"old":true}`), 0o600); err != nil {
 		t.Fatalf("write old manifest: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(install, "data"), 0o755); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(install, "data", "app.db"), []byte("user-db"), 0o600); err != nil {
+		t.Fatalf("write data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(install, "config.yaml"), []byte("user-config"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 
 	staged := filepath.Join(t.TempDir(), "staged")
 	if err := os.MkdirAll(filepath.Join(staged, "publish"), 0o755); err != nil {
@@ -49,6 +58,9 @@ func TestWindowsBackendBackupReplaceAndRollback(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(staged, "publish", "runtime-manifest.json"), []byte(`{"new":true}`), 0o600); err != nil {
 		t.Fatalf("write new manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staged, "config.yaml"), []byte("default-config"), 0o600); err != nil {
+		t.Fatalf("write staged config: %v", err)
 	}
 
 	plan := ApplyPlan{
@@ -73,6 +85,20 @@ func TestWindowsBackendBackupReplaceAndRollback(t *testing.T) {
 	}
 	if string(data) != "new" {
 		t.Fatalf("expected new exe, got %q", string(data))
+	}
+	data, err = os.ReadFile(filepath.Join(install, "data", "app.db"))
+	if err != nil {
+		t.Fatalf("read preserved data: %v", err)
+	}
+	if string(data) != "user-db" {
+		t.Fatalf("expected user data to be preserved, got %q", string(data))
+	}
+	data, err = os.ReadFile(filepath.Join(install, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read preserved config: %v", err)
+	}
+	if string(data) != "user-config" {
+		t.Fatalf("expected user config to be preserved, got %q", string(data))
 	}
 	if err := backend.rollbackInstall(plan); err != nil {
 		t.Fatalf("rollbackInstall returned error: %v", err)
@@ -142,7 +168,7 @@ func TestWindowsBackendPostUpdateCheckWritesSucceededState(t *testing.T) {
 		t.Fatalf("WritePlan returned error: %v", err)
 	}
 
-	if err := (WindowsBackend{}).PostUpdateCheck(planPath); err != nil {
+	if err := (WindowsBackend{SuppressRelaunch: true}).PostUpdateCheck(planPath); err != nil {
 		t.Fatalf("PostUpdateCheck returned error: %v", err)
 	}
 	state, err := ReadState(layout)
@@ -151,5 +177,32 @@ func TestWindowsBackendPostUpdateCheckWritesSucceededState(t *testing.T) {
 	}
 	if state.Status != PersistentStatusSucceeded || state.RemoteAppVersion != "1.2.0" {
 		t.Fatalf("unexpected state: %+v", state)
+	}
+}
+
+func TestWindowsBackendPostUpdateCheckRejectsVersionMismatch(t *testing.T) {
+	layout := NewLayout(filepath.Join(t.TempDir(), "install"), t.TempDir())
+	plan := ApplyPlan{
+		InstallRoot:   layout.InstallRoot,
+		StateRoot:     layout.StateRoot,
+		Target:        "windows-amd64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (WindowsBackend{CurrentAppVersion: "1.1.0", SuppressRelaunch: true}).PostUpdateCheck(planPath)
+	if err == nil {
+		t.Fatal("expected version mismatch error")
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-POST-CHECK-VERSION-MISMATCH" {
+		t.Fatalf("unexpected mismatch state: %+v", state)
 	}
 }
