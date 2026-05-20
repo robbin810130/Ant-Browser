@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,6 +108,67 @@ func TestManagerDownloadStagesPayload(t *testing.T) {
 	}
 	if persistent.Status != PersistentStatusStaged || persistent.PayloadURL != payload {
 		t.Fatalf("unexpected persistent state: %+v", persistent)
+	}
+}
+
+func TestManagerDownloadResolvesRelativePackageURLFromManifestURL(t *testing.T) {
+	payload := writeZip(t, map[string]string{
+		"ant-chrome.exe":                "MZ",
+		"publish/runtime-manifest.json": `{"schemaVersion":2}`,
+	})
+	data, err := os.ReadFile(payload)
+	if err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	sum := fmt.Sprintf("%x", sha256.Sum256(data))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/AntBrowser-1.2.0-windows-amd64.zip" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	layout := NewLayout(filepath.Join(t.TempDir(), "install"), t.TempDir())
+	manager := Manager{
+		LocalAppVersion: "1.1.0",
+		Layout:          layout,
+		Platform:        &fakePlatform{target: "windows-amd64"},
+		ManifestProvider: func(context.Context) (Manifest, ManifestSourceResolution, error) {
+			return Manifest{
+				SchemaVersion: SchemaVersion,
+				Version:       "1.2.0",
+				Packages: []Package{{
+					Target:      "windows-amd64",
+					PayloadType: PayloadTypeFull,
+					URL:         "AntBrowser-1.2.0-windows-amd64.zip",
+					SHA256:      sum,
+					Size:        int64(len(data)),
+				}},
+			}, ManifestSourceResolution{Source: "runtime-config", URL: server.URL + "/updates/app-update-stable.json"}, nil
+		},
+	}
+
+	state, err := manager.Download(context.Background())
+	if err != nil {
+		t.Fatalf("Download returned error: %v", err)
+	}
+	wantPayloadURL := server.URL + "/updates/AntBrowser-1.2.0-windows-amd64.zip"
+	if state.PayloadURL != wantPayloadURL {
+		t.Fatalf("payload URL not resolved: got=%q want=%q", state.PayloadURL, wantPayloadURL)
+	}
+	persistent, err := ReadState(layout)
+	if err != nil {
+		t.Fatalf("ReadState returned error: %v", err)
+	}
+	if persistent.PayloadURL != wantPayloadURL {
+		t.Fatalf("persistent payload URL not resolved: got=%q want=%q", persistent.PayloadURL, wantPayloadURL)
+	}
+	if _, err := os.Stat(filepath.Join(layout.StagingRoot(), "1.2.0", "ant-chrome.exe")); err != nil {
+		t.Fatalf("expected staged exe: %v", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,8 +252,52 @@ func (m Manager) loadUpdate(ctx context.Context) (Manifest, ManifestSourceResolu
 		state.ErrorMessage = err.Error()
 		return manifest, resolution, Package{}, state, err
 	}
+	pkg.URL = resolvePackageSource(resolution.URL, pkg.URL)
 	state.PayloadURL = pkg.URL
 	return manifest, resolution, pkg, state, nil
+}
+
+func resolvePackageSource(manifestSourceURL string, packageURL string) string {
+	packageURL = strings.TrimSpace(packageURL)
+	if packageURL == "" || isAbsolutePackageSource(packageURL) {
+		return packageURL
+	}
+
+	manifestSourceURL = strings.TrimSpace(manifestSourceURL)
+	if manifestSourceURL == "" {
+		return packageURL
+	}
+
+	kind, location, err := resolveManifestSourceLocation(manifestSourceURL)
+	if err != nil {
+		return packageURL
+	}
+	switch kind {
+	case manifestSourceHTTP:
+		base, err := url.Parse(location)
+		if err != nil {
+			return packageURL
+		}
+		ref, err := url.Parse(packageURL)
+		if err != nil {
+			return packageURL
+		}
+		return base.ResolveReference(ref).String()
+	case manifestSourceFile:
+		return filepath.Join(filepath.Dir(location), filepath.FromSlash(packageURL))
+	case manifestSourceLocal:
+		return filepath.Join(filepath.Dir(location), filepath.FromSlash(packageURL))
+	default:
+		return packageURL
+	}
+}
+
+func isAbsolutePackageSource(source string) bool {
+	if isWindowsAbsolutePath(source) || filepath.IsAbs(source) {
+		return true
+	}
+	parsed, err := url.Parse(source)
+	return err == nil && parsed.Scheme != ""
 }
 
 func (m Manager) validateWithProvider() error {
