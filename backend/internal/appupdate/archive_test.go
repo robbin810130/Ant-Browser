@@ -143,6 +143,19 @@ func TestValidateStagedPayloadAcceptsDarwinBundle(t *testing.T) {
 	}
 }
 
+func TestValidateStagedPayloadRejectsDarwinSymlinkedAppBundle(t *testing.T) {
+	externalRoot := t.TempDir()
+	externalApp := writeFakeDarwinBundle(t, externalRoot)
+	root := t.TempDir()
+	link := filepath.Join(root, "Ant Browser.app")
+	if err := os.Symlink(externalApp, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected symlinked app bundle rejection")
+	}
+}
+
 func TestValidateStagedPayloadRejectsDarwinMissingInfoPlist(t *testing.T) {
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)

@@ -90,6 +90,20 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 
 func validateDarwinStagedPayload(stagedRoot string) error {
 	appRoot := filepath.Join(stagedRoot, "Ant Browser.app")
+	info, err := os.Lstat(appRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("staged payload missing app bundle: Ant Browser.app")
+		}
+		return fmt.Errorf("staged payload app bundle is not readable: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("staged payload app bundle must not be a symlink: Ant Browser.app")
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("staged payload app bundle is not a directory: Ant Browser.app")
+	}
+
 	macos := filepath.Join(appRoot, "Contents", "MacOS")
 	required := []string{
 		filepath.Join("Ant Browser.app", "Contents", "Info.plist"),
