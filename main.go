@@ -121,8 +121,9 @@ func isWailsDevExecutableDir(exeDir, tempDir string) bool {
 }
 
 func main() {
+	buildVersion := resolveBuildVersion()
 	if mode, planPath := parseUpdateCLI(os.Args); mode != "" {
-		if err := backend.RunAppUpdateCLI(mode, planPath); err != nil {
+		if err := backend.RunAppUpdateCLI(mode, planPath, buildVersion); err != nil {
 			log.Printf("app update %s failed: %v", mode, err)
 			os.Exit(1)
 		}
@@ -175,7 +176,6 @@ func main() {
 	if startupDebugEnabled && backend.RuntimeUsesDetachedState(appRoot) {
 		log.Printf("检测到安装目录需要只读运行，状态目录切换到: %s", backend.RuntimeStateRoot(appRoot))
 	}
-	buildVersion := resolveBuildVersion()
 	if startupDebugEnabled {
 		log.Printf("应用版本: %s", buildVersion)
 		log.Printf(
