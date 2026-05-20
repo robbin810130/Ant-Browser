@@ -150,20 +150,43 @@ func rejectMutableUserData(stagedRoot string) error {
 		if err != nil {
 			return err
 		}
-		name := strings.ToLower(entry.Name())
-		if entry.IsDir() {
-			if name == "data" {
-				return fmt.Errorf("staged payload contains mutable user data: %s", path)
-			}
+		rel, err := filepath.Rel(stagedRoot, path)
+		if err != nil {
+			return err
+		}
+		rel = strings.ToLower(filepath.ToSlash(filepath.Clean(rel)))
+		if rel == "." {
 			return nil
 		}
-		switch strings.ToLower(filepath.Ext(name)) {
+		if rel == "data" || strings.HasPrefix(rel, "data/") {
+			return fmt.Errorf("staged payload contains mutable user data: %s", path)
+		}
+		if hasPathSegment(rel, "user data") {
+			return fmt.Errorf("staged payload contains mutable user data: %s", path)
+		}
+		darwinData := "ant browser.app/contents/macos/data"
+		if rel == darwinData || strings.HasPrefix(rel, darwinData+"/") {
+			return fmt.Errorf("staged payload contains mutable user data: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		switch strings.ToLower(filepath.Ext(rel)) {
 		case ".db", ".sqlite", ".sqlite3":
 			return fmt.Errorf("staged payload contains mutable user data: %s", path)
 		default:
 			return nil
 		}
 	})
+}
+
+func hasPathSegment(path, segment string) bool {
+	for _, part := range strings.Split(path, "/") {
+		if part == segment {
+			return true
+		}
+	}
+	return false
 }
 
 func safeZipEntryPath(destination, name string) (string, error) {
