@@ -83,15 +83,7 @@ func TestExtractFullPayloadHandlesFileDirectoryConflict(t *testing.T) {
 
 func TestValidateStagedWindowsPayloadRequiresCoreFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "publish"), 0o755); err != nil {
-		t.Fatalf("mkdir publish: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "ant-chrome.exe"), []byte("MZ"), 0o600); err != nil {
-		t.Fatalf("write exe: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "publish", "runtime-manifest.json"), []byte(`{"schemaVersion":2}`), 0o600); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
+	writeFakeWindowsPayload(t, dir)
 	if err := ValidateStagedPayload("windows-amd64", dir); err != nil {
 		t.Fatalf("ValidateStagedPayload returned error: %v", err)
 	}
@@ -104,6 +96,75 @@ func TestValidateStagedWindowsPayloadRejectsMissingCoreFiles(t *testing.T) {
 	}
 	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
 		t.Fatal("expected missing runtime manifest error")
+	}
+}
+
+func writeFakeWindowsPayload(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "publish"), 0o755); err != nil {
+		t.Fatalf("mkdir publish: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ant-chrome.exe"), []byte("MZ"), 0o600); err != nil {
+		t.Fatalf("write exe: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "publish", "runtime-manifest.json"), []byte(`{"schemaVersion":2}`), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+func TestValidateStagedWindowsPayloadRejectsRootDataDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
+		t.Fatal("expected root data dir rejection")
+	}
+}
+
+func TestValidateStagedWindowsPayloadRejectsDatabaseFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	resources := filepath.Join(dir, "resources")
+	if err := os.MkdirAll(resources, 0o755); err != nil {
+		t.Fatalf("mkdir resources: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(resources, "fixture.db"), []byte("db"), 0o600); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
+		t.Fatal("expected database file rejection")
+	}
+}
+
+func TestValidateStagedWindowsPayloadAcceptsBundledResourceDataDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	resourceData := filepath.Join(dir, "resources", "data")
+	if err := os.MkdirAll(resourceData, 0o755); err != nil {
+		t.Fatalf("mkdir resource data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(resourceData, "fixture.txt"), []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err != nil {
+		t.Fatalf("ValidateStagedPayload returned error: %v", err)
+	}
+}
+
+func TestValidateStagedPayloadRejectsUserDataCookies(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	userDataDefault := filepath.Join(dir, "User Data", "Default")
+	if err := os.MkdirAll(userDataDefault, 0o755); err != nil {
+		t.Fatalf("mkdir User Data profile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userDataDefault, "Cookies"), []byte("cookies"), 0o600); err != nil {
+		t.Fatalf("write Cookies: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
+		t.Fatal("expected User Data cookies rejection")
 	}
 }
 
@@ -186,10 +247,37 @@ func TestValidateStagedPayloadRejectsDarwinMutableUserData(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatalf("mkdir data: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dataDir, "app.sqlite"), []byte("db"), 0o600); err != nil {
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected mutable user data rejection")
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinSQLiteOutsideDataDir(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	cacheDir := filepath.Join(appRoot, "Contents", "Resources", "fixtures")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir fixtures: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "app.sqlite"), []byte("db"), 0o600); err != nil {
 		t.Fatalf("write sqlite: %v", err)
 	}
 	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
-		t.Fatal("expected mutable user data rejection")
+		t.Fatal("expected sqlite file rejection")
+	}
+}
+
+func TestValidateStagedPayloadAcceptsDarwinBundledResourceDataDir(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	resourceData := filepath.Join(appRoot, "Contents", "Resources", "data")
+	if err := os.MkdirAll(resourceData, 0o755); err != nil {
+		t.Fatalf("mkdir resource data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(resourceData, "fixture.txt"), []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err != nil {
+		t.Fatalf("ValidateStagedPayload returned error: %v", err)
 	}
 }
