@@ -70,6 +70,7 @@ func (b WindowsBackend) SpawnApplyRunner(planPath string) error {
 		}
 	}
 	cmd := exec.Command(exe, "--apply-update", planPath)
+	hideWindow(cmd)
 	return cmd.Start()
 }
 
@@ -244,6 +245,7 @@ func (b WindowsBackend) launchPostUpdateCheck(plan ApplyPlan, planPath string) e
 		exe = filepath.Join(plan.InstallRoot, filepath.Base(plan.CurrentExePath))
 	}
 	cmd := exec.Command(exe, "--post-update-check", planPath)
+	hideWindow(cmd)
 	return cmd.Start()
 }
 
@@ -253,6 +255,7 @@ func (b WindowsBackend) launchApplication(plan ApplyPlan) error {
 		exe = filepath.Join(plan.InstallRoot, filepath.Base(plan.CurrentExePath))
 	}
 	cmd := exec.Command(exe)
+	hideWindow(cmd)
 	return cmd.Start()
 }
 
@@ -371,7 +374,9 @@ func waitForProcessExit(pid int, timeout time.Duration) bool {
 }
 
 func isWindowsProcessRunning(pid int) bool {
-	out, err := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/NH").Output()
+	cmd := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/NH")
+	hideWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return false
 	}
