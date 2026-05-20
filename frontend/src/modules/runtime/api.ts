@@ -1,6 +1,7 @@
 import type { EnvironmentFailureItem, EnvironmentStatus, ReleaseUpdateState } from './types'
 
 type RuntimeBindings = {
+  GetAppConfig?: () => Promise<any>
   GetDesktopEnvironmentStatus?: () => Promise<any>
   RepairDesktopEnvironment?: () => Promise<any>
   CheckDesktopReleaseUpdate?: () => Promise<any>
@@ -73,6 +74,15 @@ async function requireBinding<K extends keyof RuntimeBindings>(name: K): Promise
 export async function getDesktopEnvironmentStatus(): Promise<EnvironmentStatus> {
   const fn = await requireBinding('GetDesktopEnvironmentStatus')
   return normalizeEnvironmentStatus(await fn())
+}
+
+export async function getAppConfig(): Promise<{ name: string; version: string }> {
+  const fn = await requireBinding('GetAppConfig')
+  const config = await fn()
+  return {
+    name: String(config?.name || '').trim(),
+    version: String(config?.version || '').trim(),
+  }
 }
 
 export async function repairDesktopEnvironment(): Promise<EnvironmentStatus> {
