@@ -80,12 +80,76 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 				return fmt.Errorf("staged payload required path is a directory: %s", rel)
 			}
 		}
-		return nil
+		return rejectMutableUserData(stagedRoot)
 	case "darwin-amd64", "darwin-arm64":
-		return fmt.Errorf("macOS app update backend is not implemented in Phase 1")
+		return validateDarwinStagedPayload(stagedRoot)
 	default:
 		return fmt.Errorf("unsupported app update target: %s", target)
 	}
+}
+
+func validateDarwinStagedPayload(stagedRoot string) error {
+	appRoot := filepath.Join(stagedRoot, "Ant Browser.app")
+	macos := filepath.Join(appRoot, "Contents", "MacOS")
+	required := []string{
+		filepath.Join("Ant Browser.app", "Contents", "Info.plist"),
+		filepath.Join("Ant Browser.app", "Contents", "MacOS", "publish", "runtime-manifest.json"),
+	}
+	for _, rel := range required {
+		info, err := os.Stat(filepath.Join(stagedRoot, rel))
+		if err != nil {
+			return fmt.Errorf("staged payload missing required file: %s", rel)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("staged payload required path is a directory: %s", rel)
+		}
+	}
+
+	for _, rel := range []string{
+		filepath.Join(macos, "ant-chrome"),
+		filepath.Join(macos, "bin", "xray"),
+		filepath.Join(macos, "bin", "sing-box"),
+	} {
+		if err := requireExecutable(rel); err != nil {
+			return err
+		}
+	}
+	return rejectMutableUserData(stagedRoot)
+}
+
+func requireExecutable(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("staged payload missing executable: %s", path)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("staged payload executable path is a directory: %s", path)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("staged payload executable bit is not set: %s", path)
+	}
+	return nil
+}
+
+func rejectMutableUserData(stagedRoot string) error {
+	return filepath.WalkDir(stagedRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := strings.ToLower(entry.Name())
+		if entry.IsDir() {
+			if name == "data" {
+				return fmt.Errorf("staged payload contains mutable user data: %s", path)
+			}
+			return nil
+		}
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".db", ".sqlite", ".sqlite3":
+			return fmt.Errorf("staged payload contains mutable user data: %s", path)
+		default:
+			return nil
+		}
+	})
 }
 
 func safeZipEntryPath(destination, name string) (string, error) {
