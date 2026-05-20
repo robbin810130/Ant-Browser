@@ -107,8 +107,76 @@ func TestValidateStagedWindowsPayloadRejectsMissingCoreFiles(t *testing.T) {
 	}
 }
 
-func TestValidateStagedPayloadRejectsMacTargetsForPhaseOne(t *testing.T) {
-	if err := ValidateStagedPayload("darwin-arm64", t.TempDir()); err == nil {
-		t.Fatal("expected macOS target rejection")
+func writeFakeDarwinBundle(t *testing.T, root string) string {
+	t.Helper()
+	appRoot := filepath.Join(root, "Ant Browser.app")
+	macos := filepath.Join(appRoot, "Contents", "MacOS")
+	if err := os.MkdirAll(filepath.Join(macos, "publish"), 0o755); err != nil {
+		t.Fatalf("mkdir publish: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(macos, "bin"), 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appRoot, "Contents", "Info.plist"), []byte(`<plist></plist>`), 0o600); err != nil {
+		t.Fatalf("write Info.plist: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(macos, "ant-chrome"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write ant-chrome: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(macos, "publish", "runtime-manifest.json"), []byte(`{"schemaVersion":2}`), 0o600); err != nil {
+		t.Fatalf("write runtime manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(macos, "bin", "xray"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write xray: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(macos, "bin", "sing-box"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write sing-box: %v", err)
+	}
+	return appRoot
+}
+
+func TestValidateStagedPayloadAcceptsDarwinBundle(t *testing.T) {
+	root := t.TempDir()
+	writeFakeDarwinBundle(t, root)
+	if err := ValidateStagedPayload("darwin-arm64", root); err != nil {
+		t.Fatalf("ValidateStagedPayload returned error: %v", err)
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinMissingInfoPlist(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	if err := os.Remove(filepath.Join(appRoot, "Contents", "Info.plist")); err != nil {
+		t.Fatalf("remove Info.plist: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected missing Info.plist error")
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	mainBinary := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
+	if err := os.Chmod(mainBinary, 0o600); err != nil {
+		t.Fatalf("chmod ant-chrome: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected non-executable ant-chrome error")
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinMutableUserData(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	dataDir := filepath.Join(appRoot, "Contents", "MacOS", "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "app.sqlite"), []byte("db"), 0o600); err != nil {
+		t.Fatalf("write sqlite: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected mutable user data rejection")
 	}
 }
