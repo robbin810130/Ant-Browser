@@ -5,7 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
+)
+
+var (
+	darwinProcessExitTimeout  = 20 * time.Second
+	darwinProcessPollInterval = 250 * time.Millisecond
 )
 
 type DarwinBackend struct {
@@ -127,12 +134,205 @@ func (b DarwinBackend) SpawnApplyRunner(planPath string) error {
 	return cmd.Process.Release()
 }
 
-func (b DarwinBackend) RunApply(string) error {
-	return fmt.Errorf("darwin app update backend is not implemented")
+func (b DarwinBackend) RunApply(planPath string) error {
+	plan, err := ReadPlan(planPath)
+	if err != nil {
+		return err
+	}
+	layout := NewLayout(plan.InstallRoot, plan.StateRoot)
+	if plan.WaitForProcessID > 0 && !waitForDarwinProcessExit(plan.WaitForProcessID, darwinProcessExitTimeout) {
+		err := fmt.Errorf("app process did not exit before apply timeout: pid %d", plan.WaitForProcessID)
+		_ = WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusFailedManualRepair, "APP-UPDATE-PROCESS-STILL-RUNNING", err))
+		return err
+	}
+	if err := WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusApplying, "", nil)); err != nil {
+		return err
+	}
+	if err := b.backupInstall(plan); err != nil {
+		return b.writeManualRepair(layout, plan, planPath, "APP-UPDATE-BACKUP-FAILED-MANUAL-REPAIR", err)
+	}
+	if err := b.replaceInstall(plan); err != nil {
+		if rollbackErr := b.rollbackInstall(plan); rollbackErr != nil {
+			return b.writeManualRepair(layout, plan, planPath, "APP-UPDATE-ROLLBACK-FAILED-MANUAL-REPAIR", rollbackErr)
+		}
+		_ = WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusRolledBack, "APP-UPDATE-APPLY-FAILED-ROLLED-BACK", err))
+		return err
+	}
+	if err := WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusVerifying, "", nil)); err != nil {
+		return err
+	}
+	return b.launchPostUpdateCheck(plan, planPath)
 }
 
-func (b DarwinBackend) PostUpdateCheck(string) error {
-	return fmt.Errorf("darwin app update backend is not implemented")
+func (b DarwinBackend) PostUpdateCheck(planPath string) error {
+	plan, err := ReadPlan(planPath)
+	if err != nil {
+		return err
+	}
+	layout := NewLayout(plan.InstallRoot, plan.StateRoot)
+	if currentVersion := strings.TrimSpace(b.CurrentAppVersion); currentVersion != "" && currentVersion != strings.TrimSpace(plan.NewAppVersion) {
+		err := fmt.Errorf("post-update version mismatch: expected %s, got %s", plan.NewAppVersion, currentVersion)
+		state := darwinStateFromPlan(plan, planPath, PersistentStatusFailedManualRepair, "APP-UPDATE-POST-CHECK-VERSION-MISMATCH", err)
+		state.LocalAppVersion = currentVersion
+		_ = WriteState(layout, state)
+		return err
+	}
+	if err := validateDarwinInstalledBundle(plan.InstallRoot); err != nil {
+		_ = WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusFailedManualRepair, "APP-UPDATE-POST-CHECK-BUNDLE-INVALID", err))
+		return err
+	}
+	state := darwinStateFromPlan(plan, planPath, PersistentStatusSucceeded, "", nil)
+	state.LocalAppVersion = plan.NewAppVersion
+	if err := WriteState(layout, state); err != nil {
+		return err
+	}
+	if b.SuppressRelaunch {
+		return nil
+	}
+	return b.launchApplication(plan)
+}
+
+func (b DarwinBackend) backupInstall(plan ApplyPlan) error {
+	if err := os.RemoveAll(plan.BackupPath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(plan.BackupPath), 0o700); err != nil {
+		return err
+	}
+	return copyDir(plan.InstallRoot, filepath.Join(plan.BackupPath, filepath.Base(plan.InstallRoot)))
+}
+
+func (b DarwinBackend) replaceInstall(plan ApplyPlan) error {
+	stagedApp := filepath.Join(plan.StagedPath, "Ant Browser.app")
+	if err := ValidateStagedPayload(plan.Target, plan.StagedPath); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(plan.InstallRoot); err != nil {
+		return err
+	}
+	return copyDir(stagedApp, plan.InstallRoot)
+}
+
+func (b DarwinBackend) rollbackInstall(plan ApplyPlan) error {
+	backupApp := filepath.Join(plan.BackupPath, filepath.Base(plan.InstallRoot))
+	if err := os.RemoveAll(plan.InstallRoot); err != nil {
+		return err
+	}
+	return copyDir(backupApp, plan.InstallRoot)
+}
+
+func (b DarwinBackend) writeManualRepair(layout Layout, plan ApplyPlan, planPath, code string, err error) error {
+	_ = WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusFailedManualRepair, code, err))
+	return err
+}
+
+func (b DarwinBackend) launchPostUpdateCheck(plan ApplyPlan, planPath string) error {
+	cmd := exec.Command(darwinAppExecutablePath(plan.InstallRoot), "--post-update-check", planPath)
+	return startDetachedDarwinCommand(cmd)
+}
+
+func (b DarwinBackend) launchApplication(plan ApplyPlan) error {
+	cmd := exec.Command(darwinAppExecutablePath(plan.InstallRoot))
+	return startDetachedDarwinCommand(cmd)
+}
+
+func darwinAppExecutablePath(appRoot string) string {
+	return filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
+}
+
+func startDetachedDarwinCommand(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+func darwinStateFromPlan(plan ApplyPlan, planPath string, status PersistentStatus, code string, err error) PersistentState {
+	state := PersistentState{
+		Status:           status,
+		LocalAppVersion:  plan.OldAppVersion,
+		RemoteAppVersion: plan.NewAppVersion,
+		ManifestSource:   plan.ManifestSource,
+		ManifestURL:      plan.ManifestURL,
+		PayloadURL:       plan.PayloadURL,
+		Target:           plan.Target,
+		PlanPath:         planPath,
+		BackupPath:       plan.BackupPath,
+	}
+	if err != nil {
+		state.LastError = ErrorInfo{Code: code, Message: err.Error()}
+	}
+	return state
+}
+
+func validateDarwinInstalledBundle(appRoot string) error {
+	root := filepath.Dir(appRoot)
+	appName := filepath.Base(appRoot)
+	if err := requireDirectoryNoSymlink(root, appName, appName); err != nil {
+		return err
+	}
+	for _, rel := range []string{
+		filepath.Join(appName, "Contents", "Info.plist"),
+		filepath.Join(appName, "Contents", "MacOS", "publish", "runtime-manifest.json"),
+	} {
+		if err := requireRegularFileNoSymlink(root, rel, rel); err != nil {
+			return err
+		}
+	}
+	for _, rel := range []string{
+		filepath.Join(appName, "Contents", "MacOS", "ant-chrome"),
+		filepath.Join(appName, "Contents", "MacOS", "bin", "xray"),
+		filepath.Join(appName, "Contents", "MacOS", "bin", "sing-box"),
+	} {
+		if err := requireExecutableNoSymlink(root, rel, rel); err != nil {
+			return err
+		}
+	}
+	return rejectDarwinInstalledMutableUserData(appRoot)
+}
+
+func waitForDarwinProcessExit(pid int, timeout time.Duration) bool {
+	if runtime.GOOS != "darwin" || pid <= 0 {
+		return true
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !isDarwinProcessRunning(pid) {
+			return true
+		}
+		time.Sleep(darwinProcessPollInterval)
+	}
+	return !isDarwinProcessRunning(pid)
+}
+
+func isDarwinProcessRunning(pid int) bool {
+	cmd := exec.Command("kill", "-0", fmt.Sprintf("%d", pid))
+	return cmd.Run() == nil
+}
+
+func rejectDarwinInstalledMutableUserData(appRoot string) error {
+	return filepath.Walk(appRoot, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(appRoot, path)
+		if err != nil {
+			return err
+		}
+		clean := strings.ToLower(filepath.ToSlash(rel))
+		base := strings.ToLower(info.Name())
+		if clean == "contents/macos/data" || strings.HasPrefix(clean, "contents/macos/data/") {
+			return fmt.Errorf("staged payload contains mutable user data: %s", rel)
+		}
+		if clean == "user data" || strings.HasPrefix(clean, "user data/") || strings.Contains(clean, "/user data/") {
+			return fmt.Errorf("staged payload contains mutable browser profile data: %s", rel)
+		}
+		if strings.HasSuffix(base, ".db") || strings.HasSuffix(base, ".sqlite") || strings.HasSuffix(base, ".sqlite3") {
+			return fmt.Errorf("staged payload contains mutable database file: %s", rel)
+		}
+		return nil
+	})
 }
 
 func darwinRunnerPath(plan ApplyPlan) string {
