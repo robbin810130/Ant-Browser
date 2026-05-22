@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDarwinBackendValidateInstallModeAcceptsUserWritableAppBundle(t *testing.T) {
@@ -300,6 +301,69 @@ func TestDarwinBackendSpawnApplyRunnerRejectsMissingPreparedRunner(t *testing.T)
 
 	if err := (DarwinBackend{}).SpawnApplyRunner(planPath); err == nil {
 		t.Fatal("expected missing prepared runner to be rejected")
+	}
+}
+
+func TestDarwinBackendSpawnApplyRunnerUsesPreparedRunner(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	runnerPath := filepath.Join(stateRoot, "app-update", "runner", "darwin-test", "ant-chrome-update-runner")
+	argsPath := filepath.Join(root, "args.txt")
+	fallbackMarkerPath := filepath.Join(root, "fallback-used.txt")
+	currentExe := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
+	if err := os.MkdirAll(filepath.Dir(runnerPath), 0o700); err != nil {
+		t.Fatalf("mkdir runner dir: %v", err)
+	}
+	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+argsPath+"\"\n"), 0o700); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+	if err := os.WriteFile(currentExe, []byte("#!/bin/sh\nprintf fallback > \""+fallbackMarkerPath+"\"\n"), 0o700); err != nil {
+		t.Fatalf("write fallback executable: %v", err)
+	}
+
+	layout := NewLayout(appRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:    appRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		RunnerPath:     runnerPath,
+		CurrentExePath: currentExe,
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	backend := DarwinBackend{CurrentExePath: currentExe}
+	if err := backend.SpawnApplyRunner(planPath); err != nil {
+		t.Fatalf("SpawnApplyRunner returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(argsPath); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat args file: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for runner args file: %s", argsPath)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	data, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	want := "--apply-update\n" + planPath + "\n"
+	if string(data) != want {
+		t.Fatalf("runner args = %q, want %q", string(data), want)
+	}
+	if _, err := os.Stat(fallbackMarkerPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("fallback executable was used, stat err = %v", err)
 	}
 }
 
