@@ -21,11 +21,14 @@ func ExtractFullPayload(zipPath, destination string) error {
 	defer reader.Close()
 
 	for _, file := range reader.File {
-		if _, err := safeZipEntryPath(destination, file.Name); err != nil {
+		target, err := safeZipEntryPath(destination, file.Name)
+		if err != nil {
 			return err
 		}
 		if file.FileInfo().Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("zip symlink entries are not supported: %s", file.Name)
+			if _, err := safeZipSymlinkTarget(destination, target, file); err != nil {
+				return err
+			}
 		}
 	}
 	requiredDirs, err := requiredZipDirs(destination, reader.File)
@@ -56,6 +59,12 @@ func ExtractFullPayload(zipPath, destination string) error {
 		}
 		if err := mkdirAllSafe(destination, filepath.Dir(target), 0o700); err != nil {
 			return err
+		}
+		if file.FileInfo().Mode()&os.ModeSymlink != 0 {
+			if err := extractZipSymlink(destination, file, target); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := extractZipFile(file, target); err != nil {
 			return err
@@ -291,6 +300,47 @@ func safeZipEntryPath(destination, name string) (string, error) {
 	return target, nil
 }
 
+func safeZipSymlinkTarget(root, linkPath string, file *zip.File) (string, error) {
+	linkTarget, err := readZipSymlinkTarget(file)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(linkTarget) == "" {
+		return "", fmt.Errorf("zip symlink target is empty: %s", file.Name)
+	}
+	if filepath.IsAbs(linkTarget) {
+		return "", fmt.Errorf("zip symlink target uses absolute path: %s -> %s", file.Name, linkTarget)
+	}
+
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(linkPath), filepath.FromSlash(linkTarget)))
+	rel, err := filepath.Rel(rootAbs, resolved)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("zip symlink target escapes destination: %s -> %s", file.Name, linkTarget)
+	}
+	return linkTarget, nil
+}
+
+func readZipSymlinkTarget(file *zip.File) (string, error) {
+	in, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	data, err := io.ReadAll(in)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 func requiredZipDirs(destination string, files []*zip.File) (map[string]bool, error) {
 	dirs := map[string]bool{
 		filepath.Clean(destination): true,
@@ -354,6 +404,17 @@ func mkdirAllSafe(root, path string, mode os.FileMode) error {
 		}
 	}
 	return nil
+}
+
+func extractZipSymlink(root string, file *zip.File, target string) error {
+	linkTarget, err := safeZipSymlinkTarget(root, target, file)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(target); err != nil {
+		return err
+	}
+	return os.Symlink(linkTarget, target)
 }
 
 func extractZipFile(file *zip.File, target string) error {

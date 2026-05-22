@@ -254,12 +254,50 @@ func copyDirIfMissing(src, dst string) error {
 		if rel != "." {
 			target = filepath.Join(dst, rel)
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return copySymlinkIfSafe(src, path, target)
+		}
 		if info.IsDir() {
 			dirMode := info.Mode().Perm() | 0700
 			return os.MkdirAll(target, dirMode)
 		}
 		return copyFile(path, target, info.Mode().Perm())
 	})
+}
+
+func copySymlinkIfSafe(srcRoot, srcPath, dstPath string) error {
+	linkTarget, err := os.Readlink(srcPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(linkTarget) == "" || filepath.IsAbs(linkTarget) {
+		return os.ErrPermission
+	}
+	resolvedTarget := filepath.Clean(filepath.Join(filepath.Dir(srcPath), linkTarget))
+	if !pathInsideRoot(srcRoot, resolvedTarget) {
+		return os.ErrPermission
+	}
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return err
+	}
+	_ = os.Remove(dstPath)
+	return os.Symlink(linkTarget, dstPath)
+}
+
+func pathInsideRoot(root, path string) bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(rootAbs, pathAbs)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
