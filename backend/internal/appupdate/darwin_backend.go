@@ -29,14 +29,23 @@ func (b DarwinBackend) ValidateInstallMode(layout Layout) error {
 		return ErrUnsupportedInstall
 	}
 
-	slash := strings.ToLower(filepath.ToSlash(install))
-	if slash == "/applications/ant browser.app" ||
-		strings.HasPrefix(slash, "/applications/") ||
-		strings.HasPrefix(slash, "/system/applications/") {
+	resolvedInstall := install
+	if resolved, ok := darwinResolveExistingPrefix(install); ok {
+		resolvedInstall = resolved
+	}
+	if darwinProtectedApplicationInstallRoot(install) || darwinProtectedApplicationInstallRoot(resolvedInstall) {
 		return ErrUnsupportedInstall
 	}
 	if pathInsideRootDarwin(layout.StateRoot, install) {
 		return fmt.Errorf("%w: app update state root is inside app bundle", ErrUnsupportedInstall)
+	}
+
+	linkInfo, err := os.Lstat(install)
+	if err != nil {
+		return err
+	}
+	if linkInfo.Mode()&os.ModeSymlink != 0 {
+		return ErrUnsupportedInstall
 	}
 
 	info, err := os.Stat(install)
@@ -56,6 +65,12 @@ func (b DarwinBackend) ValidateInstallMode(layout Layout) error {
 	_ = probe.Close()
 	_ = os.Remove(name)
 	return nil
+}
+
+func darwinProtectedApplicationInstallRoot(path string) bool {
+	slash := strings.ToLower(filepath.ToSlash(filepath.Clean(strings.TrimSpace(path))))
+	return strings.HasPrefix(slash, "/applications/") ||
+		strings.HasPrefix(slash, "/system/applications/")
 }
 
 func (b DarwinBackend) PrepareApply(plan ApplyPlan) error {
