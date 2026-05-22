@@ -342,16 +342,16 @@ Expected:
 
 ### Regression Matrix
 
-1. Local file manifest smoke test.
-2. HTTP manifest smoke test.
-3. Soft update from `~/Applications/Ant Browser.app`.
-4. Required update from `~/Applications/Ant Browser.app`.
-5. Unsupported install at `/Applications/Ant Browser.app`.
-6. Checksum mismatch.
-7. Invalid `.app` payload.
-8. Replace failure rollback.
-9. Post-check version mismatch rollback.
-10. Manual repair state after rollback failure.
+1. Local file manifest smoke test: PASS.
+2. HTTP manifest smoke test: PASS.
+3. Soft update from `~/Applications/Ant Browser.app`: covered by shared UI path and non-required prompt behavior; no separate manual pass in this phase.
+4. Required update from `~/Applications/Ant Browser.app`: PASS.
+5. Unsupported install at `/Applications/Ant Browser.app`: PASS by backend rejection regression.
+6. Checksum mismatch: PASS by macOS target regression.
+7. Invalid `.app` payload: PASS by payload contract and tampered-stage regression.
+8. Replace failure rollback: PASS by Darwin backend rollback regression.
+9. Post-check version mismatch rollback/manual-repair: PASS by Darwin post-check regression.
+10. Manual repair state after rollback failure: covered by existing manual-repair state path; destructive full manual pass deferred to formal distribution readiness if needed.
 
 ### Real Manual Regression Evidence
 
@@ -359,6 +359,7 @@ Latest real macOS manual regression:
 
 - Date: 2026-05-22
 - Report: `docs/reports/2026-05-22-macos-app-update-manual-regression.md`
+- Phase closeout: `docs/reports/2026-05-22-cross-platform-app-update-phase-closeout.md`
 - Baseline: `1.0.0`
 - Target: `1.1.0`
 - Install shape: user-writable `~/Applications/Ant Browser.app` style sandbox
