@@ -65,6 +65,10 @@ func ExtractFullPayload(zipPath, destination string) error {
 }
 
 func ValidateStagedPayload(target, stagedRoot string) error {
+	if err := requireDirectoryNoSymlink(stagedRoot, "staged payload root"); err != nil {
+		return err
+	}
+
 	switch strings.ToLower(strings.TrimSpace(target)) {
 	case "windows-amd64":
 		required := []string{
@@ -72,12 +76,8 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 			filepath.Join("publish", "runtime-manifest.json"),
 		}
 		for _, rel := range required {
-			info, err := os.Stat(filepath.Join(stagedRoot, rel))
-			if err != nil {
-				return fmt.Errorf("staged payload missing required file: %s", rel)
-			}
-			if info.IsDir() {
-				return fmt.Errorf("staged payload required path is a directory: %s", rel)
+			if err := requireRegularFileNoSymlink(filepath.Join(stagedRoot, rel), rel); err != nil {
+				return err
 			}
 		}
 		return rejectMutableUserData(stagedRoot)
@@ -90,18 +90,8 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 
 func validateDarwinStagedPayload(stagedRoot string) error {
 	appRoot := filepath.Join(stagedRoot, "Ant Browser.app")
-	info, err := os.Lstat(appRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("staged payload missing app bundle: Ant Browser.app")
-		}
-		return fmt.Errorf("staged payload app bundle is not readable: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("staged payload app bundle must not be a symlink: Ant Browser.app")
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("staged payload app bundle is not a directory: Ant Browser.app")
+	if err := requireDirectoryNoSymlink(appRoot, "Ant Browser.app"); err != nil {
+		return err
 	}
 
 	macos := filepath.Join(appRoot, "Contents", "MacOS")
@@ -110,12 +100,8 @@ func validateDarwinStagedPayload(stagedRoot string) error {
 		filepath.Join("Ant Browser.app", "Contents", "MacOS", "publish", "runtime-manifest.json"),
 	}
 	for _, rel := range required {
-		info, err := os.Stat(filepath.Join(stagedRoot, rel))
-		if err != nil {
-			return fmt.Errorf("staged payload missing required file: %s", rel)
-		}
-		if info.IsDir() {
-			return fmt.Errorf("staged payload required path is a directory: %s", rel)
+		if err := requireRegularFileNoSymlink(filepath.Join(stagedRoot, rel), rel); err != nil {
+			return err
 		}
 	}
 
@@ -124,23 +110,69 @@ func validateDarwinStagedPayload(stagedRoot string) error {
 		filepath.Join(macos, "bin", "xray"),
 		filepath.Join(macos, "bin", "sing-box"),
 	} {
-		if err := requireExecutable(rel); err != nil {
+		if err := requireExecutableNoSymlink(rel, rel); err != nil {
 			return err
 		}
 	}
 	return rejectMutableUserData(stagedRoot)
 }
 
-func requireExecutable(path string) error {
-	info, err := os.Stat(path)
+func requireDirectoryNoSymlink(path, label string) error {
+	info, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("staged payload missing executable: %s", path)
+		if os.IsNotExist(err) {
+			return fmt.Errorf("staged payload missing directory: %s", label)
+		}
+		return fmt.Errorf("staged payload directory is not readable: %s: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("staged payload directory must not be a symlink: %s", label)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("staged payload required path is not a directory: %s", label)
+	}
+	return nil
+}
+
+func requireRegularFileNoSymlink(path, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("staged payload missing required file: %s", label)
+		}
+		return fmt.Errorf("staged payload required file is not readable: %s: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("staged payload required file must not be a symlink: %s", label)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("staged payload executable path is a directory: %s", path)
+		return fmt.Errorf("staged payload required path is a directory: %s", label)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("staged payload required path is not a regular file: %s", label)
+	}
+	return nil
+}
+
+func requireExecutableNoSymlink(path, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("staged payload missing executable: %s", label)
+		}
+		return fmt.Errorf("staged payload executable is not readable: %s: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("staged payload executable must not be a symlink: %s", label)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("staged payload executable path is a directory: %s", label)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("staged payload executable path is not a regular file: %s", label)
 	}
 	if info.Mode().Perm()&0o111 == 0 {
-		return fmt.Errorf("staged payload executable bit is not set: %s", path)
+		return fmt.Errorf("staged payload executable bit is not set: %s", label)
 	}
 	return nil
 }

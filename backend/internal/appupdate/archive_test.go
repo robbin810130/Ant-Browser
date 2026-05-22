@@ -89,6 +89,36 @@ func TestValidateStagedWindowsPayloadRequiresCoreFiles(t *testing.T) {
 	}
 }
 
+func TestValidateStagedWindowsPayloadRejectsSymlinkedStagedRoot(t *testing.T) {
+	target := t.TempDir()
+	writeFakeWindowsPayload(t, target)
+	root := filepath.Join(t.TempDir(), "staged")
+	if err := os.Symlink(target, root); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", root); err == nil {
+		t.Fatal("expected symlinked staged root rejection")
+	}
+}
+
+func TestValidateStagedWindowsPayloadRejectsSymlinkedMainExecutable(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	external := filepath.Join(t.TempDir(), "ant-chrome.exe")
+	if err := os.WriteFile(external, []byte("MZ"), 0o600); err != nil {
+		t.Fatalf("write external exe: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "ant-chrome.exe")); err != nil {
+		t.Fatalf("remove exe: %v", err)
+	}
+	if err := os.Symlink(external, filepath.Join(dir, "ant-chrome.exe")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
+		t.Fatal("expected symlinked ant-chrome.exe rejection")
+	}
+}
+
 func TestValidateStagedWindowsPayloadRejectsMissingCoreFiles(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "ant-chrome.exe"), []byte("MZ"), 0o600); err != nil {
@@ -228,6 +258,25 @@ func TestValidateStagedPayloadRejectsDarwinMissingInfoPlist(t *testing.T) {
 	}
 }
 
+func TestValidateStagedPayloadRejectsDarwinSymlinkedInfoPlist(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	external := filepath.Join(t.TempDir(), "Info.plist")
+	if err := os.WriteFile(external, []byte(`<plist></plist>`), 0o600); err != nil {
+		t.Fatalf("write external Info.plist: %v", err)
+	}
+	infoPlist := filepath.Join(appRoot, "Contents", "Info.plist")
+	if err := os.Remove(infoPlist); err != nil {
+		t.Fatalf("remove Info.plist: %v", err)
+	}
+	if err := os.Symlink(external, infoPlist); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected symlinked Info.plist rejection")
+	}
+}
+
 func TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary(t *testing.T) {
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)
@@ -237,6 +286,25 @@ func TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary(t *testing.T)
 	}
 	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
 		t.Fatal("expected non-executable ant-chrome error")
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinSymlinkedMainBinary(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	external := filepath.Join(t.TempDir(), "ant-chrome")
+	if err := os.WriteFile(external, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write external ant-chrome: %v", err)
+	}
+	mainBinary := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
+	if err := os.Remove(mainBinary); err != nil {
+		t.Fatalf("remove ant-chrome: %v", err)
+	}
+	if err := os.Symlink(external, mainBinary); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected symlinked ant-chrome rejection")
 	}
 }
 
