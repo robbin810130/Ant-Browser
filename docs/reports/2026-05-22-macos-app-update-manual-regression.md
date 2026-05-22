@@ -197,6 +197,54 @@ Expected behavior:
 - No app bundle files are deleted or replaced.
 - The user must reinstall or move the app into a user-writable location such as `~/Applications/Ant Browser.app`.
 
+## Failure Scenario Regression
+
+These scenarios were verified without formal distribution. They are intentionally local backend/package-contract checks, not notarized release checks.
+
+### Checksum mismatch
+
+Verification:
+
+```bash
+rtk go test ./backend/internal/appupdate -run TestManagerDownloadRejectsDarwinChecksumMismatch -count=1
+```
+
+Expected behavior:
+
+- The package is downloaded from the selected `darwin-arm64` manifest package.
+- Hash mismatch is reported as `APP-UPDATE-DOWNLOAD-FAILED`.
+- Persistent state remains `available` with `lastError.code` set.
+- The update does not create the target staging directory.
+- The apply runner is not launched.
+
+### Invalid `.app` payload
+
+Verification:
+
+```bash
+rtk go test ./backend/internal/appupdate -run 'TestValidateStagedPayloadRejectsDarwinMissingInfoPlist|TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary|TestDarwinBackendRunApplyRejectsTamperedStagedPayloadBeforeRemovingInstall' -count=1
+```
+
+Expected behavior:
+
+- Invalid staged bundles fail validation before replacement.
+- A tampered staged payload does not remove the existing installed app.
+- The user remains on the previously installed app.
+
+### Post-check version mismatch
+
+Verification:
+
+```bash
+rtk go test ./backend/internal/appupdate -run TestDarwinBackendPostUpdateCheckRejectsVersionMismatch -count=1
+```
+
+Expected behavior:
+
+- Post-check compares the running app version with the apply plan target version.
+- A mismatch writes `failed_manual_repair`.
+- `lastError.code` is `APP-UPDATE-POST-CHECK-VERSION-MISMATCH`.
+
 ## Verification Commands
 
 Fresh verification run:
