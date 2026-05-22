@@ -93,6 +93,43 @@ func TestDarwinBackendPrepareApplyCopiesRunnerOutsideAppBundle(t *testing.T) {
 	}
 }
 
+func TestDarwinBackendPrepareApplyMakesExistingRunnerExecutable(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	stagedRoot := filepath.Join(root, "staged")
+	writeFakeDarwinBundle(t, stagedRoot)
+	currentExe := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
+	runnerPath := filepath.Join(stateRoot, "app-update", "runner", "darwin-test", "ant-chrome-update-runner")
+	if err := os.MkdirAll(filepath.Dir(runnerPath), 0o700); err != nil {
+		t.Fatalf("mkdir runner dir: %v", err)
+	}
+	if err := os.WriteFile(runnerPath, []byte("old runner"), 0o600); err != nil {
+		t.Fatalf("write existing runner: %v", err)
+	}
+	plan := ApplyPlan{
+		InstallRoot:    appRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		StagedPath:     stagedRoot,
+		CurrentExePath: currentExe,
+		RunnerPath:     runnerPath,
+	}
+
+	if err := (DarwinBackend{}).PrepareApply(plan); err != nil {
+		t.Fatalf("PrepareApply returned error: %v", err)
+	}
+	info, err := os.Stat(runnerPath)
+	if err != nil {
+		t.Fatalf("stat runner: %v", err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("unexpected runner mode: got %v want %v", info.Mode().Perm(), os.FileMode(0o700))
+	}
+}
+
 func TestPathInsideRootDarwin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "Ant Browser.app")
 	cases := []struct {
