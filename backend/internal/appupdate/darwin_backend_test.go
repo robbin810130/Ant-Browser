@@ -75,6 +75,23 @@ func TestDarwinBackendValidateInstallModeRejectsStateRootSymlinkInsideAppBundle(
 	}
 }
 
+func TestDarwinBackendValidateInstallModeRejectsStateRootWithSymlinkParentInsideAppBundle(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	stateParentLink := filepath.Join(root, "state-parent-link")
+	if err := os.Symlink(filepath.Join(appRoot, "Contents", "MacOS"), stateParentLink); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation unsupported: %v", err)
+		}
+		t.Fatalf("create state parent symlink: %v", err)
+	}
+	layout := NewLayout(appRoot, filepath.Join(stateParentLink, "state-that-does-not-exist"))
+
+	if err := (DarwinBackend{}).ValidateInstallMode(layout); err == nil {
+		t.Fatal("expected state root with symlinked parent inside app bundle to be rejected")
+	}
+}
+
 func TestDarwinBackendPrepareApplyCopiesRunnerOutsideAppBundle(t *testing.T) {
 	skipOnWindowsForExecutableBits(t)
 
@@ -215,6 +232,38 @@ func TestDarwinBackendPrepareApplyRejectsRunnerSymlinkInsideAppBundle(t *testing
 	}
 }
 
+func TestDarwinBackendPrepareApplyRejectsRunnerWithSymlinkParentInsideAppBundle(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	stagedRoot := filepath.Join(root, "staged")
+	writeFakeDarwinBundle(t, stagedRoot)
+	runnerParentLink := filepath.Join(stateRoot, "runner-parent-link")
+	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+		t.Fatalf("mkdir state root: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(appRoot, "Contents", "MacOS"), runnerParentLink); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation unsupported: %v", err)
+		}
+		t.Fatalf("create runner parent symlink: %v", err)
+	}
+	plan := ApplyPlan{
+		InstallRoot:    appRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		StagedPath:     stagedRoot,
+		CurrentExePath: filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome"),
+		RunnerPath:     filepath.Join(runnerParentLink, "runner-that-does-not-exist"),
+	}
+
+	if err := (DarwinBackend{}).PrepareApply(plan); err == nil {
+		t.Fatal("expected runner with symlinked parent inside app bundle to be rejected")
+	}
+}
+
 func TestDarwinBackendSpawnApplyRunnerRejectsMissingPreparedRunner(t *testing.T) {
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
@@ -234,6 +283,68 @@ func TestDarwinBackendSpawnApplyRunnerRejectsMissingPreparedRunner(t *testing.T)
 
 	if err := (DarwinBackend{}).SpawnApplyRunner(planPath); err == nil {
 		t.Fatal("expected missing prepared runner to be rejected")
+	}
+}
+
+func TestDarwinBackendSpawnApplyRunnerRejectsExistingRunnerInsideAppBundle(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	runnerPath := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome-update-runner")
+	if err := os.WriteFile(runnerPath, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+	layout := NewLayout(appRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:    appRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		RunnerPath:     runnerPath,
+		CurrentExePath: filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome"),
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	if err := (DarwinBackend{}).SpawnApplyRunner(planPath); err == nil {
+		t.Fatal("expected existing runner inside app bundle to be rejected")
+	}
+}
+
+func TestDarwinBackendSpawnApplyRunnerRejectsExistingRunnerSymlinkInsideAppBundle(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	insideRunner := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome-update-runner")
+	if err := os.WriteFile(insideRunner, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatalf("write inside runner: %v", err)
+	}
+	runnerPath := filepath.Join(stateRoot, "runner-link")
+	if err := os.MkdirAll(filepath.Dir(runnerPath), 0o700); err != nil {
+		t.Fatalf("mkdir runner dir: %v", err)
+	}
+	if err := os.Symlink(insideRunner, runnerPath); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation unsupported: %v", err)
+		}
+		t.Fatalf("create runner symlink: %v", err)
+	}
+	layout := NewLayout(appRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:    appRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		RunnerPath:     runnerPath,
+		CurrentExePath: filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome"),
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	if err := (DarwinBackend{}).SpawnApplyRunner(planPath); err == nil {
+		t.Fatal("expected existing symlinked runner inside app bundle to be rejected")
 	}
 }
 

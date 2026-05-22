@@ -131,23 +131,41 @@ func pathInsideRootDarwin(path, root string) bool {
 		return false
 	}
 
-	if resolvedPath, pathOK := evalSymlinksAbsDarwin(path); pathOK {
-		if resolvedRoot, rootOK := evalSymlinksAbsDarwin(root); rootOK {
-			if pathInsideRootLexicalDarwin(resolvedPath, resolvedRoot) {
-				return true
-			}
-		}
-	}
-
-	pathAbs, pathOK := absCleanDarwin(path)
-	rootAbs, rootOK := absCleanDarwin(root)
+	pathAbs, pathOK := darwinResolveExistingPrefix(path)
+	rootAbs, rootOK := darwinResolveExistingPrefix(root)
 	if !pathOK || !rootOK {
 		return false
 	}
 	return pathInsideRootLexicalDarwin(pathAbs, rootAbs)
 }
 
-func evalSymlinksAbsDarwin(path string) (string, bool) {
+func darwinResolveExistingPrefix(path string) (string, bool) {
+	abs, ok := absCleanDarwin(path)
+	if !ok {
+		return "", false
+	}
+	if resolved, ok := evalSymlinksCleanDarwin(abs); ok {
+		return resolved, true
+	}
+
+	for ancestor := filepath.Dir(abs); ancestor != abs; ancestor = filepath.Dir(ancestor) {
+		resolvedAncestor, ok := evalSymlinksCleanDarwin(ancestor)
+		if ok {
+			suffix, err := filepath.Rel(ancestor, abs)
+			if err != nil || suffix == "." {
+				return resolvedAncestor, true
+			}
+			return filepath.Clean(filepath.Join(resolvedAncestor, suffix)), true
+		}
+		next := filepath.Dir(ancestor)
+		if next == ancestor {
+			break
+		}
+	}
+	return abs, true
+}
+
+func evalSymlinksCleanDarwin(path string) (string, bool) {
 	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
 	if err != nil {
 		return "", false
