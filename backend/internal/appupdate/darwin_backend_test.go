@@ -33,6 +33,23 @@ func TestDarwinBackendValidateInstallModeRejectsSystemApplicationsInstall(t *tes
 	}
 }
 
+func TestDarwinBackendValidateInstallModeRejectsSymlinkInstallRoot(t *testing.T) {
+	root := t.TempDir()
+	target := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	link := filepath.Join(root, "Linked Ant Browser.app")
+	if err := os.Symlink(target, link); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation unsupported: %v", err)
+		}
+		t.Fatalf("create install root symlink: %v", err)
+	}
+	layout := NewLayout(link, filepath.Join(root, "state"))
+
+	if err := (DarwinBackend{}).ValidateInstallMode(layout); err == nil {
+		t.Fatal("expected symlink install root to be rejected")
+	}
+}
+
 func TestDarwinBackendValidateInstallModeRejectsNonAppRoot(t *testing.T) {
 	layout := NewLayout(filepath.Join(t.TempDir(), "Ant Browser"), filepath.Join(t.TempDir(), "state"))
 	if err := (DarwinBackend{}).ValidateInstallMode(layout); err == nil {
@@ -358,6 +375,43 @@ func TestDarwinRunnerPathDefaultUnderRunnerRoot(t *testing.T) {
 	want := filepath.Join(layout.RunnerRoot(), "ant-chrome-update-runner")
 	if got != want {
 		t.Fatalf("darwinRunnerPath default = %q, want %q", got, want)
+	}
+}
+
+func TestDarwinProtectedApplicationInstallRoot(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "applications app", path: "/Applications/Ant Browser.app", want: true},
+		{name: "system applications app", path: "/System/Applications/Ant Browser.app", want: true},
+		{name: "case variant", path: "/applications/Ant Browser.app", want: true},
+		{name: "protected target bypass", path: "/Applications/Ant Browser.app", want: true},
+		{name: "user applications", path: filepath.Join(t.TempDir(), "Applications", "Ant Browser.app"), want: false},
+		{name: "prefix sibling", path: "/ApplicationsBackup/Ant Browser.app", want: false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := darwinProtectedApplicationInstallRoot(tt.path); got != tt.want {
+				t.Fatalf("darwinProtectedApplicationInstallRoot(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDarwinProtectedApplicationInstallRootRejectsResolvedProtectedTarget(t *testing.T) {
+	raw := filepath.Join(t.TempDir(), "Applications", "Ant Browser.app")
+	resolved := "/Applications/Ant Browser.app"
+
+	if darwinProtectedApplicationInstallRoot(raw) {
+		t.Fatalf("raw user install path should not be protected: %s", raw)
+	}
+	if !darwinProtectedApplicationInstallRoot(resolved) {
+		t.Fatalf("resolved protected install path should be protected: %s", resolved)
+	}
+	if !(darwinProtectedApplicationInstallRoot(raw) || darwinProtectedApplicationInstallRoot(resolved)) {
+		t.Fatal("expected raw/resolved protected check to reject resolved protected target")
 	}
 }
 
