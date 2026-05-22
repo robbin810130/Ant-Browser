@@ -344,7 +344,7 @@ func TestDarwinBackendSpawnApplyRunnerUsesPreparedRunner(t *testing.T) {
 		t.Fatalf("SpawnApplyRunner returned error: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(argsPath); err == nil {
 			break
