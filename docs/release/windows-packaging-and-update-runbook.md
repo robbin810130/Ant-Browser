@@ -383,6 +383,12 @@ Notes:
 
 For the current internal-only rollout, the goal is to make a small number of trusted Macs install, update, roll back, and verify versions reliably. Formal distribution checks are not required for this rollout.
 
+Detailed internal deployment runbook:
+
+```text
+docs/release/macos-internal-deployment-runbook.md
+```
+
 Internal rollout checklist:
 
 1. Install to a user-writable location, preferably:
