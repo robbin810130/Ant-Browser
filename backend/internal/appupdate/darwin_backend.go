@@ -121,7 +121,10 @@ func (b DarwinBackend) SpawnApplyRunner(planPath string) error {
 	}
 
 	cmd := exec.Command(exe, "--apply-update", planPath)
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
 }
 
 func (b DarwinBackend) RunApply(string) error {
