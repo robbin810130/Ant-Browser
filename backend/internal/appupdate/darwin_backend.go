@@ -82,7 +82,10 @@ func (b DarwinBackend) PrepareApply(plan ApplyPlan) error {
 	if pathInsideRootDarwin(runner, plan.InstallRoot) {
 		return fmt.Errorf("darwin update runner must be outside app bundle: %s", runner)
 	}
-	return copyFileMode(exe, runner, 0o700)
+	if err := copyFileMode(exe, runner, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(runner, 0o700)
 }
 
 func (b DarwinBackend) SpawnApplyRunner(planPath string) error {
