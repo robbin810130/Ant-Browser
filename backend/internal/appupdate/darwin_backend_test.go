@@ -535,15 +535,9 @@ func TestDarwinBackendPostUpdateCheckAcceptsRenamedAppBundle(t *testing.T) {
 }
 
 func TestDarwinBackendPostUpdateCheckLaunchesApplication(t *testing.T) {
-	skipOnWindowsForExecutableBits(t)
-
 	root := t.TempDir()
 	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
 	stateRoot := filepath.Join(root, "state")
-	launchMarker := filepath.Join(root, "launch.txt")
-	if err := os.WriteFile(filepath.Join(installRoot, "Contents", "MacOS", "ant-chrome"), []byte("#!/bin/sh\nprintf launched > \""+launchMarker+"\"\n"), 0o700); err != nil {
-		t.Fatalf("write launcher: %v", err)
-	}
 	layout := NewLayout(installRoot, stateRoot)
 	plan := ApplyPlan{
 		InstallRoot:   installRoot,
@@ -557,10 +551,28 @@ func TestDarwinBackendPostUpdateCheckLaunchesApplication(t *testing.T) {
 		t.Fatalf("WritePlan returned error: %v", err)
 	}
 
+	var gotPath string
+	var gotArgs []string
+	oldStartDetached := startDetachedDarwinCommand
+	startDetachedDarwinCommand = func(cmd *exec.Cmd) error {
+		gotPath = cmd.Path
+		gotArgs = append([]string(nil), cmd.Args...)
+		return nil
+	}
+	t.Cleanup(func() {
+		startDetachedDarwinCommand = oldStartDetached
+	})
+
 	if err := (DarwinBackend{CurrentAppVersion: "1.2.0"}).PostUpdateCheck(planPath); err != nil {
 		t.Fatalf("PostUpdateCheck returned error: %v", err)
 	}
-	waitForFile(t, launchMarker)
+	wantPath := filepath.Join(installRoot, "Contents", "MacOS", "ant-chrome")
+	if gotPath != wantPath {
+		t.Fatalf("launch path = %q, want %q", gotPath, wantPath)
+	}
+	if len(gotArgs) != 1 || gotArgs[0] != wantPath {
+		t.Fatalf("launch args = %q, want [%q]", gotArgs, wantPath)
+	}
 }
 
 func TestDarwinBackendPostUpdateCheckRejectsVersionMismatch(t *testing.T) {
