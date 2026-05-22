@@ -94,17 +94,15 @@ func (b DarwinBackend) SpawnApplyRunner(planPath string) error {
 		return err
 	}
 	exe := darwinRunnerPath(plan)
-	if _, err := os.Stat(exe); err != nil {
-		exe = strings.TrimSpace(plan.CurrentExePath)
-		if exe == "" {
-			exe = strings.TrimSpace(b.CurrentExePath)
-		}
-		if exe == "" {
-			exe, err = os.Executable()
-			if err != nil {
-				return err
-			}
-		}
+	info, err := os.Stat(exe)
+	if err != nil {
+		return fmt.Errorf("darwin update runner is not prepared: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("darwin update runner is not a file: %s", exe)
+	}
+	if pathInsideRootDarwin(exe, plan.InstallRoot) {
+		return fmt.Errorf("darwin update runner must be outside app bundle: %s", exe)
 	}
 
 	cmd := exec.Command(exe, "--apply-update", planPath)
@@ -133,15 +131,42 @@ func pathInsideRootDarwin(path, root string) bool {
 		return false
 	}
 
-	pathAbs, err := filepath.Abs(filepath.Clean(path))
-	if err != nil {
+	if resolvedPath, pathOK := evalSymlinksAbsDarwin(path); pathOK {
+		if resolvedRoot, rootOK := evalSymlinksAbsDarwin(root); rootOK {
+			if pathInsideRootLexicalDarwin(resolvedPath, resolvedRoot) {
+				return true
+			}
+		}
+	}
+
+	pathAbs, pathOK := absCleanDarwin(path)
+	rootAbs, rootOK := absCleanDarwin(root)
+	if !pathOK || !rootOK {
 		return false
 	}
-	rootAbs, err := filepath.Abs(filepath.Clean(root))
+	return pathInsideRootLexicalDarwin(pathAbs, rootAbs)
+}
+
+func evalSymlinksAbsDarwin(path string) (string, bool) {
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
 	if err != nil {
-		return false
+		return "", false
 	}
-	rel, err := filepath.Rel(rootAbs, pathAbs)
+	return absCleanDarwin(resolved)
+}
+
+func absCleanDarwin(path string) (string, bool) {
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	return filepath.Clean(abs), true
+}
+
+func pathInsideRootLexicalDarwin(path, root string) bool {
+	path = strings.ToLower(filepath.Clean(path))
+	root = strings.ToLower(filepath.Clean(root))
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
