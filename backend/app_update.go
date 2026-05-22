@@ -17,12 +17,16 @@ func (a *App) appUpdateLayout() appupdate.Layout {
 
 func (a *App) appUpdateManager() appupdate.Manager {
 	layout := a.appUpdateLayout()
+	platform, err := appupdate.NewPlatformBackend(goruntime.GOOS, goruntime.GOARCH, appupdate.PlatformOptions{
+		ProcessID: os.Getpid(),
+	})
+	if err != nil {
+		platform = appupdate.UnsupportedBackend{Err: err}
+	}
 	return appupdate.Manager{
 		LocalAppVersion: a.appVersion(),
 		Layout:          layout,
-		Platform: appupdate.WindowsBackend{
-			ProcessID: os.Getpid(),
-		},
+		Platform:        platform,
 		ManifestProvider: appupdate.DefaultManifestProvider(func() appupdate.ManifestSourceResolution {
 			return appupdate.ResolveManifestSource(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
 		}),

@@ -25,6 +25,37 @@ type PlatformUpdater interface {
 	PostUpdateCheck(planPath string) error
 }
 
+type UnsupportedBackend struct {
+	Err error
+}
+
+func (b UnsupportedBackend) Target() string {
+	return "unsupported"
+}
+
+func (b UnsupportedBackend) ValidateInstallMode(Layout) error {
+	if b.Err != nil {
+		return b.Err
+	}
+	return ErrUnsupportedPlatform
+}
+
+func (b UnsupportedBackend) PrepareApply(ApplyPlan) error {
+	return b.ValidateInstallMode(Layout{})
+}
+
+func (b UnsupportedBackend) SpawnApplyRunner(string) error {
+	return b.ValidateInstallMode(Layout{})
+}
+
+func (b UnsupportedBackend) RunApply(string) error {
+	return b.ValidateInstallMode(Layout{})
+}
+
+func (b UnsupportedBackend) PostUpdateCheck(string) error {
+	return b.ValidateInstallMode(Layout{})
+}
+
 func NewPlatformBackend(goos, goarch string, opts PlatformOptions) (PlatformUpdater, error) {
 	goos = strings.ToLower(strings.TrimSpace(goos))
 	goarch = strings.ToLower(strings.TrimSpace(goarch))
