@@ -353,6 +353,31 @@ Expected:
 9. Post-check version mismatch rollback.
 10. Manual repair state after rollback failure.
 
+### Real Manual Regression Evidence
+
+Latest real macOS manual regression:
+
+- Date: 2026-05-22
+- Report: `docs/reports/2026-05-22-macos-app-update-manual-regression.md`
+- Baseline: `1.0.0`
+- Target: `1.1.0`
+- Install shape: user-writable `~/Applications/Ant Browser.app` style sandbox
+- Manifest source: runtime config with local `file://` manifest
+- UI action: clicked `更新并重启`
+- State progression: `verifying -> succeeded -> idle`
+- Relaunched UI version: `1.1.0`
+- Installed binary hash matched the `1.1.0` artifact
+- macOS Chromium Framework symlink preserved in user state:
+
+```text
+Resources -> Versions/Current/Resources
+```
+
+Notes:
+
+- `idle` after `succeeded` is expected after relaunch, because the new app rechecks the same manifest and finds no pending update.
+- This pass does not cover Developer ID signing, notarization, Gatekeeper quarantine, or public distribution hosting.
+
 ### Release Readiness Checks
 
 Before distributing a macOS release candidate:
