@@ -22,6 +22,72 @@ func TestDarwinBackendValidateInstallModeAcceptsUserWritableAppBundle(t *testing
 	}
 }
 
+func TestCopyDirCopiesSafeSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires symlink support")
+	}
+	src := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := os.MkdirAll(filepath.Join(src, "Framework.framework", "Versions", "A", "Resources"), 0o755); err != nil {
+		t.Fatalf("create resources: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "Framework.framework", "Versions", "A", "Resources", "file.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write resource: %v", err)
+	}
+	if err := os.Symlink("Versions/A/Resources", filepath.Join(src, "Framework.framework", "Resources")); err != nil {
+		t.Skipf("symlink creation unsupported: %v", err)
+	}
+
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copyDir returned error: %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(dst, "Framework.framework", "Resources"))
+	if err != nil {
+		t.Fatalf("read copied symlink: %v", err)
+	}
+	if target != "Versions/A/Resources" {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+}
+
+func TestCopyDirRejectsEscapingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires symlink support")
+	}
+	src := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := os.Symlink("../escape", filepath.Join(src, "escape-link")); err != nil {
+		t.Skipf("symlink creation unsupported: %v", err)
+	}
+
+	if err := copyDir(src, dst); err == nil {
+		t.Fatal("expected escaping symlink rejection")
+	}
+}
+
+func TestConfigureDetachedDarwinCommandPreparesLaunchContext(t *testing.T) {
+	cmd := exec.Command(filepath.Join(t.TempDir(), "Ant Browser.app", "Contents", "MacOS", "ant-chrome"), "--post-update-check", "plan.json")
+
+	devNull, err := configureDetachedDarwinCommand(cmd)
+	if err != nil {
+		t.Fatalf("configureDetachedDarwinCommand returned error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = devNull.Close()
+	})
+
+	wantDir := filepath.Dir(cmd.Path)
+	if cmd.Dir != wantDir {
+		t.Fatalf("cmd.Dir = %q, want %q", cmd.Dir, wantDir)
+	}
+	if cmd.Stdin == nil || cmd.Stdout == nil || cmd.Stderr == nil {
+		t.Fatal("expected detached command stdio to be connected")
+	}
+	if runtime.GOOS == "darwin" && cmd.SysProcAttr == nil {
+		t.Fatal("expected detached darwin command to set SysProcAttr")
+	}
+}
+
 func TestDarwinBackendValidateInstallModeRejectsApplicationsInstall(t *testing.T) {
 	layout := NewLayout("/Applications/Ant Browser.app", filepath.Join(t.TempDir(), "state"))
 	if err := (DarwinBackend{}).ValidateInstallMode(layout); err == nil {

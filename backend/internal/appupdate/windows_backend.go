@@ -280,7 +280,7 @@ func copyDir(src, dst string) error {
 			return os.MkdirAll(target, dirMode(info.Mode()))
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("symlink copy is not supported: %s", path)
+			return copySafeSymlink(src, path, target)
 		}
 		return copyFileMode(path, target, info.Mode().Perm())
 	})
@@ -327,6 +327,40 @@ func preserveInstallEntry(name string) bool {
 	default:
 		return false
 	}
+}
+
+func copySafeSymlink(srcRoot, srcPath, dstPath string) error {
+	linkTarget, err := os.Readlink(srcPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(linkTarget) == "" {
+		return fmt.Errorf("symlink target is empty: %s", srcPath)
+	}
+	if filepath.IsAbs(linkTarget) {
+		return fmt.Errorf("symlink target uses absolute path: %s -> %s", srcPath, linkTarget)
+	}
+
+	srcRootAbs, err := filepath.Abs(srcRoot)
+	if err != nil {
+		return err
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(srcPath), filepath.FromSlash(linkTarget)))
+	rel, err := filepath.Rel(srcRootAbs, resolved)
+	if err != nil {
+		return err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("symlink target escapes source root: %s -> %s", srcPath, linkTarget)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dstPath); err != nil {
+		return err
+	}
+	return os.Symlink(linkTarget, dstPath)
 }
 
 func copyFileMode(src, dst string, mode os.FileMode) error {

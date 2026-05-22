@@ -128,10 +128,7 @@ func (b DarwinBackend) SpawnApplyRunner(planPath string) error {
 	}
 
 	cmd := exec.Command(exe, "--apply-update", planPath)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
+	return startDetachedDarwinCommand(cmd)
 }
 
 func (b DarwinBackend) RunApply(planPath string) error {
@@ -263,10 +260,40 @@ func darwinAppExecutablePath(appRoot string) string {
 }
 
 var startDetachedDarwinCommand = func(cmd *exec.Cmd) error {
-	if err := cmd.Start(); err != nil {
+	devNull, err := configureDetachedDarwinCommand(cmd)
+	if err != nil {
 		return err
 	}
-	return cmd.Process.Release()
+	if err := cmd.Start(); err != nil {
+		_ = devNull.Close()
+		return err
+	}
+	err = cmd.Process.Release()
+	_ = devNull.Close()
+	return err
+}
+
+func configureDetachedDarwinCommand(cmd *exec.Cmd) (*os.File, error) {
+	if cmd.Dir == "" && strings.TrimSpace(cmd.Path) != "" {
+		cmd.Dir = filepath.Dir(cmd.Path)
+	}
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	if cmd.Stdin == nil {
+		cmd.Stdin = devNull
+	}
+	if cmd.Stdout == nil {
+		cmd.Stdout = devNull
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = devNull
+	}
+	if runtime.GOOS == "darwin" {
+		detachProcessGroup(cmd)
+	}
+	return devNull, nil
 }
 
 func darwinStateFromPlan(plan ApplyPlan, planPath string, status PersistentStatus, code string, err error) PersistentState {

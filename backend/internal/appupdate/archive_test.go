@@ -34,6 +34,43 @@ func writeZip(t *testing.T, entries map[string]string) string {
 	return path
 }
 
+func writeZipWithSymlink(t *testing.T, entries map[string]string, symlinks map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "app.zip")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create zip: %v", err)
+	}
+	writer := zip.NewWriter(file)
+	for name, body := range entries {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create entry: %v", err)
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			t.Fatalf("write entry: %v", err)
+		}
+	}
+	for name, target := range symlinks {
+		header := &zip.FileHeader{Name: name}
+		header.SetMode(os.ModeSymlink | 0o777)
+		entry, err := writer.CreateHeader(header)
+		if err != nil {
+			t.Fatalf("create symlink entry: %v", err)
+		}
+		if _, err := entry.Write([]byte(target)); err != nil {
+			t.Fatalf("write symlink entry: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close zip file: %v", err)
+	}
+	return path
+}
+
 func TestExtractFullPayloadRejectsZipSlip(t *testing.T) {
 	zipPath := writeZip(t, map[string]string{"../escape.txt": "bad"})
 	if err := ExtractFullPayload(zipPath, filepath.Join(t.TempDir(), "out")); err == nil {
@@ -60,6 +97,41 @@ func TestExtractFullPayloadExtractsFiles(t *testing.T) {
 		t.Fatalf("unexpected extracted file content: %q", string(data))
 	}
 	assertDirMode(t, dest, 0o700)
+}
+
+func TestExtractFullPayloadExtractsSafeSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink extraction requires symlink support")
+	}
+	zipPath := writeZipWithSymlink(t,
+		map[string]string{
+			"Framework.framework/Versions/A/Resources/file.txt": "ok",
+		},
+		map[string]string{
+			"Framework.framework/Resources": "Versions/A/Resources",
+		},
+	)
+	dest := filepath.Join(t.TempDir(), "out")
+
+	if err := ExtractFullPayload(zipPath, dest); err != nil {
+		t.Fatalf("ExtractFullPayload returned error: %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(dest, "Framework.framework", "Resources"))
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != "Versions/A/Resources" {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+}
+
+func TestExtractFullPayloadRejectsEscapingSymlink(t *testing.T) {
+	zipPath := writeZipWithSymlink(t, nil, map[string]string{
+		"Framework.framework/Resources": "../../escape",
+	})
+	if err := ExtractFullPayload(zipPath, filepath.Join(t.TempDir(), "out")); err == nil {
+		t.Fatal("expected escaping symlink rejection")
+	}
 }
 
 func TestExtractFullPayloadHandlesFileDirectoryConflict(t *testing.T) {
