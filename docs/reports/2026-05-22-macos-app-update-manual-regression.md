@@ -245,6 +245,71 @@ Expected behavior:
 - A mismatch writes `failed_manual_repair`.
 - `lastError.code` is `APP-UPDATE-POST-CHECK-VERSION-MISMATCH`.
 
+## HTTP Manifest Smoke Regression
+
+Date: 2026-05-22
+
+Sandbox:
+
+```text
+/private/tmp/ant-browser-mac-http-smoke-20260522
+```
+
+Setup:
+
+1. Started a local HTTP server on `127.0.0.1:18081`.
+2. Served `app-update-stable.json` from:
+
+```text
+http://127.0.0.1:18081/updates/app-update-stable.json
+```
+
+3. The manifest package URL was intentionally relative:
+
+```text
+AntBrowser-1.1.0-darwin-arm64.zip
+```
+
+4. Launched the `1.0.0` app with:
+
+```text
+DESKTOP_APP_UPDATE_MANIFEST_URL=http://127.0.0.1:18081/updates/app-update-stable.json
+```
+
+Observed before update:
+
+- Gate page showed client version `1.0.0`.
+- Required update prompt appeared.
+- Manifest source was `env:DESKTOP_APP_UPDATE_MANIFEST_URL`.
+- Persistent state resolved payload URL to:
+
+```text
+http://127.0.0.1:18081/updates/AntBrowser-1.1.0-darwin-arm64.zip
+```
+
+HTTP server log confirmed:
+
+```text
+GET /updates/app-update-stable.json HTTP/1.1 200
+GET /updates/AntBrowser-1.1.0-darwin-arm64.zip HTTP/1.1 200
+```
+
+Observed state progression:
+
+```text
+applying  1.0.0 -> 1.1.0
+verifying 1.0.0 -> 1.1.0
+succeeded 1.1.0 -> 1.1.0
+idle      1.1.0 -> 1.1.0
+```
+
+Observed after update:
+
+- Relaunched UI showed client version `1.1.0`.
+- Installed app `Info.plist` reported `1.1.0`.
+- Installed binary hash matched `publish/output/AntBrowser-1.1.0-macos-arm64.app`.
+- Final state had empty `lastError`.
+
 ## Verification Commands
 
 Fresh verification run:
