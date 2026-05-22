@@ -27,6 +27,50 @@ def normalized_zip_names(zip_path: Path) -> set[str]:
         return {name.replace("\\", "/").lstrip("./") for name in zf.namelist()}
 
 
+def required_paths_for_target(target: str) -> set[str]:
+    if target == "windows-amd64":
+        return {
+            "ant-chrome.exe",
+            "publish/runtime-manifest.json",
+            "bin/xray.exe",
+            "bin/sing-box.exe",
+            "apps/agent/src/server/index.mjs",
+            "runtime/node/node.exe",
+        }
+    if target in {"darwin-arm64", "darwin-amd64"}:
+        return {
+            "Ant Browser.app/Contents/Info.plist",
+            "Ant Browser.app/Contents/MacOS/ant-chrome",
+            "Ant Browser.app/Contents/MacOS/publish/runtime-manifest.json",
+            "Ant Browser.app/Contents/MacOS/bin/xray",
+            "Ant Browser.app/Contents/MacOS/bin/sing-box",
+        }
+    fail(f"unsupported target: {target}")
+
+
+def forbidden_mutable_user_data(names: set[str], target: str) -> list[str]:
+    forbidden = []
+    for name in names:
+        lower = name.lower()
+        segments = [segment for segment in lower.split("/") if segment]
+        if (
+            lower == "data/"
+            or lower.startswith("data/")
+            or "user data" in segments
+            or lower.endswith(".db")
+            or lower.endswith(".sqlite")
+            or lower.endswith(".sqlite3")
+        ):
+            forbidden.append(name)
+            continue
+        if target in {"darwin-arm64", "darwin-amd64"} and (
+            lower == "ant browser.app/contents/macos/data/"
+            or lower.startswith("ant browser.app/contents/macos/data/")
+        ):
+            forbidden.append(name)
+    return sorted(forbidden)
+
+
 def main() -> None:
     if len(sys.argv) != 4:
         fail("usage: verify-app-update-package.py <manifest> <zip> <target>")
@@ -62,27 +106,12 @@ def main() -> None:
         fail(f"size mismatch: expected {expected_size}, got {actual_size}")
 
     names = normalized_zip_names(zip_path)
-    required = {
-        "ant-chrome.exe",
-        "publish/runtime-manifest.json",
-        "bin/xray.exe",
-        "bin/sing-box.exe",
-        "apps/agent/src/server/index.mjs",
-        "runtime/node/node.exe",
-    }
+    required = required_paths_for_target(target)
     missing = sorted(required - names)
     if missing:
         fail("zip missing required files: " + ", ".join(missing))
 
-    forbidden = [
-        name
-        for name in names
-        if name == "data/"
-        or name.startswith("data/")
-        or name.endswith(".db")
-        or name.endswith(".sqlite")
-        or name.endswith(".sqlite3")
-    ]
+    forbidden = forbidden_mutable_user_data(names, target)
     if forbidden:
         fail("zip contains mutable user data: " + ", ".join(sorted(forbidden)[:10]))
 
