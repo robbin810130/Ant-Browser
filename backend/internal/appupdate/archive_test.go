@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -116,6 +117,25 @@ func TestValidateStagedWindowsPayloadRejectsSymlinkedMainExecutable(t *testing.T
 	}
 	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
 		t.Fatal("expected symlinked ant-chrome.exe rejection")
+	}
+}
+
+func TestValidateStagedWindowsPayloadRejectsSymlinkedPublishDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeWindowsPayload(t, dir)
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "runtime-manifest.json"), []byte(`{"schemaVersion":2}`), 0o600); err != nil {
+		t.Fatalf("write external manifest: %v", err)
+	}
+	publish := filepath.Join(dir, "publish")
+	if err := os.RemoveAll(publish); err != nil {
+		t.Fatalf("remove publish: %v", err)
+	}
+	if err := os.Symlink(external, publish); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("windows-amd64", dir); err == nil {
+		t.Fatal("expected symlinked publish directory rejection")
 	}
 }
 
@@ -247,6 +267,23 @@ func TestValidateStagedPayloadRejectsDarwinSymlinkedAppBundle(t *testing.T) {
 	}
 }
 
+func TestValidateStagedPayloadRejectsDarwinSymlinkedContentsDirectory(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	externalRoot := t.TempDir()
+	externalApp := writeFakeDarwinBundle(t, externalRoot)
+	contents := filepath.Join(appRoot, "Contents")
+	if err := os.RemoveAll(contents); err != nil {
+		t.Fatalf("remove Contents: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(externalApp, "Contents"), contents); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected symlinked Contents directory rejection")
+	}
+}
+
 func TestValidateStagedPayloadRejectsDarwinMissingInfoPlist(t *testing.T) {
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)
@@ -278,6 +315,9 @@ func TestValidateStagedPayloadRejectsDarwinSymlinkedInfoPlist(t *testing.T) {
 }
 
 func TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable bits are not portable on Windows")
+	}
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)
 	mainBinary := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
@@ -305,6 +345,23 @@ func TestValidateStagedPayloadRejectsDarwinSymlinkedMainBinary(t *testing.T) {
 	}
 	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
 		t.Fatal("expected symlinked ant-chrome rejection")
+	}
+}
+
+func TestValidateStagedPayloadRejectsDarwinSymlinkedBinDirectory(t *testing.T) {
+	root := t.TempDir()
+	appRoot := writeFakeDarwinBundle(t, root)
+	externalRoot := t.TempDir()
+	externalApp := writeFakeDarwinBundle(t, externalRoot)
+	bin := filepath.Join(appRoot, "Contents", "MacOS", "bin")
+	if err := os.RemoveAll(bin); err != nil {
+		t.Fatalf("remove bin: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(externalApp, "Contents", "MacOS", "bin"), bin); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := ValidateStagedPayload("darwin-arm64", root); err == nil {
+		t.Fatal("expected symlinked bin directory rejection")
 	}
 }
 
