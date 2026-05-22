@@ -140,6 +140,9 @@ func (b DarwinBackend) RunApply(planPath string) error {
 		return err
 	}
 	layout := NewLayout(plan.InstallRoot, plan.StateRoot)
+	if err := b.validateApplyPlan(plan); err != nil {
+		return err
+	}
 	if plan.WaitForProcessID > 0 && !waitForDarwinProcessExit(plan.WaitForProcessID, darwinProcessExitTimeout) {
 		err := fmt.Errorf("app process did not exit before apply timeout: pid %d", plan.WaitForProcessID)
 		_ = WriteState(layout, darwinStateFromPlan(plan, planPath, PersistentStatusFailedManualRepair, "APP-UPDATE-PROCESS-STILL-RUNNING", err))
@@ -162,6 +165,25 @@ func (b DarwinBackend) RunApply(planPath string) error {
 		return err
 	}
 	return b.launchPostUpdateCheck(plan, planPath)
+}
+
+func (b DarwinBackend) validateApplyPlan(plan ApplyPlan) error {
+	if err := b.ValidateInstallMode(NewLayout(plan.InstallRoot, plan.StateRoot)); err != nil {
+		return err
+	}
+	if strings.TrimSpace(plan.StagedPath) == "" {
+		return fmt.Errorf("darwin staged payload path is required")
+	}
+	if strings.TrimSpace(plan.BackupPath) == "" {
+		return fmt.Errorf("darwin backup path is required")
+	}
+	if pathInsideRootDarwin(plan.StagedPath, plan.InstallRoot) {
+		return fmt.Errorf("darwin staged payload must be outside app bundle: %s", plan.StagedPath)
+	}
+	if pathInsideRootDarwin(plan.BackupPath, plan.InstallRoot) {
+		return fmt.Errorf("darwin backup path must be outside app bundle: %s", plan.BackupPath)
+	}
+	return nil
 }
 
 func (b DarwinBackend) PostUpdateCheck(planPath string) error {

@@ -69,6 +69,34 @@ func TestRunAppUpdateCLIRejectsUnsupportedModeBeforePlatformWork(t *testing.T) {
 	}
 }
 
+func TestAppUpdateInstallRootForDarwinUsesAppBundleRoot(t *testing.T) {
+	bundleRoot := filepath.Join(t.TempDir(), "Applications", "Ant Browser.app")
+	exeRoot := filepath.Join(bundleRoot, "Contents", "MacOS")
+
+	got := appUpdateInstallRootForOS("darwin", exeRoot)
+	if got != bundleRoot {
+		t.Fatalf("expected app bundle root: got=%s want=%s", got, bundleRoot)
+	}
+}
+
+func TestAppUpdateInstallRootForDarwinKeepsNonBundleRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "dev-root")
+
+	got := appUpdateInstallRootForOS("darwin", root)
+	if got != root {
+		t.Fatalf("expected non-bundle root unchanged: got=%s want=%s", got, root)
+	}
+}
+
+func TestAppUpdateInstallRootForWindowsKeepsInstallRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Ant Browser", "bin")
+
+	got := appUpdateInstallRootForOS("windows", root)
+	if got != root {
+		t.Fatalf("expected windows install root unchanged: got=%s want=%s", got, root)
+	}
+}
+
 func TestAppUpdateStateRootForWindowsUsesLocalAppDataOutsideInstallRoot(t *testing.T) {
 	localAppData := filepath.Join(t.TempDir(), "LocalAppData")
 	t.Setenv("LOCALAPPDATA", localAppData)
