@@ -186,15 +186,17 @@ Not done in this phase:
 Recommended next phase:
 
 ```text
-macOS Formal Distribution Readiness
+macOS Internal Deployment Readiness
 ```
 
 Initial checklist:
 
-1. Decide certificate and signing identity.
-2. Sign the `.app` and zip/dmg distribution artifact with Developer ID.
-3. Notarize the artifact.
-4. Validate Gatekeeper and quarantine behavior after download.
-5. Host manifest and payload on the intended release endpoint.
-6. Run one full update from hosted manifest and payload.
-7. Freeze release runbook for operator handoff.
+1. Pick the internal install convention, preferably `~/Applications/Ant Browser.app`.
+2. Write a short operator runbook for installing the current internal build on a Mac.
+3. Publish an internal-only manifest and payload location reachable by the target Macs.
+4. Run one full update from the internal hosted manifest and payload.
+5. Verify rollback/manual-repair behavior on an internal sandbox app.
+6. Verify the installed app version from UI, `Info.plist`, and binary hash.
+7. Document cleanup commands for old build artifacts and test sandboxes.
+
+Formal distribution readiness remains a later phase. Developer ID signing, notarization, Gatekeeper quarantine validation, and public-channel download validation are not required for this internal-only deployment phase.
