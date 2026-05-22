@@ -172,6 +172,57 @@ func TestManagerDownloadResolvesRelativePackageURLFromManifestURL(t *testing.T) 
 	}
 }
 
+func TestManagerDownloadRejectsDarwinChecksumMismatch(t *testing.T) {
+	payload := writeZip(t, map[string]string{
+		"Ant Browser.app/Contents/Info.plist":                          `<plist></plist>`,
+		"Ant Browser.app/Contents/MacOS/ant-chrome":                    "#!/bin/sh\n",
+		"Ant Browser.app/Contents/MacOS/publish/runtime-manifest.json": `{"schemaVersion":2}`,
+		"Ant Browser.app/Contents/MacOS/bin/xray":                      "#!/bin/sh\n",
+		"Ant Browser.app/Contents/MacOS/bin/sing-box":                  "#!/bin/sh\n",
+	})
+	data, err := os.ReadFile(payload)
+	if err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	layout := NewLayout(filepath.Join(t.TempDir(), "Ant Browser.app"), t.TempDir())
+	manager := Manager{
+		LocalAppVersion: "1.1.0",
+		Layout:          layout,
+		Platform:        &fakePlatform{target: "darwin-arm64"},
+		ManifestProvider: func(context.Context) (Manifest, ManifestSourceResolution, error) {
+			return Manifest{
+				SchemaVersion: SchemaVersion,
+				Version:       "1.2.0",
+				Packages: []Package{{
+					Target:      "darwin-arm64",
+					PayloadType: PayloadTypeFull,
+					URL:         payload,
+					SHA256:      "0000000000000000000000000000000000000000000000000000000000000000",
+					Size:        int64(len(data)),
+				}},
+			}, ManifestSourceResolution{Source: "runtime-config", URL: "file:///manifest.json"}, nil
+		},
+	}
+
+	state, err := manager.Download(context.Background())
+	if err != nil {
+		t.Fatalf("Download returned error: %v", err)
+	}
+	if state.Status != PersistentStatusAvailable || state.ErrorCode != "APP-UPDATE-DOWNLOAD-FAILED" {
+		t.Fatalf("unexpected state after checksum mismatch: %+v", state)
+	}
+	persistent, err := ReadState(layout)
+	if err != nil {
+		t.Fatalf("ReadState returned error: %v", err)
+	}
+	if persistent.Status != PersistentStatusAvailable || persistent.LastError.Code != "APP-UPDATE-DOWNLOAD-FAILED" {
+		t.Fatalf("unexpected persistent state: %+v", persistent)
+	}
+	if _, err := os.Stat(filepath.Join(layout.StagingRoot(), "1.2.0")); !os.IsNotExist(err) {
+		t.Fatalf("checksum mismatch should not create staging dir, err=%v", err)
+	}
+}
+
 func TestManagerApplySpawnsRunnerForStagedUpdate(t *testing.T) {
 	stateRoot := t.TempDir()
 	installRoot := filepath.Join(t.TempDir(), "install")
