@@ -262,7 +262,7 @@ func darwinAppExecutablePath(appRoot string) string {
 	return filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
 }
 
-func startDetachedDarwinCommand(cmd *exec.Cmd) error {
+var startDetachedDarwinCommand = func(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
