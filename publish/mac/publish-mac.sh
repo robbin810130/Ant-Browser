@@ -100,9 +100,11 @@ require_cmd() {
 
 require_cmd python3
 require_cmd curl
+require_cmd codesign
 require_cmd ditto
 require_cmd hdiutil
 require_cmd wails
+require_cmd xattr
 
 echo "[0/4] Verifying publish contract..."
 python3 "$ROOT_DIR/tools/runtime/verify-publish-contract.py"
@@ -356,7 +358,15 @@ if [[ -f "$CHROME_README_SRC" ]]; then
   cp "$CHROME_README_SRC" "$APP_MACOS_DIR/chrome/README.md"
 fi
 
+echo "  - normalizing bundle metadata..."
+xattr -cr "$APP_STAGE"
+
+echo "  - signing assembled app bundle..."
+codesign --force --deep --sign - "$APP_STAGE"
+codesign --verify --deep --strict --verbose=2 "$APP_STAGE"
+
 ditto "$APP_STAGE" "$APP_EXPORT"
+codesign --verify --deep --strict --verbose=2 "$APP_EXPORT"
 rm -f "$OUTPUT_DIR/$ZIP_NAME"
 ditto -c -k --sequesterRsrc --keepParent "$APP_EXPORT" "$OUTPUT_DIR/$ZIP_NAME"
 
