@@ -3,7 +3,9 @@ package appupdate
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -429,6 +431,467 @@ func TestDarwinBackendSpawnApplyRunnerRejectsExistingRunnerSymlinkInsideAppBundl
 	}
 }
 
+func TestDarwinBackendBackupReplaceAndRollback(t *testing.T) {
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	if err := os.WriteFile(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+
+	stagedRoot := filepath.Join(root, "staged")
+	stagedApp := writeFakeDarwinBundle(t, stagedRoot)
+	if err := os.WriteFile(filepath.Join(stagedApp, "Contents", "MacOS", "new-marker.txt"), []byte("new"), 0o600); err != nil {
+		t.Fatalf("write new marker: %v", err)
+	}
+
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+		StagedPath:    stagedRoot,
+		BackupPath:    filepath.Join(NewLayout(installRoot, stateRoot).BackupsRoot(), "1.1.0-test"),
+	}
+	backend := DarwinBackend{SuppressRelaunch: true}
+
+	if err := backend.backupInstall(plan); err != nil {
+		t.Fatalf("backupInstall returned error: %v", err)
+	}
+	if err := backend.replaceInstall(plan); err != nil {
+		t.Fatalf("replaceInstall returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "new-marker.txt")); err != nil {
+		t.Fatalf("expected new marker after replace: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected old marker removed after replace, err=%v", err)
+	}
+	if err := backend.rollbackInstall(plan); err != nil {
+		t.Fatalf("rollbackInstall returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")); err != nil {
+		t.Fatalf("expected old marker after rollback: %v", err)
+	}
+}
+
+func TestDarwinBackendPostUpdateCheckWritesSucceededState(t *testing.T) {
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	if err := (DarwinBackend{CurrentAppVersion: "1.2.0", SuppressRelaunch: true}).PostUpdateCheck(planPath); err != nil {
+		t.Fatalf("PostUpdateCheck returned error: %v", err)
+	}
+	state, err := ReadState(layout)
+	if err != nil {
+		t.Fatalf("ReadState returned error: %v", err)
+	}
+	if state.Status != PersistentStatusSucceeded || state.LocalAppVersion != "1.2.0" || state.RemoteAppVersion != "1.2.0" {
+		t.Fatalf("unexpected state: %+v", state)
+	}
+}
+
+func TestDarwinBackendPostUpdateCheckAcceptsRenamedAppBundle(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	applications := filepath.Join(root, "Applications")
+	installRoot := writeFakeDarwinBundle(t, applications)
+	renamedRoot := filepath.Join(applications, "Ant Browser Beta.app")
+	if err := os.Rename(installRoot, renamedRoot); err != nil {
+		t.Fatalf("rename app bundle: %v", err)
+	}
+	stateRoot := filepath.Join(root, "state")
+	layout := NewLayout(renamedRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   renamedRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	if err := (DarwinBackend{CurrentAppVersion: "1.2.0", SuppressRelaunch: true}).PostUpdateCheck(planPath); err != nil {
+		t.Fatalf("PostUpdateCheck returned error: %v", err)
+	}
+}
+
+func TestDarwinBackendPostUpdateCheckLaunchesApplication(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	launchMarker := filepath.Join(root, "launch.txt")
+	if err := os.WriteFile(filepath.Join(installRoot, "Contents", "MacOS", "ant-chrome"), []byte("#!/bin/sh\nprintf launched > \""+launchMarker+"\"\n"), 0o700); err != nil {
+		t.Fatalf("write launcher: %v", err)
+	}
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	if err := (DarwinBackend{CurrentAppVersion: "1.2.0"}).PostUpdateCheck(planPath); err != nil {
+		t.Fatalf("PostUpdateCheck returned error: %v", err)
+	}
+	waitForFile(t, launchMarker)
+}
+
+func TestDarwinBackendPostUpdateCheckRejectsVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{CurrentAppVersion: "1.1.0", SuppressRelaunch: true}).PostUpdateCheck(planPath)
+	if err == nil {
+		t.Fatal("expected version mismatch error")
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-POST-CHECK-VERSION-MISMATCH" {
+		t.Fatalf("unexpected mismatch state: %+v", state)
+	}
+}
+
+func TestDarwinBackendPostUpdateCheckRejectsInvalidBundle(t *testing.T) {
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	if err := os.Remove(filepath.Join(installRoot, "Contents", "Info.plist")); err != nil {
+		t.Fatalf("remove Info.plist: %v", err)
+	}
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{CurrentAppVersion: "1.2.0", SuppressRelaunch: true}).PostUpdateCheck(planPath)
+	if err == nil {
+		t.Fatal("expected invalid bundle error")
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-POST-CHECK-BUNDLE-INVALID" {
+		t.Fatalf("unexpected invalid bundle state: %+v", state)
+	}
+}
+
+func TestDarwinBackendPostUpdateCheckRejectsInstalledBundleMutableData(t *testing.T) {
+	root := t.TempDir()
+	applications := filepath.Join(root, "Applications")
+	installRoot := writeFakeDarwinBundle(t, applications)
+	renamedRoot := filepath.Join(applications, "Ant Browser Beta.app")
+	if err := os.Rename(installRoot, renamedRoot); err != nil {
+		t.Fatalf("rename app bundle: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(renamedRoot, "Contents", "MacOS", "data"), 0o700); err != nil {
+		t.Fatalf("mkdir mutable data: %v", err)
+	}
+	stateRoot := filepath.Join(root, "state")
+	layout := NewLayout(renamedRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   renamedRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{CurrentAppVersion: "1.2.0", SuppressRelaunch: true}).PostUpdateCheck(planPath)
+	if err == nil {
+		t.Fatal("expected installed mutable data error")
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-POST-CHECK-BUNDLE-INVALID" {
+		t.Fatalf("unexpected mutable data state: %+v", state)
+	}
+}
+
+func TestDarwinBackendRunApplyWritesVerifyingAndLaunchesPostCheck(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	if err := os.WriteFile(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+
+	stagedRoot := filepath.Join(root, "staged")
+	stagedApp := writeFakeDarwinBundle(t, stagedRoot)
+	postCheckArgsPath := filepath.Join(root, "post-check-args.txt")
+	postCheckScript := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + postCheckArgsPath + "\"\n"
+	if err := os.WriteFile(filepath.Join(stagedApp, "Contents", "MacOS", "ant-chrome"), []byte(postCheckScript), 0o700); err != nil {
+		t.Fatalf("write staged ant-chrome: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagedApp, "Contents", "MacOS", "new-marker.txt"), []byte("new"), 0o600); err != nil {
+		t.Fatalf("write new marker: %v", err)
+	}
+
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:    installRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		OldAppVersion:  "1.1.0",
+		NewAppVersion:  "1.2.0",
+		StagedPath:     stagedRoot,
+		BackupPath:     filepath.Join(layout.BackupsRoot(), "1.1.0-test"),
+		ManifestSource: "test-source",
+		ManifestURL:    "https://example.test/manifest.json",
+		PayloadURL:     "https://example.test/payload.zip",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	if err := (DarwinBackend{}).RunApply(planPath); err != nil {
+		t.Fatalf("RunApply returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "new-marker.txt")); err != nil {
+		t.Fatalf("expected new marker after RunApply: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected old marker removed after RunApply, err=%v", err)
+	}
+	state, err := ReadState(layout)
+	if err != nil {
+		t.Fatalf("ReadState returned error: %v", err)
+	}
+	if state.Status != PersistentStatusVerifying || state.PlanPath != planPath || state.Target != "darwin-arm64" {
+		t.Fatalf("unexpected verifying state: %+v", state)
+	}
+	if state.ManifestSource != plan.ManifestSource || state.ManifestURL != plan.ManifestURL || state.PayloadURL != plan.PayloadURL {
+		t.Fatalf("state lost manifest context: %+v", state)
+	}
+	waitForFile(t, postCheckArgsPath)
+	data, err := os.ReadFile(postCheckArgsPath)
+	if err != nil {
+		t.Fatalf("read post-check args: %v", err)
+	}
+	want := "--post-update-check\n" + planPath + "\n"
+	if string(data) != want {
+		t.Fatalf("post-check args = %q, want %q", string(data), want)
+	}
+}
+
+func TestDarwinBackendRunApplyRollsBackWhenCopyFails(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	if err := os.WriteFile(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+	stagedRoot := filepath.Join(root, "staged")
+	stagedApp := writeFakeDarwinBundle(t, stagedRoot)
+	if err := os.Symlink(filepath.Join(stagedApp, "Contents", "Info.plist"), filepath.Join(stagedApp, "Contents", "MacOS", "copy-fails-link")); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("symlink creation unsupported: %v", err)
+		}
+		t.Fatalf("create staged symlink: %v", err)
+	}
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:    installRoot,
+		StateRoot:      stateRoot,
+		Target:         "darwin-arm64",
+		OldAppVersion:  "1.1.0",
+		NewAppVersion:  "1.2.0",
+		StagedPath:     stagedRoot,
+		BackupPath:     filepath.Join(layout.BackupsRoot(), "1.1.0-test"),
+		ManifestSource: "test-source",
+		ManifestURL:    "https://example.test/manifest.json",
+		PayloadURL:     "https://example.test/payload.zip",
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{}).RunApply(planPath)
+	if err == nil {
+		t.Fatal("expected RunApply copy failure")
+	}
+	if _, statErr := os.Stat(filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")); statErr != nil {
+		t.Fatalf("expected rollback to restore old marker: %v", statErr)
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusRolledBack || state.LastError.Code != "APP-UPDATE-APPLY-FAILED-ROLLED-BACK" {
+		t.Fatalf("unexpected rollback state: %+v", state)
+	}
+	if state.PlanPath != planPath || state.Target != plan.Target || state.ManifestURL != plan.ManifestURL || state.PayloadURL != plan.PayloadURL {
+		t.Fatalf("rollback state lost plan context: %+v", state)
+	}
+}
+
+func TestDarwinBackendRunApplyRejectsTamperedStagedPayloadBeforeRemovingInstall(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	oldMarker := filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")
+	if err := os.WriteFile(oldMarker, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+	stagedRoot := filepath.Join(root, "staged")
+	stagedApp := writeFakeDarwinBundle(t, stagedRoot)
+	if err := os.Remove(filepath.Join(stagedApp, "Contents", "Info.plist")); err != nil {
+		t.Fatalf("remove staged Info.plist: %v", err)
+	}
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+		StagedPath:    stagedRoot,
+		BackupPath:    filepath.Join(layout.BackupsRoot(), "1.1.0-test"),
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{}).RunApply(planPath)
+	if err == nil {
+		t.Fatal("expected tampered staged payload error")
+	}
+	if _, statErr := os.Stat(oldMarker); statErr != nil {
+		t.Fatalf("install should remain in place before failed replace: %v", statErr)
+	}
+}
+
+func TestDarwinBackendRunApplyRejectsRunningProcessBeforeReplace(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin process waiting only runs on macOS")
+	}
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	oldMarker := filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")
+	if err := os.WriteFile(oldMarker, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+	stagedRoot := filepath.Join(root, "staged")
+	writeFakeDarwinBundle(t, stagedRoot)
+
+	sleepCmd := exec.Command("sleep", "2")
+	if err := sleepCmd.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleepCmd.Process.Kill()
+		_ = sleepCmd.Wait()
+	}()
+
+	oldTimeout := darwinProcessExitTimeout
+	oldInterval := darwinProcessPollInterval
+	darwinProcessExitTimeout = 30 * time.Millisecond
+	darwinProcessPollInterval = 5 * time.Millisecond
+	defer func() {
+		darwinProcessExitTimeout = oldTimeout
+		darwinProcessPollInterval = oldInterval
+	}()
+
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:      installRoot,
+		StateRoot:        stateRoot,
+		Target:           "darwin-arm64",
+		OldAppVersion:    "1.1.0",
+		NewAppVersion:    "1.2.0",
+		StagedPath:       stagedRoot,
+		BackupPath:       filepath.Join(layout.BackupsRoot(), "1.1.0-test"),
+		WaitForProcessID: sleepCmd.Process.Pid,
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{}).RunApply(planPath)
+	if err == nil {
+		t.Fatal("expected running process timeout")
+	}
+	if _, statErr := os.Stat(oldMarker); statErr != nil {
+		t.Fatalf("install should not be replaced while process is running: %v", statErr)
+	}
+	state, readErr := ReadState(layout)
+	if readErr != nil {
+		t.Fatalf("ReadState returned error: %v", readErr)
+	}
+	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-PROCESS-STILL-RUNNING" {
+		t.Fatalf("unexpected running process state: %+v", state)
+	}
+}
+
 func TestDarwinRunnerPathDefaultUnderRunnerRoot(t *testing.T) {
 	root := t.TempDir()
 	appRoot := filepath.Join(root, "Ant Browser.app")
@@ -439,6 +902,22 @@ func TestDarwinRunnerPathDefaultUnderRunnerRoot(t *testing.T) {
 	want := filepath.Join(layout.RunnerRoot(), "ant-chrome-update-runner")
 	if got != want {
 		t.Fatalf("darwinRunnerPath default = %q, want %q", got, want)
+	}
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat file %s: %v", path, err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for file: %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
