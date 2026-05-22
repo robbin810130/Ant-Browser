@@ -246,7 +246,15 @@ func writeFakeDarwinBundle(t *testing.T, root string) string {
 	return appRoot
 }
 
+func skipOnWindowsForExecutableBits(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not reliably preserve POSIX executable bits in this test fixture")
+	}
+}
+
 func TestValidateStagedPayloadAcceptsDarwinBundle(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
 	root := t.TempDir()
 	writeFakeDarwinBundle(t, root)
 	if err := ValidateStagedPayload("darwin-arm64", root); err != nil {
@@ -315,9 +323,7 @@ func TestValidateStagedPayloadRejectsDarwinSymlinkedInfoPlist(t *testing.T) {
 }
 
 func TestValidateStagedPayloadRejectsDarwinNonExecutableMainBinary(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX executable bits are not portable on Windows")
-	}
+	skipOnWindowsForExecutableBits(t)
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)
 	mainBinary := filepath.Join(appRoot, "Contents", "MacOS", "ant-chrome")
@@ -393,6 +399,7 @@ func TestValidateStagedPayloadRejectsDarwinSQLiteOutsideDataDir(t *testing.T) {
 }
 
 func TestValidateStagedPayloadAcceptsDarwinBundledResourceDataDir(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
 	root := t.TempDir()
 	appRoot := writeFakeDarwinBundle(t, root)
 	resourceData := filepath.Join(appRoot, "Contents", "Resources", "data")
