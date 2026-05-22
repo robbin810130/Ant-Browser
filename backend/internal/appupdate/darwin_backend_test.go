@@ -826,6 +826,42 @@ func TestDarwinBackendRunApplyRejectsTamperedStagedPayloadBeforeRemovingInstall(
 	}
 }
 
+func TestDarwinBackendRunApplyRejectsBackupPathInsideAppBeforeRemovingInstall(t *testing.T) {
+	skipOnWindowsForExecutableBits(t)
+
+	root := t.TempDir()
+	installRoot := writeFakeDarwinBundle(t, filepath.Join(root, "Applications"))
+	stateRoot := filepath.Join(root, "state")
+	oldMarker := filepath.Join(installRoot, "Contents", "MacOS", "old-marker.txt")
+	if err := os.WriteFile(oldMarker, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old marker: %v", err)
+	}
+	stagedRoot := filepath.Join(root, "staged")
+	writeFakeDarwinBundle(t, stagedRoot)
+	layout := NewLayout(installRoot, stateRoot)
+	plan := ApplyPlan{
+		InstallRoot:   installRoot,
+		StateRoot:     stateRoot,
+		Target:        "darwin-arm64",
+		OldAppVersion: "1.1.0",
+		NewAppVersion: "1.2.0",
+		StagedPath:    stagedRoot,
+		BackupPath:    filepath.Join(installRoot, "Contents", "MacOS", "backup"),
+	}
+	planPath, err := WritePlan(layout, plan)
+	if err != nil {
+		t.Fatalf("WritePlan returned error: %v", err)
+	}
+
+	err = (DarwinBackend{}).RunApply(planPath)
+	if err == nil {
+		t.Fatal("expected backup path inside app error")
+	}
+	if _, statErr := os.Stat(oldMarker); statErr != nil {
+		t.Fatalf("install should remain in place before invalid backup path: %v", statErr)
+	}
+}
+
 func TestDarwinBackendRunApplyRejectsRunningProcessBeforeReplace(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Darwin process waiting only runs on macOS")
