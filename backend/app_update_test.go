@@ -51,6 +51,24 @@ func TestDownloadDesktopAppUpdateUsesManager(t *testing.T) {
 	}
 }
 
+func TestAppUpdateManagerUsesSelectedPlatformBackend(t *testing.T) {
+	app := NewApp(t.TempDir(), "1.1.0")
+	manager := app.appUpdateManager()
+	if manager.Platform == nil {
+		t.Fatal("expected app update platform backend")
+	}
+	if manager.Platform.Target() == "" {
+		t.Fatal("expected platform target")
+	}
+}
+
+func TestRunAppUpdateCLIRejectsUnsupportedModeBeforePlatformWork(t *testing.T) {
+	err := RunAppUpdateCLI("bogus", filepath.Join(t.TempDir(), "missing-plan.json"), "1.1.0")
+	if err == nil {
+		t.Fatal("expected unsupported cli mode error")
+	}
+}
+
 func TestAppUpdateStateRootForWindowsUsesLocalAppDataOutsideInstallRoot(t *testing.T) {
 	localAppData := filepath.Join(t.TempDir(), "LocalAppData")
 	t.Setenv("LOCALAPPDATA", localAppData)
