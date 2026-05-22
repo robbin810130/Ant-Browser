@@ -65,7 +65,7 @@ func ExtractFullPayload(zipPath, destination string) error {
 }
 
 func ValidateStagedPayload(target, stagedRoot string) error {
-	if err := requireDirectoryNoSymlink(stagedRoot, "staged payload root"); err != nil {
+	if err := requireStagedRootDirectory(stagedRoot); err != nil {
 		return err
 	}
 
@@ -76,7 +76,7 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 			filepath.Join("publish", "runtime-manifest.json"),
 		}
 		for _, rel := range required {
-			if err := requireRegularFileNoSymlink(filepath.Join(stagedRoot, rel), rel); err != nil {
+			if err := requireRegularFileNoSymlink(stagedRoot, rel, rel); err != nil {
 				return err
 			}
 		}
@@ -89,44 +89,99 @@ func ValidateStagedPayload(target, stagedRoot string) error {
 }
 
 func validateDarwinStagedPayload(stagedRoot string) error {
-	appRoot := filepath.Join(stagedRoot, "Ant Browser.app")
-	if err := requireDirectoryNoSymlink(appRoot, "Ant Browser.app"); err != nil {
+	if err := requireDirectoryNoSymlink(stagedRoot, "Ant Browser.app", "Ant Browser.app"); err != nil {
 		return err
 	}
 
-	macos := filepath.Join(appRoot, "Contents", "MacOS")
 	required := []string{
 		filepath.Join("Ant Browser.app", "Contents", "Info.plist"),
 		filepath.Join("Ant Browser.app", "Contents", "MacOS", "publish", "runtime-manifest.json"),
 	}
 	for _, rel := range required {
-		if err := requireRegularFileNoSymlink(filepath.Join(stagedRoot, rel), rel); err != nil {
+		if err := requireRegularFileNoSymlink(stagedRoot, rel, rel); err != nil {
 			return err
 		}
 	}
 
 	for _, rel := range []string{
-		filepath.Join(macos, "ant-chrome"),
-		filepath.Join(macos, "bin", "xray"),
-		filepath.Join(macos, "bin", "sing-box"),
+		filepath.Join("Ant Browser.app", "Contents", "MacOS", "ant-chrome"),
+		filepath.Join("Ant Browser.app", "Contents", "MacOS", "bin", "xray"),
+		filepath.Join("Ant Browser.app", "Contents", "MacOS", "bin", "sing-box"),
 	} {
-		if err := requireExecutableNoSymlink(rel, rel); err != nil {
+		if err := requireExecutableNoSymlink(stagedRoot, rel, rel); err != nil {
 			return err
 		}
 	}
 	return rejectMutableUserData(stagedRoot)
 }
 
-func requireDirectoryNoSymlink(path, label string) error {
+func requireStagedRootDirectory(path string) error {
 	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("staged payload missing directory: staged payload root")
+		}
+		return fmt.Errorf("staged payload directory is not readable: staged payload root: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("staged payload directory must not be a symlink: staged payload root")
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("staged payload required path is not a directory: staged payload root")
+	}
+	return nil
+}
+
+func requireNoSymlinkPath(root, rel string) (string, os.FileInfo, error) {
+	if strings.TrimSpace(rel) == "" {
+		return "", nil, fmt.Errorf("staged payload relative path is required")
+	}
+	if filepath.IsAbs(rel) {
+		return "", nil, fmt.Errorf("staged payload path must be relative: %s", rel)
+	}
+
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, err
+	}
+	cleanRel := filepath.Clean(rel)
+	target := filepath.Join(rootAbs, cleanRel)
+	checkedRel, err := filepath.Rel(rootAbs, target)
+	if err != nil {
+		return "", nil, err
+	}
+	if checkedRel == "." || checkedRel == ".." || strings.HasPrefix(checkedRel, ".."+string(filepath.Separator)) {
+		return "", nil, fmt.Errorf("staged payload path escapes root: %s", rel)
+	}
+
+	current := rootAbs
+	var info os.FileInfo
+	for _, part := range strings.Split(checkedRel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err = os.Lstat(current)
+		if err != nil {
+			return current, nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return current, nil, fmt.Errorf("staged payload path component must not be a symlink: %s", current)
+		}
+	}
+	if info == nil {
+		return "", nil, fmt.Errorf("staged payload relative path is required")
+	}
+	return current, info, nil
+}
+
+func requireDirectoryNoSymlink(root, rel, label string) error {
+	_, info, err := requireNoSymlinkPath(root, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("staged payload missing directory: %s", label)
 		}
 		return fmt.Errorf("staged payload directory is not readable: %s: %w", label, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("staged payload directory must not be a symlink: %s", label)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("staged payload required path is not a directory: %s", label)
@@ -134,16 +189,13 @@ func requireDirectoryNoSymlink(path, label string) error {
 	return nil
 }
 
-func requireRegularFileNoSymlink(path, label string) error {
-	info, err := os.Lstat(path)
+func requireRegularFileNoSymlink(root, rel, label string) error {
+	_, info, err := requireNoSymlinkPath(root, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("staged payload missing required file: %s", label)
 		}
 		return fmt.Errorf("staged payload required file is not readable: %s: %w", label, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("staged payload required file must not be a symlink: %s", label)
 	}
 	if info.IsDir() {
 		return fmt.Errorf("staged payload required path is a directory: %s", label)
@@ -154,16 +206,13 @@ func requireRegularFileNoSymlink(path, label string) error {
 	return nil
 }
 
-func requireExecutableNoSymlink(path, label string) error {
-	info, err := os.Lstat(path)
+func requireExecutableNoSymlink(root, rel, label string) error {
+	_, info, err := requireNoSymlinkPath(root, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("staged payload missing executable: %s", label)
 		}
 		return fmt.Errorf("staged payload executable is not readable: %s: %w", label, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("staged payload executable must not be a symlink: %s", label)
 	}
 	if info.IsDir() {
 		return fmt.Errorf("staged payload executable path is a directory: %s", label)
