@@ -276,6 +276,95 @@ python3 tools/app-update/verify-app-update-package.py publish/output/app-update-
 3. 不启动 apply runner
 4. 安装目录没有变化
 
+## macOS Application Self-Update Regression
+
+### Scope
+
+macOS app-update uses the same app-update manifest and shared backend contract as Windows. The platform target must be `darwin-arm64` or `darwin-amd64`.
+
+This phase supports full package updates only. Delta patching and release channel rollout are out of scope.
+
+### Supported Install Location
+
+Supported:
+
+```text
+~/Applications/Ant Browser.app
+```
+
+Unsupported for automatic update:
+
+```text
+/Applications/Ant Browser.app
+/System/Applications/...
+```
+
+Unsupported installs must return `unsupported_install` and must not delete or replace any bundle files.
+
+### Required Payload Shape
+
+The macOS app-update zip must contain:
+
+```text
+Ant Browser.app/
+  Contents/
+    Info.plist
+    MacOS/
+      ant-chrome
+      publish/runtime-manifest.json
+      bin/xray
+      bin/sing-box
+```
+
+The payload must not contain `data/`, `User Data/`, `.db`, `.sqlite`, or `.sqlite3` files.
+
+### Package Verification
+
+Run:
+
+```bash
+VERSION="$(python3 -c 'import json; print(json.load(open("wails.json", encoding="utf-8"))["info"]["productVersion"])')"
+python3 tools/app-update/verify-app-update-package.py publish/output/app-update-stable.json "publish/output/AntBrowser-${VERSION}-darwin-arm64.zip" darwin-arm64
+```
+
+or:
+
+```bash
+VERSION="$(python3 -c 'import json; print(json.load(open("wails.json", encoding="utf-8"))["info"]["productVersion"])')"
+python3 tools/app-update/verify-app-update-package.py publish/output/app-update-stable.json "publish/output/AntBrowser-${VERSION}-darwin-amd64.zip" darwin-amd64
+```
+
+Expected:
+
+```text
+[OK] app update package verified
+```
+
+### Regression Matrix
+
+1. Local file manifest smoke test.
+2. HTTP manifest smoke test.
+3. Soft update from `~/Applications/Ant Browser.app`.
+4. Required update from `~/Applications/Ant Browser.app`.
+5. Unsupported install at `/Applications/Ant Browser.app`.
+6. Checksum mismatch.
+7. Invalid `.app` payload.
+8. Replace failure rollback.
+9. Post-check version mismatch rollback.
+10. Manual repair state after rollback failure.
+
+### Release Readiness Checks
+
+Before distributing a macOS release candidate:
+
+1. Confirm the app bundle launches before packaging.
+2. Confirm the app-update verifier passes for the target.
+3. Confirm signing status for the release candidate.
+4. Confirm notarization status for the release candidate.
+5. Confirm Gatekeeper and quarantine behavior for the distributed artifact.
+
+Signing, notarization, and Gatekeeper checks are release readiness checks. They are not runtime backend gates in this phase.
+
 ## 小Q 的 Windows 安装包任务
 
 在 Windows 真机上，下一步只做这条线：
