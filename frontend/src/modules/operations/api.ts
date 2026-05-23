@@ -1,7 +1,16 @@
 import type { OperationTask, OperationTaskStatus } from './types'
 import { useDevWorkspaceFallback } from '../workspace/devData'
+import { WorkspaceOperationTasks } from '../../wailsjs/go/main/App'
+import type { workspace } from '../../wailsjs/go/models'
 
 const knownStatuses = new Set<OperationTaskStatus>(['waiting', 'running', 'blocked', 'failed', 'completed'])
+
+export type OperationTaskQuery = Partial<Pick<workspace.OperationTaskQuery, 'Limit' | 'Status' | 'ShopID' | 'TaskType'>> & {
+  limit?: number
+  status?: string
+  shopId?: string
+  taskType?: string
+}
 
 export function normalizeOperationTask(input: any): OperationTask {
   const status = String(input?.status || 'waiting') as OperationTaskStatus
@@ -15,10 +24,21 @@ export function normalizeOperationTask(input: any): OperationTask {
     blockedReason: String(input?.blockedReason || ''),
     failureMessage: String(input?.failureMessage || ''),
     updatedAt: String(input?.updatedAt || ''),
+    runId: String(input?.runId || ''),
+    failureCode: String(input?.failureCode || ''),
   }
 }
 
-export async function fetchOperationTasks(): Promise<OperationTask[]> {
+function buildOperationTaskQuery(query: OperationTaskQuery = {}): workspace.OperationTaskQuery {
+  return {
+    Limit: Number(query.Limit ?? query.limit ?? 100),
+    Status: String(query.Status ?? query.status ?? ''),
+    ShopID: String(query.ShopID ?? query.shopId ?? ''),
+    TaskType: String(query.TaskType ?? query.taskType ?? ''),
+  } as workspace.OperationTaskQuery
+}
+
+export async function fetchOperationTasks(query: OperationTaskQuery = {}): Promise<OperationTask[]> {
   if (useDevWorkspaceFallback()) {
     return [
       normalizeOperationTask({
@@ -29,6 +49,7 @@ export async function fetchOperationTasks(): Promise<OperationTask[]> {
         title: '检查近 7 天爆款价格带',
         status: 'running',
         updatedAt: '2026-05-23T09:25:00+08:00',
+        runId: 'run-open-ready',
       }),
       normalizeOperationTask({
         taskId: 'op-title-refresh',
@@ -39,6 +60,7 @@ export async function fetchOperationTasks(): Promise<OperationTask[]> {
         status: 'blocked',
         blockedReason: '店铺登录态需要人工短信验证',
         updatedAt: '2026-05-23T09:15:00+08:00',
+        runId: 'run-validate-manual',
       }),
       normalizeOperationTask({
         taskId: 'op-credential-rebind',
@@ -48,11 +70,13 @@ export async function fetchOperationTasks(): Promise<OperationTask[]> {
         title: '重新绑定 ASM 授权凭据',
         status: 'waiting',
         updatedAt: '2026-05-23T09:00:00+08:00',
+        failureCode: 'AUTH_EXPIRED',
       }),
     ]
   }
 
-  return []
+  const payload = await WorkspaceOperationTasks(buildOperationTaskQuery(query))
+  return Array.isArray(payload?.items) ? payload.items.map(normalizeOperationTask) : []
 }
 
 export function deriveOperationTaskCounts(tasks: OperationTask[]) {

@@ -458,6 +458,10 @@ export function WorkspaceOpenShop(arg1) {
   return window['go']['main']['App']['WorkspaceOpenShop'](arg1);
 }
 
+export function WorkspaceOperationTasks(arg1) {
+  return window['go']['main']['App']['WorkspaceOperationTasks'](arg1);
+}
+
 export function WorkspaceRunEvents(arg1, arg2) {
   return window['go']['main']['App']['WorkspaceRunEvents'](arg1, arg2);
 }

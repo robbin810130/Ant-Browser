@@ -239,6 +239,8 @@ export function WorkspaceAuthorizedShops():Promise<Array<workspace.ShopInstanceP
 
 export function WorkspaceOpenShop(arg1:string):Promise<workspace.OpenShopResult>;
 
+export function WorkspaceOperationTasks(arg1:workspace.OperationTaskQuery):Promise<workspace.OperationTasksPayload>;
+
 export function WorkspaceRunEvents(arg1:string,arg2:number):Promise<workspace.RunEventsPayload>;
 
 export function WorkspaceRunEvidence(arg1:workspace.RunQuery):Promise<workspace.RunEvidenceIndex>;

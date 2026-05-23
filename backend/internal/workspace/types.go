@@ -187,3 +187,29 @@ type RunEventsPayload struct {
 	Items []RunEvent `json:"items"`
 	Total int        `json:"total"`
 }
+
+type OperationTaskQuery struct {
+	Limit    int
+	Status   string
+	ShopID   string
+	TaskType string
+}
+
+type OperationTaskRecord struct {
+	TaskID         string `json:"taskId"`
+	ShopID         string `json:"shopId"`
+	ShopName       string `json:"shopName"`
+	TaskType       string `json:"taskType"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	BlockedReason  string `json:"blockedReason"`
+	FailureMessage string `json:"failureMessage"`
+	UpdatedAt      string `json:"updatedAt"`
+	RunID          string `json:"runId"`
+	FailureCode    string `json:"failureCode"`
+}
+
+type OperationTasksPayload struct {
+	Items []OperationTaskRecord `json:"items"`
+	Total int                   `json:"total"`
+}

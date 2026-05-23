@@ -227,6 +227,23 @@ func (s *WorkspaceService) FetchRunEvidence(ctx context.Context, query RunQuery)
 	return &index, nil
 }
 
+func (s *WorkspaceService) FetchOperationTasks(ctx context.Context, query OperationTaskQuery) (*OperationTasksPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	shops, err := s.FetchAuthorizedShops(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := s.FetchRuns(ctx, RunQuery{Limit: 200})
+	if err != nil {
+		return nil, err
+	}
+	evidence := BuildRunEvidenceIndex(runs.Items)
+	payload := BuildOperationTasks(shops, evidence, query)
+	return &payload, nil
+}
+
 func (s *WorkspaceService) FetchOpenShopContext(ctx context.Context, shopID string) (*ShopOpenContext, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("workspace service is not configured")

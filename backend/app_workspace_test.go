@@ -344,6 +344,112 @@ func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {
 	}
 }
 
+func TestWorkspaceOperationTasksDeriveFromShopReadinessAndRuns(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"shopId":                 "shop-ready",
+							"shopName":               "义乌百货样板店",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "ready",
+							"sharedLoginStatusLabel": "可直接打开",
+						},
+						{
+							"shopId":                 "shop-manual",
+							"shopName":               "深圳数码配件店",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "awaiting_verification",
+							"sharedLoginStatusLabel": "待人工验证",
+						},
+						{
+							"shopId":                 "shop-expired",
+							"shopName":               "广州家居源头厂",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "expired",
+							"sharedLoginStatusLabel": "凭据过期",
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/local/runs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"runId":       "run-ready",
+							"taskId":      "task-ready",
+							"shopId":      "shop-ready",
+							"taskType":    "open",
+							"status":      "running",
+							"statusLabel": "运行中",
+							"startedAt":   "2026-05-23T09:20:00+08:00",
+						},
+						{
+							"runId":          "run-expired",
+							"taskId":         "task-expired",
+							"shopId":         "shop-expired",
+							"taskType":       "bind",
+							"status":         "failed",
+							"statusLabel":    "失败",
+							"startedAt":      "2026-05-23T09:10:00+08:00",
+							"finishedAt":     "2026-05-23T09:10:20+08:00",
+							"failureCode":    "AUTH_EXPIRED",
+							"failureMessage": "授权已失效",
+						},
+					},
+					"total": 2,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	tasks, err := app.WorkspaceOperationTasks(workspace.OperationTaskQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("WorkspaceOperationTasks 返回错误: %v", err)
+	}
+	if len(tasks.Items) != 3 || tasks.Total != 3 {
+		t.Fatalf("unexpected operation tasks payload: %#v", tasks)
+	}
+
+	byShop := map[string]workspace.OperationTaskRecord{}
+	for _, task := range tasks.Items {
+		byShop[task.ShopID] = task
+	}
+	if byShop["shop-ready"].Status != "running" || byShop["shop-ready"].TaskType != "shop_open" {
+		t.Fatalf("expected running open task, got %#v", byShop["shop-ready"])
+	}
+	if byShop["shop-manual"].Status != "blocked" || byShop["shop-manual"].BlockedReason == "" {
+		t.Fatalf("expected blocked manual task, got %#v", byShop["shop-manual"])
+	}
+	if byShop["shop-expired"].Status != "failed" || byShop["shop-expired"].FailureMessage != "授权已失效" {
+		t.Fatalf("expected failed credential task, got %#v", byShop["shop-expired"])
+	}
+
+	filtered, err := app.WorkspaceOperationTasks(workspace.OperationTaskQuery{Status: "blocked", ShopID: "shop-manual"})
+	if err != nil {
+		t.Fatalf("WorkspaceOperationTasks filtered 返回错误: %v", err)
+	}
+	if len(filtered.Items) != 1 || filtered.Items[0].ShopID != "shop-manual" {
+		t.Fatalf("unexpected filtered tasks: %#v", filtered)
+	}
+}
+
 func TestResolveWorkspaceAgentBaseURLFallsBackToDefaultWhenUnset(t *testing.T) {
 	t.Setenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL", "")
 	t.Setenv("AGENT_BASE_URL", "")
