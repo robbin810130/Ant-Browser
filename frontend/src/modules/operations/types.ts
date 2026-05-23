@@ -10,5 +10,6 @@ export interface OperationTask {
   blockedReason: string
   failureMessage: string
   updatedAt: string
+  runId: string
+  failureCode: string
 }
-
