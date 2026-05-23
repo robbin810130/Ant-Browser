@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Database, RefreshCw, Store } from 'lucide-react'
 import { Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
-import { deriveShopProfileStats, fetchShopProfiles } from '../api'
+import { asmStatusKind, deriveShopProfileStats, fetchShopProfiles } from '../api'
 import type { ShopProfile } from '../types'
 
 function asmBadge(status: string) {
-  if (status === 'connected') return <Badge variant="success">ASM 已接入</Badge>
-  if (status === 'error') return <Badge variant="error">ASM 异常</Badge>
+  const kind = asmStatusKind(status)
+  if (kind === 'connected') return <Badge variant="success">ASM 已接入</Badge>
+  if (kind === 'error') return <Badge variant="error">ASM 异常</Badge>
   return <Badge variant="warning">ASM 待接入</Badge>
 }
 

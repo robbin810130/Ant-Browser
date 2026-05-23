@@ -29,11 +29,20 @@ export function ShopProfileDetailPage() {
 
   useEffect(() => {
     let cancelled = false
+    const normalizedShopId = shopId.trim()
+
+    if (!normalizedShopId) {
+      setProfile(null)
+      setLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
 
     async function load() {
       setLoading(true)
       try {
-        const next = await fetchShopProfile(shopId)
+        const next = await fetchShopProfile(normalizedShopId)
         if (!cancelled) setProfile(next)
       } catch (error) {
         console.error('load shop profile failed', error)

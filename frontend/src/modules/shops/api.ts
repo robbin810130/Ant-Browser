@@ -1,6 +1,15 @@
 import { WorkspaceShopProfile, WorkspaceShopProfiles } from '../../wailsjs/go/main/App'
 import type { ShopProfile, ShopProfileStats } from './types'
 
+export type AsmStatusKind = 'connected' | 'error' | 'unavailable'
+
+export function asmStatusKind(status: string): AsmStatusKind {
+  const normalizedStatus = status.trim()
+  if (normalizedStatus === 'connected') return 'connected'
+  if (normalizedStatus === 'error') return 'error'
+  return 'unavailable'
+}
+
 export function normalizeShopProfile(input: any): ShopProfile {
   return {
     shopId: String(input?.shopId || ''),
@@ -22,15 +31,20 @@ export async function fetchShopProfiles(): Promise<ShopProfile[]> {
 }
 
 export async function fetchShopProfile(shopId: string): Promise<ShopProfile> {
-  const payload = await WorkspaceShopProfile(shopId.trim())
+  const normalizedShopId = shopId.trim()
+  if (!normalizedShopId) {
+    throw new Error('shop id is required')
+  }
+
+  const payload = await WorkspaceShopProfile(normalizedShopId)
   return normalizeShopProfile(payload)
 }
 
 export function deriveShopProfileStats(profiles: ShopProfile[]): ShopProfileStats {
   return {
     total: profiles.length,
-    asmConnected: profiles.filter((profile) => profile.asmStatus === 'connected').length,
-    unavailable: profiles.filter((profile) => profile.asmStatus === 'unavailable').length,
+    asmConnected: profiles.filter((profile) => asmStatusKind(profile.asmStatus) === 'connected').length,
+    unavailable: profiles.filter((profile) => asmStatusKind(profile.asmStatus) === 'unavailable').length,
     incomplete: profiles.filter((profile) => profile.dataCompleteness !== 'complete').length,
   }
 }
