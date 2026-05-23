@@ -148,6 +148,59 @@ func TestWorkspaceClientFetchShopProfilesFallsBackToAuthorizedShops(t *testing.T
 	}
 }
 
+func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
+	var hitAuthorizedShops bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shop-profiles":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{{
+						"shopId":              " shop-asm-001 ",
+						"shopName":            " 真实 ASM 店铺 ",
+						"platformCode":        "1688",
+						"asmStatus":           "connected",
+						"authorizationStatus": "valid",
+						"ownerName":           "运营一组",
+						"mainCategory":        "日用百货",
+						"dataCompleteness":    "complete",
+						"lastSyncedAt":        "2026-05-23T10:00:00+08:00",
+						"source":              "asm",
+					}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			hitAuthorizedShops = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := workspace.NewWorkspaceClient(server.URL, nil)
+	profiles, err := client.FetchShopProfiles(context.Background())
+	if err != nil {
+		t.Fatalf("fetch shop profiles: %v", err)
+	}
+	if hitAuthorizedShops {
+		t.Fatal("expected ASM shop profiles to avoid authorized shop fallback")
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	got := profiles[0]
+	if got.ShopID != "shop-asm-001" || got.ShopName != "真实 ASM 店铺" {
+		t.Fatalf("unexpected profile normalization: %#v", got)
+	}
+	if got.Source != "asm" || got.ASMStatus != "connected" || got.AuthorizationStatus != "valid" {
+		t.Fatalf("expected real ASM profile fields, got %#v", got)
+	}
+}
+
 func TestWorkspaceClientFetchRunsAndEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

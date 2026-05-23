@@ -42,6 +42,10 @@ type shopsPayload struct {
 	Items []ShopRecord `json:"items"`
 }
 
+type shopProfilesPayload struct {
+	Items []ShopProfileRecord `json:"items"`
+}
+
 func NewWorkspaceClient(baseURL string, client *http.Client) *WorkspaceClient {
 	if client == nil {
 		client = &http.Client{}
@@ -91,6 +95,13 @@ func (c *WorkspaceClient) FetchAuthorizedShops(ctx context.Context) ([]ShopRecor
 }
 
 func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileRecord, error) {
+	var payload shopProfilesPayload
+	if err := c.getJSON(ctx, "/local/shop-profiles", &payload); err == nil {
+		return normalizeShopProfiles(payload.Items), nil
+	} else if !isWorkspaceEndpointNotFound(err) {
+		return nil, err
+	}
+
 	shops, err := c.FetchAuthorizedShops(ctx)
 	if err != nil {
 		return nil, err
@@ -108,6 +119,33 @@ func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileR
 		})
 	}
 	return profiles, nil
+}
+
+func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
+	profiles := make([]ShopProfileRecord, 0, len(items))
+	for _, item := range items {
+		item.ShopID = strings.TrimSpace(item.ShopID)
+		item.ShopName = strings.TrimSpace(item.ShopName)
+		item.PlatformCode = strings.TrimSpace(item.PlatformCode)
+		item.ASMStatus = strings.TrimSpace(item.ASMStatus)
+		item.AuthorizationStatus = strings.TrimSpace(item.AuthorizationStatus)
+		item.OwnerName = strings.TrimSpace(item.OwnerName)
+		item.MainCategory = strings.TrimSpace(item.MainCategory)
+		item.DataCompleteness = strings.TrimSpace(item.DataCompleteness)
+		item.LastSyncedAt = strings.TrimSpace(item.LastSyncedAt)
+		item.Source = strings.TrimSpace(item.Source)
+		if item.ASMStatus == "" {
+			item.ASMStatus = "connected"
+		}
+		if item.DataCompleteness == "" {
+			item.DataCompleteness = "unknown"
+		}
+		if item.Source == "" {
+			item.Source = "asm_shop_profile"
+		}
+		profiles = append(profiles, item)
+	}
+	return profiles
 }
 
 func (c *WorkspaceClient) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {
@@ -355,6 +393,10 @@ func (c *WorkspaceClient) requestJSON(ctx context.Context, method string, path s
 		return fmt.Errorf("decode workspace payload %s: %w", path, err)
 	}
 	return nil
+}
+
+func isWorkspaceEndpointNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "returned status 404")
 }
 
 func urlPathEscape(value string) string {
