@@ -12,6 +12,11 @@ function runTitle(run: RunRecord | null) {
   return `${run.taskType || 'run'} · ${run.statusLabel || run.status || run.runId}`
 }
 
+function modalTitle(row: WorkbenchRow) {
+  const title = row.shop.shopName || row.shop.shopId
+  return title.length > 48 ? `${title.slice(0, 47)}...` : title
+}
+
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-subtle)] px-3 py-2">
@@ -24,11 +29,13 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 export function ShopWorkbenchDrawer({
   row,
   open,
+  runningAction,
   onClose,
   onAction,
 }: {
   row: WorkbenchRow | null
   open: boolean
+  runningAction: { shopId: string; action: WorkbenchRow['recommendedAction'] } | null
   onClose: () => void
   onAction: (row: WorkbenchRow) => void
 }) {
@@ -81,8 +88,10 @@ export function ShopWorkbenchDrawer({
 
   if (!row) return null
 
+  const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+
   return (
-    <Modal open={open} onClose={onClose} title={row.shop.shopName || row.shop.shopId} width="860px">
+    <Modal open={open} onClose={onClose} title={modalTitle(row)} width="860px">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-2">
           <Badge variant={row.shop.sharedLoginStatus === 'ready' ? 'success' : 'warning'}>
@@ -115,7 +124,13 @@ export function ShopWorkbenchDrawer({
                 <p className="mt-2 break-all text-xs text-[var(--color-text-muted)]">失败码：{row.failureCode}</p>
               ) : null}
             </div>
-            <Button className="w-full shrink-0 whitespace-nowrap sm:w-auto" size="sm" onClick={() => onAction(row)}>
+            <Button
+              className="w-full shrink-0 whitespace-nowrap sm:w-auto"
+              size="sm"
+              loading={isRunningThisRow}
+              disabled={Boolean(runningAction && !isRunningThisRow)}
+              onClick={() => onAction(row)}
+            >
               执行推荐动作
             </Button>
           </div>

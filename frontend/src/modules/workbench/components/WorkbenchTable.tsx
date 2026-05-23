@@ -38,11 +38,13 @@ function shortTime(value: string | undefined) {
 export function WorkbenchTable({
   rows,
   loading,
+  runningAction,
   onOpenDrawer,
   onAction,
 }: {
   rows: WorkbenchRow[]
   loading: boolean
+  runningAction: { shopId: string; action: WorkbenchRow['recommendedAction'] } | null
   onOpenDrawer: (row: WorkbenchRow) => void
   onAction: (row: WorkbenchRow) => void
 }) {
@@ -135,18 +137,23 @@ export function WorkbenchTable({
       title: '推荐动作',
       align: 'right',
       width: 128,
-      render: (_, row) => (
-        <Button
-          size="sm"
-          className="w-full whitespace-nowrap sm:w-auto"
-          onClick={(event) => {
-            event.stopPropagation()
-            onAction(row)
-          }}
-        >
-          {actionLabel(row.recommendedAction)}
-        </Button>
-      ),
+      render: (_, row) => {
+        const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+        return (
+          <Button
+            size="sm"
+            className="w-full whitespace-nowrap sm:w-auto"
+            loading={isRunningThisRow}
+            disabled={Boolean(runningAction && !isRunningThisRow)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onAction(row)
+            }}
+          >
+            {actionLabel(row.recommendedAction)}
+          </Button>
+        )
+      },
     },
   ]
 
