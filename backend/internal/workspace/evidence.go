@@ -59,14 +59,24 @@ func newerRun(current *RunRecord, candidate *RunRecord) *RunRecord {
 		return current
 	}
 	if current == nil {
-		cloned := *candidate
-		return &cloned
+		return cloneRunRecord(candidate)
 	}
 	if parseRunTime(candidate.StartedAt).After(parseRunTime(current.StartedAt)) {
-		cloned := *candidate
-		return &cloned
+		return cloneRunRecord(candidate)
 	}
 	return current
+}
+
+func cloneRunRecord(run *RunRecord) *RunRecord {
+	if run == nil {
+		return nil
+	}
+	cloned := *run
+	if run.Runtime != nil {
+		runtime := *run.Runtime
+		cloned.Runtime = &runtime
+	}
+	return &cloned
 }
 
 func parseRunTime(value string) time.Time {
