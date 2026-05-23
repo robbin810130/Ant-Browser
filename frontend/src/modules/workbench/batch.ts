@@ -1,6 +1,12 @@
-import type { BatchCandidate, BatchSummary, WorkbenchActionKey, WorkbenchRow } from './types'
+import type { BatchCandidate, BatchSummary, ExecutableBatchActionKey, WorkbenchRow } from './types'
 
-export function buildBatchCandidates(rows: WorkbenchRow[], action: WorkbenchActionKey): BatchCandidate[] {
+const batchableActions = new Set<string>(['open', 'bind', 'validate', 'retry', 'refresh'])
+
+export function buildBatchCandidates(rows: WorkbenchRow[], action: ExecutableBatchActionKey): BatchCandidate[] {
+  if (!batchableActions.has(action)) {
+    throw new Error(`Unsupported batch action: ${action}`)
+  }
+
   return rows.map((row) => {
     if (row.shop.reclaimPending) {
       return { shopId: row.shop.shopId, action, eligible: false, skipReason: '授权已失效，待回收' }
@@ -19,13 +25,23 @@ export function buildBatchCandidates(rows: WorkbenchRow[], action: WorkbenchActi
 }
 
 export function summarizeBatch(candidates: BatchCandidate[], results: Array<{ shopId: string; success: boolean }>): BatchSummary {
-  const succeeded = results.filter((item) => item.success).length
-  const failed = results.filter((item) => !item.success).length
+  const eligibleShopIds = new Set(candidates.filter((item) => item.eligible).map((item) => item.shopId))
+  const resultByShopId = new Map<string, boolean>()
+
+  results.forEach((item) => {
+    if (eligibleShopIds.has(item.shopId)) {
+      resultByShopId.set(item.shopId, item.success)
+    }
+  })
+
+  const resultValues = Array.from(resultByShopId.values())
+  const succeeded = resultValues.filter(Boolean).length
+  const failed = resultValues.filter((success) => !success).length
   const skipped = candidates.filter((item) => !item.eligible).length
 
   return {
     total: candidates.length,
-    eligible: candidates.length - skipped,
+    eligible: eligibleShopIds.size,
     skipped,
     succeeded,
     failed,
