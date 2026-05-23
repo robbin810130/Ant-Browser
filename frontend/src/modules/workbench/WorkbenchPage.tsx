@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Card, toast } from '../../shared/components'
@@ -18,6 +18,7 @@ import { recoveryActionFor } from './recovery'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
+type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'bind' | 'validate'> }
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
@@ -73,7 +74,8 @@ export function WorkbenchPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [activeQueue, setActiveQueue] = useState<ActiveQueue>('all')
   const [selectedRow, setSelectedRow] = useState<WorkbenchRow | null>(null)
-  const [runningActionShopId, setRunningActionShopId] = useState('')
+  const [runningAction, setRunningAction] = useState<RunningWorkbenchAction | null>(null)
+  const runningActionRef = useRef<RunningWorkbenchAction | null>(null)
 
   async function load(silent = false) {
     if (silent) {
@@ -136,7 +138,7 @@ export function WorkbenchPage() {
   const requestedShopId = searchParams.get('shopId')?.trim() || ''
 
   useEffect(() => {
-    if (!requestedShopId || selectedRow) return
+    if (!requestedShopId || selectedRow?.shop.shopId === requestedShopId) return
     const matched = rows.find((row) => row.shop.shopId === requestedShopId)
     if (matched) setSelectedRow(matched)
   }, [requestedShopId, rows, selectedRow])
@@ -154,6 +156,11 @@ export function WorkbenchPage() {
 
   async function runRecommendedAction(row: WorkbenchRow) {
     const action = row.recommendedAction
+    if (runningActionRef.current) {
+      toast.info('已有推荐动作正在执行，请稍候')
+      return
+    }
+
     if (action !== 'open' && action !== 'bind' && action !== 'validate') {
       toast.info(unsupportedActionMessage[action])
       return
@@ -164,7 +171,9 @@ export function WorkbenchPage() {
       return
     }
 
-    setRunningActionShopId(row.shop.shopId)
+    const nextRunningAction = { shopId: row.shop.shopId, action }
+    runningActionRef.current = nextRunningAction
+    setRunningAction(nextRunningAction)
     try {
       if (action === 'open') {
         const result = await openWorkspaceShop(row.shop.shopId)
@@ -183,7 +192,15 @@ export function WorkbenchPage() {
       console.error('run workbench recommended action failed', error)
       toast.error(String(error?.message || actionFallbackError(action)))
     } finally {
-      setRunningActionShopId('')
+      if (
+        runningActionRef.current?.shopId === nextRunningAction.shopId
+        && runningActionRef.current?.action === nextRunningAction.action
+      ) {
+        runningActionRef.current = null
+        setRunningAction((current) => (
+          current?.shopId === nextRunningAction.shopId && current.action === nextRunningAction.action ? null : current
+        ))
+      }
     }
   }
 
@@ -207,9 +224,9 @@ export function WorkbenchPage() {
           </Button>
         </div>
 
-        {runningActionShopId ? (
+        {runningAction ? (
           <div className="rounded-lg border border-[var(--color-accent)]/20 bg-[var(--color-accent)]/10 px-4 py-2 text-sm text-[var(--color-accent)]">
-            正在执行：{runningActionShopId}
+            正在执行：{runningAction.shopId}
           </div>
         ) : null}
 
@@ -217,6 +234,7 @@ export function WorkbenchPage() {
           <WorkbenchTable
             rows={visibleRows}
             loading={loading}
+            runningAction={runningAction}
             onOpenDrawer={setSelectedRow}
             onAction={(row) => void runRecommendedAction(row)}
           />
@@ -226,6 +244,7 @@ export function WorkbenchPage() {
       <ShopWorkbenchDrawer
         row={selectedRow}
         open={Boolean(selectedRow)}
+        runningAction={runningAction}
         onClose={() => setSelectedRow(null)}
         onAction={(row) => void runRecommendedAction(row)}
       />
