@@ -153,8 +153,18 @@ func TestWorkspaceClientFetchRunsAndEvents(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/local/runs":
-			if r.URL.Query().Get("shopId") != "shop-001" {
+			query := r.URL.Query()
+			if query.Get("limit") != "20" {
+				t.Fatalf("unexpected limit filter: %s", r.URL.RawQuery)
+			}
+			if query.Get("status") != "failed" {
+				t.Fatalf("unexpected status filter: %s", r.URL.RawQuery)
+			}
+			if query.Get("shopId") != "shop/001" {
 				t.Fatalf("unexpected shop filter: %s", r.URL.RawQuery)
+			}
+			if query.Get("failureCode") != "ANT CORE" {
+				t.Fatalf("unexpected failure code filter: %s", r.URL.RawQuery)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code":    0,
@@ -175,6 +185,9 @@ func TestWorkspaceClientFetchRunsAndEvents(t *testing.T) {
 				},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/local/runs/run-001/events":
+			if r.URL.Query().Get("limit") != "50" {
+				t.Fatalf("unexpected event limit: %s", r.URL.RawQuery)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code":    0,
 				"message": "ok",
@@ -196,7 +209,12 @@ func TestWorkspaceClientFetchRunsAndEvents(t *testing.T) {
 	defer server.Close()
 
 	client := workspace.NewWorkspaceClient(server.URL, nil)
-	runs, err := client.FetchRuns(context.Background(), workspace.RunQuery{ShopID: "shop-001", Limit: 20})
+	runs, err := client.FetchRuns(context.Background(), workspace.RunQuery{
+		ShopID:      " shop/001 ",
+		Status:      " failed ",
+		FailureCode: " ANT CORE ",
+		Limit:       20,
+	})
 	if err != nil {
 		t.Fatalf("fetch runs: %v", err)
 	}
