@@ -9,8 +9,23 @@ type RuntimeBindings = {
   ExportDesktopEnvironmentDiagnostics?: () => Promise<string>
 }
 
+const devEnvironmentStatus: EnvironmentStatus = {
+  state: 'pass',
+  items: [],
+}
+
+const devReleaseUpdateState: ReleaseUpdateState = {
+  kind: 'none',
+  localAppVersion: '',
+  remoteAppVersion: '',
+  resourceVersion: '',
+  manifestSource: '',
+  manifestUrl: '',
+}
+
 async function getBindings(): Promise<RuntimeBindings | null> {
   const fallback = ((window as any)?.go?.main?.App as RuntimeBindings | undefined) ?? null
+  if (!fallback) return null
 
   try {
     const module: any = await import('../../wailsjs/go/main/App')
@@ -72,12 +87,21 @@ async function requireBinding<K extends keyof RuntimeBindings>(name: K): Promise
 }
 
 export async function getDesktopEnvironmentStatus(): Promise<EnvironmentStatus> {
-  const fn = await requireBinding('GetDesktopEnvironmentStatus')
+  const bindings = await getBindings()
+  const fn = bindings?.GetDesktopEnvironmentStatus
+  if (!fn) return devEnvironmentStatus
   return normalizeEnvironmentStatus(await fn())
 }
 
 export async function getAppConfig(): Promise<{ name: string; version: string }> {
-  const fn = await requireBinding('GetAppConfig')
+  const bindings = await getBindings()
+  const fn = bindings?.GetAppConfig
+  if (!fn) {
+    return {
+      name: 'Ant Browser',
+      version: 'dev',
+    }
+  }
   const config = await fn()
   return {
     name: String(config?.name || '').trim(),
@@ -91,7 +115,9 @@ export async function repairDesktopEnvironment(): Promise<EnvironmentStatus> {
 }
 
 export async function checkDesktopReleaseUpdate(): Promise<ReleaseUpdateState> {
-  const fn = await requireBinding('CheckDesktopReleaseUpdate')
+  const bindings = await getBindings()
+  const fn = bindings?.CheckDesktopReleaseUpdate
+  if (!fn) return devReleaseUpdateState
   return normalizeReleaseUpdateState(await fn())
 }
 

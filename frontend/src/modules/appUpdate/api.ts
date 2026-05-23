@@ -8,8 +8,25 @@ type AppUpdateBindings = {
   ClearDesktopAppUpdateFailure?: () => Promise<void>
 }
 
+const noneState: AppUpdateState = {
+  kind: 'none',
+  status: '',
+  localAppVersion: '',
+  remoteAppVersion: '',
+  minimumRuntimeResourceVersion: '',
+  manifestSource: '',
+  manifestUrl: '',
+  payloadUrl: '',
+  target: '',
+  notes: '',
+  errorCode: '',
+  errorMessage: '',
+  details: {},
+}
+
 async function getBindings(): Promise<AppUpdateBindings | null> {
   const fallback = ((window as any)?.go?.main?.App as AppUpdateBindings | undefined) ?? null
+  if (!fallback) return null
   try {
     const module: any = await import('../../wailsjs/go/main/App')
     return { ...(fallback || {}), ...(module as AppUpdateBindings) }
@@ -75,7 +92,9 @@ async function requireBinding<K extends keyof AppUpdateBindings>(name: K): Promi
 }
 
 export async function checkDesktopAppUpdate(): Promise<AppUpdateState> {
-  const fn = await requireBinding('CheckDesktopAppUpdate')
+  const bindings = await getBindings()
+  const fn = bindings?.CheckDesktopAppUpdate
+  if (!fn) return noneState
   return normalize(await fn())
 }
 
@@ -90,11 +109,15 @@ export async function applyDesktopAppUpdate(): Promise<AppUpdateState> {
 }
 
 export async function getDesktopAppUpdateState(): Promise<AppUpdateState> {
-  const fn = await requireBinding('GetDesktopAppUpdateState')
+  const bindings = await getBindings()
+  const fn = bindings?.GetDesktopAppUpdateState
+  if (!fn) return noneState
   return normalize(await fn())
 }
 
 export async function clearDesktopAppUpdateFailure(): Promise<void> {
-  const fn = await requireBinding('ClearDesktopAppUpdateFailure')
+  const bindings = await getBindings()
+  const fn = bindings?.ClearDesktopAppUpdateFailure
+  if (!fn) return
   await fn()
 }
