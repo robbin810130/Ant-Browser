@@ -32,3 +32,33 @@ func TestBuildRunEvidenceIndexTracksActiveRuns(t *testing.T) {
 		t.Fatalf("unexpected active run: %#v", shop.ActiveRun)
 	}
 }
+
+func TestBuildRunEvidenceIndexDeepCopiesRuntime(t *testing.T) {
+	runtime := &RunRuntime{PID: 101, DebugPort: 9222, CurrentURL: "https://example.test/original", PageTitle: "Original"}
+	runs := []RunRecord{
+		{RunID: "run-open", ShopID: "shop-001", TaskType: "open", Status: "launching", StartedAt: "2026-05-23T00:01:00Z", Runtime: runtime},
+	}
+
+	index := BuildRunEvidenceIndex(runs)
+	runtime.PID = 202
+	runtime.DebugPort = 9333
+	runtime.CurrentURL = "https://example.test/changed"
+	runtime.PageTitle = "Changed"
+
+	shop := index.ByShop["shop-001"]
+	if shop.LatestOpen == nil || shop.LatestOpen.Runtime == nil {
+		t.Fatalf("expected latest open runtime: %#v", shop.LatestOpen)
+	}
+	if shop.LatestOpen.Runtime.PID != 101 {
+		t.Fatalf("unexpected runtime PID: %d", shop.LatestOpen.Runtime.PID)
+	}
+	if shop.LatestOpen.Runtime.DebugPort != 9222 {
+		t.Fatalf("unexpected runtime debug port: %d", shop.LatestOpen.Runtime.DebugPort)
+	}
+	if shop.LatestOpen.Runtime.CurrentURL != "https://example.test/original" {
+		t.Fatalf("unexpected runtime current URL: %q", shop.LatestOpen.Runtime.CurrentURL)
+	}
+	if shop.LatestOpen.Runtime.PageTitle != "Original" {
+		t.Fatalf("unexpected runtime page title: %q", shop.LatestOpen.Runtime.PageTitle)
+	}
+}
