@@ -20,9 +20,9 @@ type ShopRecord struct {
 }
 
 type LocalRuntimeState struct {
-	ProfileExists bool
-	InstanceID    string
-	Running       bool
+	ProfileExists  bool
+	InstanceID     string
+	Running        bool
 	ReclaimPending bool
 	CoreReady      bool
 }
@@ -121,4 +121,69 @@ type OpenReportRequest struct {
 	Runtime        *OpenReportRuntime `json:"runtime,omitempty"`
 	FailureCode    string             `json:"failureCode,omitempty"`
 	FailureMessage string             `json:"failureMessage,omitempty"`
+}
+
+type ShopProfileRecord struct {
+	ShopID              string `json:"shopId"`
+	ShopName            string `json:"shopName"`
+	PlatformCode        string `json:"platformCode"`
+	ASMStatus           string `json:"asmStatus"`
+	AuthorizationStatus string `json:"authorizationStatus"`
+	OwnerName           string `json:"ownerName"`
+	MainCategory        string `json:"mainCategory"`
+	DataCompleteness    string `json:"dataCompleteness"`
+	LastSyncedAt        string `json:"lastSyncedAt"`
+	Source              string `json:"source"`
+}
+
+type RunQuery struct {
+	Limit       int
+	Status      string
+	ShopID      string
+	FailureCode string
+}
+
+type RunRuntime struct {
+	PID        int    `json:"pid"`
+	DebugPort  int    `json:"debugPort"`
+	CurrentURL string `json:"currentUrl"`
+	PageTitle  string `json:"pageTitle"`
+	TargetURL  string `json:"targetUrl"`
+}
+
+type RunRecord struct {
+	RunID                string      `json:"runId"`
+	TaskID               string      `json:"taskId"`
+	ShopID               string      `json:"shopId"`
+	TaskType             string      `json:"taskType"`
+	Status               string      `json:"status"`
+	StatusLabel          string      `json:"statusLabel"`
+	StartedAt            string      `json:"startedAt"`
+	FinishedAt           string      `json:"finishedAt"`
+	ProfileID            string      `json:"profileId"`
+	Runtime              *RunRuntime `json:"runtime,omitempty"`
+	BindSessionID        string      `json:"bindSessionId"`
+	ManualActionRequired bool        `json:"manualActionRequired"`
+	ChallengeType        string      `json:"challengeType"`
+	FailureCode          string      `json:"failureCode"`
+	FailureMessage       string      `json:"failureMessage"`
+}
+
+type RunsPayload struct {
+	Items []RunRecord `json:"items"`
+	Total int         `json:"total"`
+}
+
+type RunEvent struct {
+	EventID   string         `json:"eventId"`
+	Stage     string         `json:"stage"`
+	Message   string         `json:"message"`
+	Details   map[string]any `json:"details,omitempty"`
+	CreatedAt string         `json:"createdAt"`
+}
+
+type RunEventsPayload struct {
+	RunID string     `json:"runId"`
+	Items []RunEvent `json:"items"`
+	Total int        `json:"total"`
 }
