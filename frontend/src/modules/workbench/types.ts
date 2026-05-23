@@ -3,6 +3,7 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 
 export type WorkbenchQueueKey = 'ready' | 'manual' | 'credential' | 'failed' | 'running' | 'reclaim'
 export type WorkbenchActionKey = 'open' | 'bind' | 'validate' | 'retry' | 'core_management' | 'refresh' | 'diagnostics' | 'none'
+export type ExecutableBatchActionKey = 'open' | 'bind' | 'validate' | 'retry' | 'refresh'
 
 export interface WorkbenchRow {
   shop: WorkspaceAuthorizedShop
@@ -23,7 +24,7 @@ export interface RecoveryAction {
 
 export interface BatchCandidate {
   shopId: string
-  action: WorkbenchActionKey
+  action: ExecutableBatchActionKey
   eligible: boolean
   skipReason: string
 }
