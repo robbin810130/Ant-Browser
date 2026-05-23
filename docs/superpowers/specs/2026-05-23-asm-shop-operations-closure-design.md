@@ -1,108 +1,108 @@
-# ASM Shop Operations Closure Design
+# ASM 店铺运营闭环设计
 
-Date: 2026-05-23
-Branch: `codex/windows-phase1-stability`
-Status: Written, pending user review and implementation plan
+日期：2026-05-23
+分支：`codex/windows-phase1-stability`
+状态：已写入，待用户 review 和 implementation plan
 
-## Context
+## 背景
 
-The Windows and macOS client stability phase is closed for the current product scope. The desktop release, install, runtime update, and application self-update chain now sits in maintenance mode.
+当前 Windows 与 macOS 客户端稳定性阶段已按现有产品范围收尾。桌面端发布、安装、运行时更新、应用自更新链路进入维护模式。
 
-The next product gap is business functionality.
+下一阶段的产品缺口应回到业务功能。
 
-The current Ant Browser desktop client already has the first layer of 1688 Workspace integration:
+当前 Ant Browser 桌面端已经具备第一层 1688 Workspace 接入能力：
 
-- desktop login and session recovery
-- local Workspace agent bootstrap
-- authorized shop synchronization
-- managed profile reconciliation
-- one-click shop backend open
-- shared credential update
-- local session validation
-- managed instance launch and open-result reporting
+- 桌面端登录与会话恢复
+- 本地 Workspace agent 启动
+- 授权店铺同步
+- managed profile 自动对账
+- 一键打开店铺后台
+- 共享凭据更新
+- 本机会话验证
+- managed instance 启动与打开结果回传
 
-However, the current business surface is still incomplete:
+但当前业务界面仍不完整：
 
-- the `实例列表` page is already showing authorized shops, but the information architecture still reads like browser instance management
-- recent validation and recent open fields are currently hard-coded empty values
-- batch open currently only shows a warning toast instead of performing real work
-- local agent `runs/events` exist but are not surfaced as first-class evidence in the client
-- there is no independent ASM shop profile center after ASM shop onboarding
-- shop-level operation tasks do not yet have a clean place in the desktop client
+- `实例列表` 页面已经展示授权店铺，但信息架构仍像浏览器实例管理
+- 最近验证、最近打开字段当前是固定空值
+- 批量打开当前只弹 warning toast，没有真实执行
+- local agent 已有 `runs/events`，但客户端没有把它作为一等运行证据展示
+- ASM 店铺接入后，还没有独立的店铺资料中心
+- 单店运营任务在桌面端还没有清晰归属位置
 
-This phase turns the desktop client into a real ASM shop operations console.
+本阶段目标是把桌面端升级成真正的 ASM 店铺运营控制台。
 
-## Product Goal
+## 产品目标
 
-Build a closed loop for ASM shop operations:
+建立 ASM 店铺运营闭环：
 
-1. The user can see ASM shop profiles as business master data.
-2. The user can understand whether each shop is executable on this desktop device.
-3. The user can open, validate, repair, or retry shop execution from a focused workbench.
-4. The user can see operation tasks per shop and across shops without mixing them into execution-state tables.
-5. Every user action has traceable run evidence: status, events, failure reason, and next recommended action.
+1. 用户能把 ASM 店铺资料作为业务主数据查看。
+2. 用户能判断每个店铺在当前桌面设备上是否可执行。
+3. 用户能在聚焦的工作台里打开、验证、修复或重试店铺执行动作。
+4. 用户能查看单店与跨店铺运营任务，并且不把运营任务混进执行状态表。
+5. 用户每次操作都有可追踪的运行证据：状态、事件、失败原因、下一步建议。
 
-The guiding question for every shop is:
+每个店铺都必须能回答四个问题：
 
 ```text
-Can this shop be operated now?
-If not, where is it blocked?
-What should the user do next?
-Is there run evidence for the result?
+这家店现在能不能操作？
+如果不能，卡在哪里？
+用户下一步应该做什么？
+这次操作有没有运行证据？
 ```
 
-## Confirmed Product Direction
+## 已确认产品方向
 
-Use the shop workbench as the primary execution surface, backed by local agent run evidence.
+以店铺工作台作为主要执行界面，并由 local agent 的运行证据支撑。
 
-Confirmed decisions:
+已确认决策：
 
-- prioritize `A: 店铺工作台优先`
-- absorb `B: 任务中心` as the evidence and cross-shop task layer
-- avoid the lightweight patch-only path
-- add ASM shop profile list and detail pages as must-have scope
-- keep shop profile, execution readiness, operation tasks, and run evidence as separate concepts
+- 优先走 `A：店铺工作台优先`
+- 吸收 `B：任务中心` 作为运行证据层和跨店铺任务层
+- 不走只打补丁的轻改造路线
+- ASM 店铺资料列表与详情页进入必须做范围
+- 店铺资料、执行可用性、运营任务、运行证据必须保持概念分离
 
-## Core Information Architecture
+## 核心信息架构
 
-The next business surface has three first-class modules and one shared evidence layer.
+下一阶段业务界面包含三个一等模块和一个共享证据层。
 
-### 1. Shop Profile Center
+### 1. 店铺资料中心
 
-The Shop Profile Center owns ASM shop business master data.
+店铺资料中心负责 ASM 店铺业务主数据。
 
-It answers:
+它回答：
 
-- What shop is this?
-- Which platform and shop identifier does it belong to?
-- Is ASM connected?
-- What is the shop's business ownership and operating context?
-- What is the summarized execution and task status?
+- 这是什么店？
+- 属于哪个平台和哪个店铺标识？
+- ASM 是否已接入？
+- 这家店的经营归属和运营上下文是什么？
+- 当前执行状态和任务状态摘要如何？
 
-Primary routes can be named during implementation, but the intended product shape is:
+具体路由可在实现阶段按本地风格命名，但建议产品形态是：
 
 ```text
 /shops
 /shops/:shopId
 ```
 
-The list page should show:
+列表页应展示：
 
-- shop name
-- platform
+- 店铺名称
+- 平台
 - shop id
-- ASM connection status
-- authorization status
-- owner or operator
-- tags
-- main category or operating category
-- data completeness
-- execution status summary
-- unfinished operation task count
-- last sync time
-- recommended next action
+- ASM 接入状态
+- 授权状态
+- 负责人或运营人
+- 标签
+- 主营类目或经营类目
+- 数据完整度
+- 执行状态摘要
+- 未完成运营任务数
+- 最近同步时间
+- 推荐下一步动作
 
-The detail page should separate tabs or sections:
+详情页应拆分为 tab 或区块：
 
 - `基础资料`
 - `ASM 接入`
@@ -111,162 +111,162 @@ The detail page should separate tabs or sections:
 - `运行记录`
 - `诊断`
 
-The profile detail page can link to the workbench for execution actions, but it should not become the primary place for bulk execution.
+店铺资料详情页可以链接到工作台执行动作，但不应成为批量执行的主入口。
 
-### 2. Shop Workbench
+### 2. 店铺工作台
 
-The Shop Workbench owns execution readiness and immediate repair actions.
+店铺工作台负责执行可用性和即时修复动作。
 
-It answers:
+它回答：
 
-- Can this shop be opened from this desktop client?
-- Is the local profile mapped?
-- Is the fingerprint core ready?
-- Is the shared session ready?
-- Is the shop currently running?
-- Did the last open or validation fail?
-- What is the next repair action?
+- 当前桌面端能不能打开这家店？
+- 本地 profile 是否已映射？
+- 指纹内核是否就绪？
+- 共享会话是否 ready？
+- 店铺实例是否正在运行？
+- 最近一次打开或验证是否失败？
+- 下一步修复动作是什么？
 
-The current `BrowserListPage` should evolve from an instance list into an authorized shop workbench.
+当前 `BrowserListPage` 应从实例列表升级为授权店铺工作台。
 
-Recommended layout:
+推荐布局：
 
-- left queue column
-- center shop action table
-- right detail and repair drawer
+- 左侧工作队列
+- 中间店铺操作主表
+- 右侧详情和修复抽屉
 
-Left queues:
+左侧队列：
 
-- ready to open
-- awaiting manual verification
-- credential stale or missing
-- open failed
-- currently running
-- authorization revoked or pending reclaim
+- 可直接打开
+- 待人工验证
+- 凭据缺失或疑似过期
+- 打开失败
+- 当前运行中
+- 授权失效或待回收
 
-Center table:
+中间主表：
 
-- shop name
-- platform
-- ASM status summary
-- execution status
-- profile/core/session readiness
-- recent open
-- recent validation
-- recent failure
-- unfinished task count
-- primary recommended action
-- secondary actions
+- 店铺名称
+- 平台
+- ASM 状态摘要
+- 执行状态
+- profile / core / session readiness
+- 最近打开
+- 最近验证
+- 最近失败
+- 未完成任务数
+- 主要推荐动作
+- 次级动作
 
-Right drawer:
+右侧抽屉：
 
-- health summary
-- shop profile summary
-- local profile mapping
-- shared login status
-- recent open run
-- recent credential run
-- run event timeline
-- failure diagnosis
-- next recommended action
-- operation task summary
+- 健康摘要
+- 店铺资料摘要
+- 本地 profile 映射
+- 共享登录状态
+- 最近打开 run
+- 最近凭据 run
+- run 事件时间线
+- 失败诊断
+- 下一步推荐动作
+- 运营任务摘要
 
-The workbench should expose execution actions:
+工作台应暴露执行动作：
 
-- open shop backend
-- update shared credentials
-- local validation
-- retry last failed action
-- view run evidence
-- open profile detail
-- create shop operation task
+- 打开店铺后台
+- 更新共享凭据
+- 本机验证
+- 重试最近失败动作
+- 查看运行证据
+- 打开店铺资料详情
+- 创建店铺运营任务
 
-### 3. Operation Task Center
+### 3. 运营任务中心
 
-The Operation Task Center owns cross-shop operation tasks.
+运营任务中心负责跨店铺运营任务。
 
-It answers:
+它回答：
 
-- What needs to be done today?
-- Which shop tasks are waiting, running, blocked, failed, or completed?
-- Which tasks are blocked by credentials or local execution readiness?
-- Which tasks need manual intervention?
-- Which tasks can be retried in bulk?
+- 今天需要做哪些事？
+- 哪些店铺任务在等待、运行、阻塞、失败或完成？
+- 哪些任务被凭据或本地执行可用性阻塞？
+- 哪些任务需要人工介入？
+- 哪些任务可以批量重试？
 
-This phase should introduce the task center as a clean product skeleton, not as a full automation platform.
+本阶段应引入任务中心的清晰产品骨架，而不是完整自动化平台。
 
-Task center scope for this phase:
+本阶段任务中心范围：
 
-- list operation tasks
-- filter by shop, task type, status, failure reason, and blocked reason
-- show task summary
-- open a task detail
-- link to the related shop profile
-- link to the related workbench action
-- retry failed execution-precondition tasks when safe
+- 展示运营任务列表
+- 按店铺、任务类型、状态、失败原因、阻塞原因筛选
+- 展示任务摘要
+- 打开任务详情
+- 链接到相关店铺资料
+- 链接到相关工作台动作
+- 在安全时重试失败的执行前置任务
 
-The task center should not implement full product sourcing, listing, or report-generation workflows in this phase.
+任务中心在本阶段不实现完整选品、铺货或报表生成工作流。
 
-### 4. Run Evidence Layer
+### 4. 运行证据层
 
-The Run Evidence Layer is shared by the profile center, workbench, and task center.
+运行证据层由店铺资料中心、店铺工作台、运营任务中心共享。
 
-It consumes local agent run data, including:
+它消费 local agent 的运行数据，包括：
 
 - `/local/runs`
 - `/local/runs/:runId`
 - `/local/runs/:runId/events`
 
-It should normalize run evidence into frontend models that can answer:
+它应把运行证据规范化成前端模型，用来回答：
 
-- latest open run per shop
-- latest validation run per shop
-- latest credential update run per shop
-- active run per shop
-- latest failure per shop
-- event timeline for a selected run
+- 每个店铺最近一次打开 run
+- 每个店铺最近一次验证 run
+- 每个店铺最近一次凭据更新 run
+- 每个店铺当前活跃 run
+- 每个店铺最近失败
+- 选中 run 的事件时间线
 
-Run evidence should include:
+运行证据应包含：
 
 - run id
-- task type
+- 任务类型
 - shop id
-- status
-- status label
-- started at
-- finished at
+- 状态
+- 状态标签
+- 开始时间
+- 结束时间
 - profile id
-- runtime metadata
-- failure code
-- failure message
-- manual action required
-- challenge type
-- event timeline
+- runtime 元数据
+- 失败 code
+- 失败 message
+- 是否需要人工动作
+- challenge 类型
+- 事件时间线
 
-## Domain Boundaries
+## 领域边界
 
-### Shop Profile
+### 店铺资料
 
-Business master data.
+业务主数据。
 
-Examples:
+示例字段：
 
 - shop id
-- shop name
+- 店铺名称
 - platform code
-- ASM connection status
-- authorization status
-- owner
-- tags
-- main category
-- data completeness
-- last ASM sync time
+- ASM 接入状态
+- 授权状态
+- 负责人
+- 标签
+- 主营类目
+- 数据完整度
+- 最近 ASM 同步时间
 
-### Authorized Shop Projection
+### 授权店铺投影
 
-Execution-facing projection from Workspace and local runtime state.
+来自 Workspace 和本地运行态的执行侧投影。
 
-Examples:
+示例字段：
 
 - shared login status
 - local profile id
@@ -276,27 +276,27 @@ Examples:
 - instance running
 - reclaim pending
 
-This should remain a projection, not the source of shop business truth.
+它只能是投影，不能成为店铺业务真相源。
 
-### Operation Task
+### 运营任务
 
-Business work attached to a shop.
+挂在店铺上的业务工作。
 
-Examples:
+示例：
 
-- collect shop product status
-- inspect opportunity ranking
-- run pre-listing checks
-- prepare product sourcing workflow
-- generate shop operation summary
+- 采集店铺商品状态
+- 检查机会榜
+- 执行铺货前置检查
+- 准备选品工作流
+- 生成店铺运营摘要
 
-This phase creates the task surface and lifecycle boundaries. It does not need to implement every future task type.
+本阶段建立任务界面和生命周期边界，不要求实现未来每一种任务类型。
 
 ### Run
 
-Execution evidence produced by local agent or desktop execution flows.
+由 local agent 或桌面端执行流产生的运行证据。
 
-Examples:
+示例：
 
 - open
 - bind
@@ -304,144 +304,144 @@ Examples:
 - diagnose
 - retry
 
-Runs are not shop profiles and not business tasks. They are evidence for actions.
+Run 不是店铺资料，也不是业务任务。Run 是动作结果的证据。
 
-## Must Do
+## 必须做
 
-### ASM Shop Profile List And Detail
+### ASM 店铺资料列表与详情
 
-Add or refactor a shop profile surface for ASM-connected shops.
+新增或重构 ASM 店铺资料界面。
 
-Minimum behavior:
+最低行为：
 
-- list ASM shops
-- show key business profile fields
-- show ASM connection and authorization status
-- show execution status summary from the workbench/evidence layer
-- show operation task summary
-- open shop detail
-- navigate from detail to workbench action
-- navigate from detail to task center
+- 展示 ASM 店铺列表
+- 展示关键业务资料字段
+- 展示 ASM 接入状态和授权状态
+- 展示来自工作台/证据层的执行状态摘要
+- 展示运营任务摘要
+- 打开店铺详情
+- 从详情跳转到工作台动作
+- 从详情跳转到任务中心
 
-If backend ASM profile APIs are not yet available, the spec should still define the frontend and Wails/client boundary. Implementation may start with Workspace-provided fields plus explicit unavailable states, but it must not silently treat `WorkspaceAuthorizedShop` as the final ASM profile model.
+如果后端 ASM profile API 暂时不可用，spec 仍应定义前端与 Wails/client 边界。实现可以先使用 Workspace 提供的字段和明确的 unavailable 状态起步，但不能把 `WorkspaceAuthorizedShop` 默默当成最终 ASM profile 模型。
 
-### Shop Workbench Redesign
+### 店铺工作台重构
 
-Redesign the current shop execution page around execution readiness.
+围绕执行可用性重构当前店铺执行页。
 
-Minimum behavior:
+最低行为：
 
-- show queue counts
-- show shop action table
-- support search and filters
-- show recommended action
-- show details drawer
-- show latest open and validation evidence
-- preserve existing open, bind, and validate actions
-- replace the current warning-only batch open behavior with real safe batch execution
+- 展示队列数量
+- 展示店铺操作主表
+- 支持搜索和筛选
+- 展示推荐动作
+- 展示详情抽屉
+- 展示最近打开和最近验证证据
+- 保留现有 open、bind、validate 动作
+- 把当前 warning-only 的批量打开替换成真实安全批量执行
 
-### Runs And Events Integration
+### Runs And Events 接入
 
-Expose local agent run evidence through the Ant Browser backend and frontend.
+通过 Ant Browser 后端和前端暴露 local agent 运行证据。
 
-Minimum behavior:
+最低行为：
 
-- fetch recent runs
-- fetch run detail
-- fetch run events
-- derive latest run per shop and task type
-- derive latest failure per shop
-- render timeline in detail drawer
-- render recent open and recent validation in table rows
+- 拉取最近 runs
+- 拉取 run 详情
+- 拉取 run events
+- 按店铺和任务类型推导最近 run
+- 推导每个店铺最近失败
+- 在详情抽屉渲染时间线
+- 在主表渲染最近打开和最近验证
 
-### Failure-To-Recovery Mapping
+### 失败到修复动作映射
 
-Map known failure states to next actions.
+把已知失败状态映射到下一步动作。
 
-Minimum mappings:
+最低映射：
 
-- missing fingerprint core -> go to core management
-- core unavailable -> inspect core management or retry after repair
-- shared login not ready -> update credentials
-- awaiting verification -> local validation
-- validation failed -> update credentials or retry validation
-- authorization revoked -> disable execution and show reclaim state
-- local profile missing -> refresh/reconcile authorized shops
-- workspace agent unavailable -> show connection repair guidance
-- workspace server unreachable -> show server connection state
-- ant runtime unreachable -> show runtime repair guidance
-- unknown failure -> show run evidence and diagnostic export
+- 指纹内核缺失 -> 去内核管理
+- 指纹内核不可用 -> 检查内核管理或修复后重试
+- shared login not ready -> 更新凭据
+- awaiting verification -> 本机验证
+- validation failed -> 更新凭据或重试验证
+- authorization revoked -> 禁止执行并展示回收状态
+- local profile missing -> 刷新/重新对账授权店铺
+- workspace agent unavailable -> 展示连接修复指引
+- workspace server unreachable -> 展示服务连接状态
+- ant runtime unreachable -> 展示运行时修复指引
+- unknown failure -> 展示运行证据和诊断导出
 
-### Safe Batch Operations
+### 安全批量操作
 
-Implement safe batch operations for execution actions.
+为执行动作实现安全批量操作。
 
-Minimum behavior:
+最低行为：
 
-- batch open ready shops
-- batch validate eligible shops
-- batch retry failed eligible shops
-- skip ineligible shops with explicit reasons
-- limit concurrency
-- show progress
-- show result summary
-- preserve per-shop run evidence
+- 批量打开 ready 店铺
+- 批量验证 eligible 店铺
+- 批量重试 failed eligible 店铺
+- 对不可执行店铺给出明确跳过原因
+- 限制并发
+- 展示进度
+- 展示结果汇总
+- 保留每个店铺的 run 证据
 
-Batch behavior must not silently attempt actions on revoked, missing-core, missing-profile, or not-ready shops.
+批量行为不能默默尝试授权失效、缺少内核、缺少 profile 或 not-ready 店铺。
 
-### Single-Shop Operation Task Skeleton
+### 单店运营任务骨架
 
-Add a single-shop operation task tab or section in the shop detail drawer/page.
+在店铺详情抽屉或详情页加入单店运营任务 tab/区块。
 
-Minimum behavior:
+最低行为：
 
-- show operation task summary for the selected shop
-- show waiting, running, blocked, failed, and completed counts
-- show latest task rows
-- show blocked reason when execution readiness prevents a task
-- expose create-task entry as a controlled skeleton
+- 展示所选店铺的运营任务摘要
+- 展示等待中、运行中、阻塞、失败、完成数量
+- 展示最近任务行
+- 当执行可用性阻塞任务时展示阻塞原因
+- 暴露受控的新建任务入口
 
-This skeleton should be ready for future sourcing, listing, collection, and reporting tasks.
+这个骨架应为后续选品、铺货、采集、报表任务做好位置。
 
-### Global Operation Task Center Skeleton
+### 全局运营任务中心骨架
 
-Add a cross-shop operation task center skeleton.
+新增跨店铺运营任务中心骨架。
 
-Minimum behavior:
+最低行为：
 
-- list operation tasks
-- filter by status
-- filter by shop
-- filter by blocked reason
-- open related shop profile
-- open related workbench action
-- show failure or blocked reason
+- 展示运营任务列表
+- 按状态筛选
+- 按店铺筛选
+- 按阻塞原因筛选
+- 打开相关店铺资料
+- 打开相关工作台动作
+- 展示失败或阻塞原因
 
-This is a product foundation. It is not a full automation scheduler in this phase.
+这是产品底座，不是本阶段完整自动化调度器。
 
-## Should Do
+## 应该做
 
-### Diagnostic Export
+### 诊断导出
 
-Support exporting selected diagnostic context for support and regression.
+支持导出选中诊断上下文，方便支持和回归。
 
-Suggested contents:
+建议内容：
 
-- selected shop profile summary
-- local execution projection
-- latest runs
-- selected run events
+- 选中店铺资料摘要
+- 本地执行投影
+- 最近 runs
+- 选中 run events
 - app version
 - platform
 - workspace agent health
 - ant runtime health
-- relevant failure codes
+- 相关 failure codes
 
-### Navigation Cleanup
+### 导航整理
 
-Rename and reorganize navigation so users see business concepts first.
+重命名并重组导航，让用户先看到业务概念。
 
-Suggested navigation:
+建议导航：
 
 - `店铺资料`
 - `店铺工作台`
@@ -449,13 +449,13 @@ Suggested navigation:
 - `运行记录`
 - `系统维护`
 
-The older `指纹浏览器` group can remain for lower-level tools such as core management, proxy pool, default bookmarks, tags, logs, and API docs.
+旧的 `指纹浏览器` 分组可以保留给底层工具，例如内核管理、代理池、默认书签、标签、日志、接口文档。
 
-### Status Language Cleanup
+### 状态语言整理
 
-Use user-facing Chinese labels for status while preserving raw codes in details.
+使用面向用户的中文状态标签，同时在详情里保留 raw code。
 
-Examples:
+示例：
 
 - `ready` -> `可执行`
 - `awaiting_verification` -> `待人工验证`
@@ -463,34 +463,34 @@ Examples:
 - `reclaim_pending` -> `授权失效，待回收`
 - `ANT_CORE_UNAVAILABLE` -> `指纹内核不可用`
 
-## Can Wait
+## 可以晚点做
 
-These items should not block the phase:
+这些事项不应阻塞本阶段：
 
-- full product sourcing workflow
-- full listing/publishing workflow
-- AI shop operation daily report generation
-- advanced operation-task scheduling
-- cross-shop automation orchestration
-- long-running queue migration to a durable external job system
-- release channel or gray rollout
-- delta app updates
+- 完整选品工作流
+- 完整铺货/发布工作流
+- AI 店铺经营日报生成
+- 高级运营任务排程
+- 跨店铺自动化编排
+- 长周期任务队列迁移到外部持久化 job 系统
+- release channel 或灰度发布
+- delta app update
 
-## Data Flow
+## 数据流
 
-### Shop Profile Flow
+### 店铺资料流
 
 ```text
 Workspace / ASM source
   -> local workspace agent or desktop backend API boundary
   -> Ant Browser Wails backend
   -> frontend shop profile API
-  -> Shop Profile Center
+  -> 店铺资料中心
 ```
 
-The frontend must not directly query databases or bypass the Wails/backend boundary.
+前端不能直接查询数据库，也不能绕过 Wails/backend 边界。
 
-### Execution Workbench Flow
+### 执行工作台流
 
 ```text
 Workspace authorized shops
@@ -498,13 +498,13 @@ Workspace authorized shops
   -> Ant Browser workspace service
   -> managed profile reconcile
   -> shop execution projection
-  -> Shop Workbench
+  -> 店铺工作台
 ```
 
-Actions:
+动作流：
 
 ```text
-Shop Workbench action
+店铺工作台 action
   -> Wails backend
   -> workspace service / local agent
   -> managed instance service
@@ -513,7 +513,7 @@ Shop Workbench action
   -> frontend state refresh
 ```
 
-### Run Evidence Flow
+### 运行证据流
 
 ```text
 local agent runs/events
@@ -524,9 +524,9 @@ local agent runs/events
   -> task center evidence links
 ```
 
-## API Boundary
+## API 边界
 
-The implementation plan should define exact names after code inspection, but the intended backend boundary is:
+实现计划应在进一步代码检查后确定准确命名，但目标后端边界是：
 
 ```text
 WorkspaceShopProfiles()
@@ -540,11 +540,11 @@ StartDesktopSharedLoginBind(accessToken, shopId)
 StartDesktopSharedLoginValidate(accessToken, shopId)
 ```
 
-Existing Wails APIs should be reused where they already fit. New APIs should remain thin adapters over Workspace/local-agent contracts.
+已有 Wails API 能复用就复用。新增 API 应保持为 Workspace/local-agent contract 的薄适配层。
 
-## Frontend Module Boundaries
+## 前端模块边界
 
-Suggested modules:
+建议模块：
 
 ```text
 frontend/src/modules/shops/
@@ -553,46 +553,46 @@ frontend/src/modules/operations/
 frontend/src/modules/runEvidence/
 ```
 
-The exact directory layout can follow local conventions during implementation. The key rule is boundary clarity:
+具体目录结构可以在实现阶段跟随本地代码风格。关键是边界清楚：
 
-- `shops` owns business profile pages and profile DTOs
-- `workbench` owns execution readiness screens and actions
-- `operations` owns operation task skeletons and global task views
-- `runEvidence` owns run/event fetching, derivation, and timeline components
+- `shops` 负责业务资料页和 profile DTO
+- `workbench` 负责执行可用性界面和动作
+- `operations` 负责运营任务骨架和全局任务视图
+- `runEvidence` 负责 run/event 拉取、派生和时间线组件
 
-The existing `workspace` module can remain the transport/integration layer if that matches current code better.
+如果更符合当前代码，现有 `workspace` 模块可以继续作为 transport/integration 层。
 
-## UI Design Requirements
+## UI 设计要求
 
-The UI should feel like an operations console, not a marketing dashboard.
+UI 应该像运营控制台，不像营销 dashboard。
 
-Requirements:
+要求：
 
-- dense but readable tables
-- stable row heights
-- clear status badges
-- action buttons with icons
-- details drawers for drill-down
-- no nested cards inside cards
-- no decorative hero treatment
-- no one-note color theme
-- no hidden fake actions that only toast "later"
-- no status-only page without next actions
+- 信息密度高但可读
+- 表格行高稳定
+- 状态 badge 清晰
+- 操作按钮带图标
+- 使用详情抽屉承载 drill-down
+- 不做卡片套卡片
+- 不做装饰性 hero
+- 不做单一色系界面
+- 不保留只 toast "later" 的假动作
+- 不做只有状态、没有下一步动作的页面
 
-Primary surfaces:
+主要界面：
 
-- shop profile list
-- shop profile detail
-- shop workbench
-- shop detail drawer
-- operation task center
-- run evidence timeline
+- 店铺资料列表
+- 店铺资料详情
+- 店铺工作台
+- 店铺详情抽屉
+- 运营任务中心
+- 运行证据时间线
 
-## Error Handling
+## 错误处理
 
-Errors must resolve into user-facing categories and actionable next steps.
+错误必须归类为用户可理解的类别，并提供可执行下一步。
 
-Categories:
+类别：
 
 - workspace server unreachable
 - workspace agent unavailable
@@ -608,72 +608,72 @@ Categories:
 - report failed
 - unknown error
 
-Every category should provide:
+每个类别应提供：
 
-- short label
-- detail message
-- raw code when available
-- recommended action
-- whether the action can be retried
-- whether batch execution should skip it
+- 简短标签
+- 详情说明
+- raw code
+- 推荐动作
+- 是否可重试
+- 批量执行时是否应跳过
 
-## Testing Strategy
+## 测试策略
 
-Backend tests:
+后端测试：
 
 - shop profile DTO normalization
-- run evidence API adapters
-- run/event derivation by shop and task type
+- run evidence API adapter
+- 按店铺和任务类型推导 run/event
 - failure-to-recovery mapping
-- batch eligibility and skip reasons
-- existing open/bind/validate behavior remains stable
+- batch eligibility 和 skip reasons
+- 现有 open/bind/validate 行为保持稳定
 
-Frontend tests or verification:
+前端测试或验证：
 
-- shop profile list renders empty, loading, normal, and error states
-- shop profile detail displays ASM, execution, task, and evidence sections
-- workbench filters and queues derive correct counts
-- recent open and validation are derived from run evidence
-- failure mapping shows the correct next action
-- batch operation summary includes success, skipped, and failed rows
-- operation task center skeleton handles empty, loading, normal, blocked, and failed states
+- 店铺资料列表覆盖 empty、loading、normal、error 状态
+- 店铺资料详情展示 ASM、执行、任务、证据区块
+- 工作台筛选和队列数量派生正确
+- 最近打开和最近验证来自 run evidence
+- 失败映射展示正确下一步动作
+- 批量操作汇总包含 success、skipped、failed
+- 运营任务中心骨架覆盖 empty、loading、normal、blocked、failed 状态
 
-Manual regression:
+手动回归：
 
-- login and session recovery
+- 登录和会话恢复
 - workspace agent bootstrap
-- authorized shop sync
-- open ready shop
-- update credentials
-- local validation
-- open failure shows evidence
-- missing core maps to core repair action
-- batch open skips ineligible shops
-- shop profile detail links to workbench and task center
+- 授权店铺同步
+- 打开 ready 店铺
+- 更新凭据
+- 本机验证
+- 打开失败展示证据
+- 缺少内核映射到内核修复动作
+- 批量打开跳过不可执行店铺
+- 店铺资料详情能跳转到工作台和任务中心
 
-## Non-Goals
+## 非目标
 
-This phase does not:
+本阶段不做：
 
-- implement a complete product sourcing system
-- implement a complete listing or publishing system
-- implement AI-generated operation reports
-- implement a full durable scheduler
-- store product or order business entities in Ant Browser local state
-- let frontend access databases directly
-- redesign release/update infrastructure
-- reopen macOS signing or notarization work
+- 完整选品系统
+- 完整铺货或发布系统
+- AI 经营报告生成
+- 完整持久化调度器
+- 在 Ant Browser 本地状态里存商品或订单业务实体
+- 让前端直接访问数据库
+- 重设计 release/update 基础设施
+- 重启 macOS signing 或 notarization 工作
 
-## Success Criteria
+## 成功标准
 
-The phase is successful when:
+本阶段成功的标志：
 
-- ASM shops have a dedicated profile list and detail surface
-- users can distinguish shop business profile from execution readiness
-- the shop workbench shows real recent open and validation state
-- warning-only batch open behavior is replaced by safe batch execution
-- every open/bind/validate failure can be inspected through run evidence
-- known failure codes map to concrete next actions
-- single-shop operation tasks have a clear home
-- cross-shop operation tasks have a clear home
-- the release/update chain remains untouched except for normal compatibility checks
+- ASM 店铺有独立资料列表和详情界面
+- 用户能区分店铺业务资料和执行可用性
+- 店铺工作台展示真实最近打开和最近验证状态
+- warning-only 的批量打开被安全批量执行替换
+- 每个 open/bind/validate 失败都能通过 run evidence 查看
+- 已知 failure code 映射到具体下一步动作
+- 单店运营任务有清晰归属位置
+- 跨店铺运营任务有清晰归属位置
+- release/update 链路除正常兼容性检查外不被改动
