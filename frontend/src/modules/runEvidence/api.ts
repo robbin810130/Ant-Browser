@@ -95,17 +95,21 @@ export function buildWorkspaceRunQuery(query: AnyRunQueryInput = {}): workspace.
 export async function fetchWorkspaceRuns(query: AnyRunQueryInput = {}): Promise<RunsPayload> {
   const payload = await WorkspaceRuns(buildWorkspaceRunQuery(query))
   const items = Array.isArray(payload?.items) ? payload.items.map(normalizeRun) : []
-  return { items, total: numberValue(payload?.total || items.length) }
+  return { items, total: numberValue(payload?.total ?? items.length) }
 }
 
 export async function fetchWorkspaceRunEvents(runId: string, limit = 50): Promise<RunEventsPayload> {
   const normalizedRunId = runId.trim()
+  if (!normalizedRunId) {
+    return { runId: '', items: [], total: 0 }
+  }
+
   const payload = await WorkspaceRunEvents(normalizedRunId, limit)
   const items = Array.isArray(payload?.items) ? payload.items.map(normalizeRunEvent) : []
   return {
     runId: stringValue(payload?.runId || normalizedRunId),
     items,
-    total: numberValue(payload?.total || items.length),
+    total: numberValue(payload?.total ?? items.length),
   }
 }
 

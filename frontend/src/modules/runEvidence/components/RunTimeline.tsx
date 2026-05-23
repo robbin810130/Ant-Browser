@@ -14,16 +14,16 @@ export function RunTimeline({ events }: { events: RunEvent[] }) {
 
   return (
     <div className="space-y-3">
-      {events.map((event) => (
+      {events.map((event, index) => (
         <div
-          key={event.eventId || `${event.stage}-${event.createdAt}`}
+          key={event.eventId || `${event.stage}-${event.createdAt}-${index}`}
           className="flex gap-3 rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-subtle)] p-3"
         >
           <div className="mt-0.5 shrink-0">{iconForStage(event.stage)}</div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
-              <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">{event.stage || 'event'}</span>
-              <span className="shrink-0 text-xs text-[var(--color-text-muted)]">{event.createdAt || '-'}</span>
+              <span className="min-w-0 truncate text-sm font-medium text-[var(--color-text-primary)]">{event.stage || 'event'}</span>
+              <span className="max-w-[12rem] shrink-0 truncate text-right text-xs text-[var(--color-text-muted)]">{event.createdAt || '-'}</span>
             </div>
             <p className="mt-1 break-words text-sm text-[var(--color-text-secondary)]">{event.message || '-'}</p>
           </div>
