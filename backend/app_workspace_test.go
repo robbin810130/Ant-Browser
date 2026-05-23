@@ -248,6 +248,59 @@ func TestWorkspaceShopProfilesReturnsFallbackProfiles(t *testing.T) {
 	}
 }
 
+func TestWorkspaceShopProfilesReturnsASMProfiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/local/shop-profiles" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"items": []map[string]any{{
+					"shopId":              "shop-asm-001",
+					"shopName":            "真实 ASM 店铺",
+					"platformCode":        "1688",
+					"asmStatus":           "connected",
+					"authorizationStatus": "valid",
+					"ownerName":           "运营一组",
+					"mainCategory":        "日用百货",
+					"dataCompleteness":    "complete",
+					"lastSyncedAt":        "2026-05-23T10:00:00+08:00",
+					"source":              "asm",
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	profiles, err := app.WorkspaceShopProfiles()
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfiles 返回错误: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("期望返回 1 个 ASM 店铺档案，实际=%d", len(profiles))
+	}
+	got := profiles[0]
+	if got.Source != "asm" || got.ASMStatus != "connected" || got.OwnerName != "运营一组" {
+		t.Fatalf("expected real ASM profile fields, got %#v", got)
+	}
+
+	profile, err := app.WorkspaceShopProfile("shop-asm-001")
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfile 返回错误: %v", err)
+	}
+	if profile.MainCategory != "日用百货" || profile.DataCompleteness != "complete" {
+		t.Fatalf("unexpected ASM profile detail: %#v", profile)
+	}
+}
+
 func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
