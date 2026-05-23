@@ -40,15 +40,15 @@ export namespace appupdate {
 }
 
 export namespace authsession {
-
+	
 	export class Session {
 	    accessToken: string;
 	    rememberMe: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Session(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.accessToken = source["accessToken"];
@@ -57,6 +57,7 @@ export namespace authsession {
 	}
 
 }
+
 export namespace backend {
 
 	export class CookieInfo {
@@ -1029,6 +1030,258 @@ export namespace workspace {
 	        this.message = source["message"];
 	    }
 	}
+	export class RunEvent {
+	    eventId: string;
+	    stage: string;
+	    message: string;
+	    details?: Record<string, any>;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.eventId = source["eventId"];
+	        this.stage = source["stage"];
+	        this.message = source["message"];
+	        this.details = source["details"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class RunEventsPayload {
+	    runId: string;
+	    items: RunEvent[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunEventsPayload(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.items = this.convertValues(source["items"], RunEvent);
+	        this.total = source["total"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RunRuntime {
+	    pid: number;
+	    debugPort: number;
+	    currentUrl: string;
+	    pageTitle: string;
+	    targetUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunRuntime(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.pid = source["pid"];
+	        this.debugPort = source["debugPort"];
+	        this.currentUrl = source["currentUrl"];
+	        this.pageTitle = source["pageTitle"];
+	        this.targetUrl = source["targetUrl"];
+	    }
+	}
+	export class RunRecord {
+	    runId: string;
+	    taskId: string;
+	    shopId: string;
+	    taskType: string;
+	    status: string;
+	    statusLabel: string;
+	    startedAt: string;
+	    finishedAt: string;
+	    profileId: string;
+	    runtime?: RunRuntime;
+	    bindSessionId: string;
+	    manualActionRequired: boolean;
+	    challengeType: string;
+	    failureCode: string;
+	    failureMessage: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.taskId = source["taskId"];
+	        this.shopId = source["shopId"];
+	        this.taskType = source["taskType"];
+	        this.status = source["status"];
+	        this.statusLabel = source["statusLabel"];
+	        this.startedAt = source["startedAt"];
+	        this.finishedAt = source["finishedAt"];
+	        this.profileId = source["profileId"];
+	        this.runtime = this.convertValues(source["runtime"], RunRuntime);
+	        this.bindSessionId = source["bindSessionId"];
+	        this.manualActionRequired = source["manualActionRequired"];
+	        this.challengeType = source["challengeType"];
+	        this.failureCode = source["failureCode"];
+	        this.failureMessage = source["failureMessage"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ShopRunEvidence {
+	    latestOpen?: RunRecord;
+	    latestCredential?: RunRecord;
+	    latestValidation?: RunRecord;
+	    latestFailure?: RunRecord;
+	    activeRun?: RunRecord;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShopRunEvidence(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.latestOpen = this.convertValues(source["latestOpen"], RunRecord);
+	        this.latestCredential = this.convertValues(source["latestCredential"], RunRecord);
+	        this.latestValidation = this.convertValues(source["latestValidation"], RunRecord);
+	        this.latestFailure = this.convertValues(source["latestFailure"], RunRecord);
+	        this.activeRun = this.convertValues(source["activeRun"], RunRecord);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RunEvidenceIndex {
+	    byShop: Record<string, ShopRunEvidence>;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunEvidenceIndex(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.byShop = this.convertValues(source["byShop"], ShopRunEvidence, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RunQuery {
+	    Limit: number;
+	    Status: string;
+	    ShopID: string;
+	    FailureCode: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Limit = source["Limit"];
+	        this.Status = source["Status"];
+	        this.ShopID = source["ShopID"];
+	        this.FailureCode = source["FailureCode"];
+	    }
+	}
+	
+	
+	export class RunsPayload {
+	    items: RunRecord[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunsPayload(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], RunRecord);
+	        this.total = source["total"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SessionStorageEntry {
 	    origin: string;
 	    scope: string;
@@ -1151,6 +1404,37 @@ export namespace workspace {
 	        this.coreReady = source["coreReady"];
 	    }
 	}
+	export class ShopProfileRecord {
+	    shopId: string;
+	    shopName: string;
+	    platformCode: string;
+	    asmStatus: string;
+	    authorizationStatus: string;
+	    ownerName: string;
+	    mainCategory: string;
+	    dataCompleteness: string;
+	    lastSyncedAt: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShopProfileRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.shopId = source["shopId"];
+	        this.shopName = source["shopName"];
+	        this.platformCode = source["platformCode"];
+	        this.asmStatus = source["asmStatus"];
+	        this.authorizationStatus = source["authorizationStatus"];
+	        this.ownerName = source["ownerName"];
+	        this.mainCategory = source["mainCategory"];
+	        this.dataCompleteness = source["dataCompleteness"];
+	        this.lastSyncedAt = source["lastSyncedAt"];
+	        this.source = source["source"];
+	    }
+	}
+	
 	export class WorkspaceSummary {
 	    status: string;
 	    agentStatus: string;
@@ -1179,3 +1463,4 @@ export namespace workspace {
 	}
 
 }
+

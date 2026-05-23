@@ -231,6 +231,21 @@ func TestWorkspaceShopProfilesReturnsFallbackProfiles(t *testing.T) {
 	if got.AuthorizationStatus != "ready" {
 		t.Fatalf("expected authorization status from authorized shop, got %s", got.AuthorizationStatus)
 	}
+
+	profile, err := app.WorkspaceShopProfile(" shop-001 ")
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfile 返回错误: %v", err)
+	}
+	if profile.ShopID != "shop-001" {
+		t.Fatalf("unexpected profile detail: %#v", profile)
+	}
+
+	if _, err := app.WorkspaceShopProfile(" "); err == nil || err.Error() != "shop id is required" {
+		t.Fatalf("expected empty shop id error, got %v", err)
+	}
+	if _, err := app.WorkspaceShopProfile("shop-404"); err == nil || err.Error() != "shop profile not found: shop-404" {
+		t.Fatalf("expected not found error, got %v", err)
+	}
 }
 
 func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {

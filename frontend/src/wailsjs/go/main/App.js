@@ -458,6 +458,26 @@ export function WorkspaceOpenShop(arg1) {
   return window['go']['main']['App']['WorkspaceOpenShop'](arg1);
 }
 
+export function WorkspaceRunEvents(arg1, arg2) {
+  return window['go']['main']['App']['WorkspaceRunEvents'](arg1, arg2);
+}
+
+export function WorkspaceRunEvidence(arg1) {
+  return window['go']['main']['App']['WorkspaceRunEvidence'](arg1);
+}
+
+export function WorkspaceRuns(arg1) {
+  return window['go']['main']['App']['WorkspaceRuns'](arg1);
+}
+
+export function WorkspaceShopProfile(arg1) {
+  return window['go']['main']['App']['WorkspaceShopProfile'](arg1);
+}
+
+export function WorkspaceShopProfiles() {
+  return window['go']['main']['App']['WorkspaceShopProfiles']();
+}
+
 export function WorkspaceSummary() {
   return window['go']['main']['App']['WorkspaceSummary']();
 }
