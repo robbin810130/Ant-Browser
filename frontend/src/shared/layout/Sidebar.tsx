@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
   Activity,
+  Bot,
   Bookmark,
   BookOpen,
   FileText,
@@ -8,6 +9,7 @@ import {
   ListChecks,
   Monitor,
   Settings,
+  Store,
   Database,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +34,8 @@ const iconMap: Record<string, LucideIcon> = {
   Layers,
   PieChart,
   Monitor,
+  Store,
+  Bot,
   ListChecks,
   Activity,
   FileText,

@@ -37,11 +37,14 @@ function lazyNamed<TModule extends Record<string, ComponentType<any>>>(
 }
 
 const WorkspaceDashboardPage = lazyNamed(() => import('./modules/workspace/pages/WorkspaceDashboardPage'), 'WorkspaceDashboardPage')
+const ShopProfileListPage = lazyNamed(() => import('./modules/shops/pages/ShopProfileListPage'), 'ShopProfileListPage')
+const ShopProfileDetailPage = lazyNamed(() => import('./modules/shops/pages/ShopProfileDetailPage'), 'ShopProfileDetailPage')
+const WorkbenchPage = lazyNamed(() => import('./modules/workbench/WorkbenchPage'), 'WorkbenchPage')
+const OperationTaskCenterPage = lazyNamed(() => import('./modules/operations/pages/OperationTaskCenterPage'), 'OperationTaskCenterPage')
 const SettingsPage = lazyNamed(() => import('./modules/settings/SettingsPage'), 'SettingsPage')
 const ProfilePage = lazyNamed(() => import('./modules/profile/ProfilePage'), 'ProfilePage')
 const AdminKeygenPage = lazyNamed(() => import('./modules/profile/AdminKeygenPage'), 'AdminKeygenPage')
 const ChartsPage = lazyNamed(() => import('./modules/charts/ChartsPage'), 'ChartsPage')
-const BrowserListPage = lazyNamed(() => import('./modules/browser/pages/BrowserListPage'), 'BrowserListPage')
 const BrowserDetailPage = lazyNamed(() => import('./modules/browser/pages/BrowserDetailPage'), 'BrowserDetailPage')
 const BrowserEditPage = lazyNamed(() => import('./modules/browser/pages/BrowserEditPage'), 'BrowserEditPage')
 const BrowserCopyPage = lazyNamed(() => import('./modules/browser/pages/BrowserCopyPage'), 'BrowserCopyPage')
@@ -471,15 +474,19 @@ function App() {
             <Route element={<RequireAuth />}>
               <Route element={<ProtectedAppShell />}>
                 <Route path="/" element={<WorkspaceDashboardPage />} />
+                <Route path="/shops" element={<ShopProfileListPage />} />
+                <Route path="/shops/:shopId" element={<ShopProfileDetailPage />} />
+                <Route path="/workbench" element={<WorkbenchPage />} />
+                <Route path="/operations" element={<OperationTaskCenterPage />} />
                 <Route path="/charts" element={<ChartsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/admin/keygen" element={<AdminKeygenPage />} />
-                <Route path="/browser/list" element={<BrowserListPage />} />
+                <Route path="/browser/list" element={<Navigate to="/workbench" replace />} />
                 <Route path="/browser/detail/:id" element={<BrowserDetailPage />} />
                 <Route path="/browser/edit/:id" element={<BrowserEditPage />} />
                 <Route path="/browser/copy/:id" element={<BrowserCopyPage />} />
-                <Route path="/browser/monitor" element={<Navigate to="/browser/list" replace />} />
+                <Route path="/browser/monitor" element={<Navigate to="/workbench" replace />} />
                 <Route path="/browser/logs" element={<BrowserLogsPage />} />
                 <Route path="/browser/proxy-pool" element={<ProxyPoolPage />} />
                 <Route path="/browser/cores" element={<CoreManagementPage />} />
