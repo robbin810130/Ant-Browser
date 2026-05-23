@@ -197,6 +197,36 @@ func (s *WorkspaceService) FetchAuthorizedShops(ctx context.Context) ([]ShopInst
 	return projected, nil
 }
 
+func (s *WorkspaceService) FetchShopProfiles(ctx context.Context) ([]ShopProfileRecord, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchShopProfiles(ctx)
+}
+
+func (s *WorkspaceService) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchRuns(ctx, query)
+}
+
+func (s *WorkspaceService) FetchRunEvents(ctx context.Context, runID string, limit int) (*RunEventsPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchRunEvents(ctx, runID, limit)
+}
+
+func (s *WorkspaceService) FetchRunEvidence(ctx context.Context, query RunQuery) (*RunEvidenceIndex, error) {
+	runs, err := s.FetchRuns(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	index := BuildRunEvidenceIndex(runs.Items)
+	return &index, nil
+}
+
 func (s *WorkspaceService) FetchOpenShopContext(ctx context.Context, shopID string) (*ShopOpenContext, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
