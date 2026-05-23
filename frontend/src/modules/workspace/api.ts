@@ -15,6 +15,7 @@ import type {
   WorkspaceOpenShopResult,
   WorkspaceSummary as WorkspaceSummaryModel,
 } from './types'
+import { devAuthorizedShops, devWorkspaceSummary, useDevWorkspaceFallback } from './devData'
 
 function normalizeSummary(input: any): WorkspaceSummaryModel {
   return {
@@ -46,11 +47,13 @@ function normalizeShop(input: any): WorkspaceAuthorizedShop {
 }
 
 export async function fetchWorkspaceSummary(): Promise<WorkspaceSummaryModel> {
+  if (useDevWorkspaceFallback()) return devWorkspaceSummary
   const payload = await WorkspaceSummary()
   return normalizeSummary(payload)
 }
 
 export async function fetchWorkspaceAuthorizedShops(): Promise<WorkspaceAuthorizedShop[]> {
+  if (useDevWorkspaceFallback()) return devAuthorizedShops
   const payload = await WorkspaceAuthorizedShops()
   return Array.isArray(payload) ? payload.map(normalizeShop) : []
 }
@@ -133,6 +136,20 @@ function resolveOpenErrorMessage(code: string, message: string) {
 }
 
 export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenShopResult> {
+  if (useDevWorkspaceFallback()) {
+    const shop = devAuthorizedShops.find((item) => item.shopId === shopId.trim())
+    return {
+      shopId: shop?.shopId || shopId.trim(),
+      profileId: shop?.profileId || '',
+      instanceId: shop?.instanceId || '',
+      currentUrl: 'https://work.1688.com/',
+      pageTitle: '1688 商家工作台',
+      success: Boolean(shop),
+      code: shop ? '' : 'SHOP_NOT_FOUND',
+      message: shop ? '' : '店铺不存在',
+    }
+  }
+
   const payload = await WorkspaceOpenShop(shopId)
   const result = normalizeOpenResult(payload)
   return result.success
@@ -144,16 +161,79 @@ export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenSh
 }
 
 export async function startWorkspaceSharedLoginBind(accessToken: string, shopId: string): Promise<WorkspaceSharedLoginActionResult> {
+  if (useDevWorkspaceFallback()) {
+    const shop = devAuthorizedShops.find((item) => item.shopId === shopId.trim())
+    return normalizeSharedLoginActionResult({
+      bindSession: {
+        bindSessionId: `dev-bind-${shopId.trim()}`,
+        traceId: 'dev-trace',
+        shopId: shop?.shopId || shopId.trim(),
+        shopName: shop?.shopName || shopId.trim(),
+        sessionType: 'bind',
+        status: 'awaiting_verification',
+        statusLabel: '等待人工验证',
+        message: '开发环境模拟凭据更新已发起',
+        manualActionRequired: true,
+        updatedAt: new Date().toISOString(),
+      },
+      detail: {
+        shopId: shop?.shopId || shopId.trim(),
+        shopName: shop?.shopName || shopId.trim(),
+        platformCode: shop?.platformCode || '',
+        sharedLoginStatus: 'awaiting_verification',
+        sharedLoginStatusLabel: '等待人工验证',
+      },
+    })
+  }
+
   const payload = await StartDesktopSharedLoginBind(accessToken.trim(), shopId.trim())
   return normalizeSharedLoginActionResult(payload)
 }
 
 export async function startWorkspaceSharedLoginValidate(accessToken: string, shopId: string): Promise<WorkspaceSharedLoginActionResult> {
+  if (useDevWorkspaceFallback()) {
+    const shop = devAuthorizedShops.find((item) => item.shopId === shopId.trim())
+    return normalizeSharedLoginActionResult({
+      bindSession: {
+        bindSessionId: `dev-validate-${shopId.trim()}`,
+        traceId: 'dev-trace',
+        shopId: shop?.shopId || shopId.trim(),
+        shopName: shop?.shopName || shopId.trim(),
+        sessionType: 'validate',
+        status: 'succeeded',
+        statusLabel: '验证通过',
+        message: '开发环境模拟本机验证通过',
+        manualActionRequired: false,
+        completedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      detail: {
+        shopId: shop?.shopId || shopId.trim(),
+        shopName: shop?.shopName || shopId.trim(),
+        platformCode: shop?.platformCode || '',
+        sharedLoginStatus: 'ready',
+        sharedLoginStatusLabel: '可直接打开',
+      },
+    })
+  }
+
   const payload = await StartDesktopSharedLoginValidate(accessToken.trim(), shopId.trim())
   return normalizeSharedLoginActionResult(payload)
 }
 
 export async function fetchWorkspaceSharedLoginBindSession(accessToken: string, bindSessionId: string): Promise<WorkspaceSharedLoginBindSession> {
+  if (useDevWorkspaceFallback()) {
+    return normalizeSharedLoginBindSession({
+      bindSessionId: bindSessionId.trim(),
+      traceId: 'dev-trace',
+      status: 'awaiting_verification',
+      statusLabel: '等待人工验证',
+      message: '开发环境模拟会话',
+      manualActionRequired: true,
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
   const payload = await FetchDesktopSharedLoginBindSession(accessToken.trim(), bindSessionId.trim())
   return normalizeSharedLoginBindSession(payload)
 }

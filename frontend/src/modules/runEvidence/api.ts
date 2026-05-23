@@ -1,5 +1,6 @@
 import { WorkspaceRunEvents, WorkspaceRunEvidence, WorkspaceRuns } from '../../wailsjs/go/main/App'
 import type { workspace } from '../../wailsjs/go/models'
+import { devWorkspaceRuns, useDevWorkspaceFallback } from '../workspace/devData'
 import type {
   RunEvent,
   RunEventsPayload,
@@ -93,6 +94,17 @@ export function buildWorkspaceRunQuery(query: AnyRunQueryInput = {}): workspace.
 }
 
 export async function fetchWorkspaceRuns(query: AnyRunQueryInput = {}): Promise<RunsPayload> {
+  if (useDevWorkspaceFallback()) {
+    let items = devWorkspaceRuns
+    const shopId = stringValue(query.ShopID ?? query.shopId).trim()
+    const status = stringValue(query.Status ?? query.status).trim()
+    const failureCode = stringValue(query.FailureCode ?? query.failureCode).trim()
+    if (shopId) items = items.filter((item) => item.shopId === shopId)
+    if (status) items = items.filter((item) => item.status === status)
+    if (failureCode) items = items.filter((item) => item.failureCode === failureCode)
+    return { items: items.slice(0, numberValue(query.Limit ?? query.limit ?? 50)), total: items.length }
+  }
+
   const payload = await WorkspaceRuns(buildWorkspaceRunQuery(query))
   const items = Array.isArray(payload?.items) ? payload.items.map(normalizeRun) : []
   return { items, total: numberValue(payload?.total ?? items.length) }
@@ -102,6 +114,29 @@ export async function fetchWorkspaceRunEvents(runId: string, limit = 50): Promis
   const normalizedRunId = runId.trim()
   if (!normalizedRunId) {
     return { runId: '', items: [], total: 0 }
+  }
+
+  if (useDevWorkspaceFallback()) {
+    const run = devWorkspaceRuns.find((item) => item.runId === normalizedRunId)
+    const items = run
+      ? [
+          {
+            eventId: `${normalizedRunId}-accepted`,
+            stage: 'accepted',
+            message: '任务已进入执行队列',
+            details: { shopId: run.shopId, taskType: run.taskType },
+            createdAt: run.startedAt,
+          },
+          {
+            eventId: `${normalizedRunId}-latest`,
+            stage: run.status,
+            message: run.failureMessage || run.statusLabel || '任务状态已更新',
+            details: { failureCode: run.failureCode },
+            createdAt: run.finishedAt || run.startedAt,
+          },
+        ]
+      : []
+    return { runId: normalizedRunId, items, total: items.length }
   }
 
   const payload = await WorkspaceRunEvents(normalizedRunId, limit)
@@ -114,6 +149,27 @@ export async function fetchWorkspaceRunEvents(runId: string, limit = 50): Promis
 }
 
 export async function fetchWorkspaceRunEvidence(query: AnyRunQueryInput = {}): Promise<RunEvidenceIndex> {
+  if (useDevWorkspaceFallback()) {
+    const runs = await fetchWorkspaceRuns(query)
+    const byShop: RunEvidenceIndex['byShop'] = {}
+    runs.items.forEach((run) => {
+      const current = byShop[run.shopId] || {
+        latestOpen: null,
+        latestCredential: null,
+        latestValidation: null,
+        latestFailure: null,
+        activeRun: null,
+      }
+      if (run.taskType === 'open') current.latestOpen = run
+      if (run.taskType === 'bind') current.latestCredential = run
+      if (run.taskType === 'validate') current.latestValidation = run
+      if (run.status === 'failed') current.latestFailure = run
+      if (!run.finishedAt && run.status !== 'failed' && run.status !== 'succeeded') current.activeRun = run
+      byShop[run.shopId] = current
+    })
+    return { byShop }
+  }
+
   const payload = await WorkspaceRunEvidence(buildWorkspaceRunQuery(query))
   return normalizeRunEvidenceIndex(payload)
 }

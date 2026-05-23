@@ -138,6 +138,13 @@ function CloseConfirmModal() {
 
   useEffect(() => {
     let cancelled = false
+    const runtime = (window as any).runtime
+
+    if (!runtime?.Environment) {
+      return () => {
+        cancelled = true
+      }
+    }
 
     Environment()
       .then((info) => {

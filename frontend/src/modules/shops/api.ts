@@ -1,4 +1,5 @@
 import { WorkspaceShopProfile, WorkspaceShopProfiles } from '../../wailsjs/go/main/App'
+import { devShopProfiles, useDevWorkspaceFallback } from '../workspace/devData'
 import type { ShopProfile, ShopProfileStats } from './types'
 
 export type AsmStatusKind = 'connected' | 'error' | 'unavailable'
@@ -26,6 +27,7 @@ export function normalizeShopProfile(input: any): ShopProfile {
 }
 
 export async function fetchShopProfiles(): Promise<ShopProfile[]> {
+  if (useDevWorkspaceFallback()) return devShopProfiles
   const payload = await WorkspaceShopProfiles()
   return Array.isArray(payload) ? payload.map(normalizeShopProfile) : []
 }
@@ -34,6 +36,12 @@ export async function fetchShopProfile(shopId: string): Promise<ShopProfile> {
   const normalizedShopId = shopId.trim()
   if (!normalizedShopId) {
     throw new Error('shop id is required')
+  }
+
+  if (useDevWorkspaceFallback()) {
+    const profile = devShopProfiles.find((item) => item.shopId === normalizedShopId)
+    if (!profile) throw new Error('shop profile not found')
+    return profile
   }
 
   const payload = await WorkspaceShopProfile(normalizedShopId)
