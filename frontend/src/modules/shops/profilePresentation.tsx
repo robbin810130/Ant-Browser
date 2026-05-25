@@ -172,6 +172,26 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
         </span>
       ),
     },
+    {
+      key: 'actions',
+      title: '操作',
+      width: 150,
+      minWidth: 140,
+      fixed: 'right',
+      align: 'right',
+      hideable: false,
+      resizable: false,
+      render: (_, profile) => (
+        <div className="client-data-table-actions" onClick={(event) => event.stopPropagation()}>
+          <Link className="client-data-table-action-link" to={`/shops/${encodeURIComponent(profile.shopId)}`}>
+            详情
+          </Link>
+          <Link className="client-data-table-action-link" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`}>
+            工作台
+          </Link>
+        </div>
+      ),
+    },
   ]
 }
 
