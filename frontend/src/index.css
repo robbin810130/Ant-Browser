@@ -204,3 +204,104 @@ input, select, textarea {
 .animate-slide-in-bottom {
   animation: slideInBottom 0.3s ease-out;
 }
+
+.client-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.client-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(15 23 42 / 0.34);
+  cursor: default;
+}
+
+.client-drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  height: 100%;
+  max-width: min(94vw, 960px);
+  flex-direction: column;
+  border-left: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  box-shadow: -24px 0 50px rgb(15 23 42 / 0.16);
+  animation: slideInRight 0.22s ease-out;
+}
+
+.client-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-border-muted);
+  padding: 18px 20px;
+}
+
+.client-drawer-subtitle {
+  margin: 0 0 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.client-drawer-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.client-drawer-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+
+.client-drawer-footer {
+  border-top: 1px solid var(--color-border-muted);
+  padding: 14px 20px;
+}
+
+.client-data-table {
+  position: relative;
+}
+
+.client-data-table-toolbar,
+.client-data-table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border-muted);
+  padding: 10px 14px;
+}
+
+.client-data-table-pagination {
+  border-top: 1px solid var(--color-border-muted);
+  border-bottom: 0;
+}
+
+.client-data-table-column-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 220px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+}
