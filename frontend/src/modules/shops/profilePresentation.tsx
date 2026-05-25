@@ -57,6 +57,44 @@ export function authorizationBadge(profile: ShopProfile) {
   return <Badge variant="default">{label}</Badge>
 }
 
+export function shopProfileAction(profile: ShopProfile) {
+  const status = profile.authorizationStatus
+  if (status === 'ready' || status === 'valid') {
+    return {
+      label: '打开后台',
+      description: '授权状态可用，进入店铺工作台后可直接打开后台。',
+    }
+  }
+  if (status === 'relogin_required' || status === 'validation_failed') {
+    return {
+      label: '重新登录',
+      description: '共享登录不可用，进入店铺工作台处理重新登录。',
+    }
+  }
+  if (status === 'awaiting_verification') {
+    return {
+      label: '继续验证',
+      description: '当前存在待人工验证流程，进入店铺工作台继续处理。',
+    }
+  }
+  if (status === 'binding') {
+    return {
+      label: '查看进度',
+      description: '当前已有绑定流程，进入店铺工作台查看进度。',
+    }
+  }
+  if (status === 'disabled' || status === 'revoked') {
+    return {
+      label: '去处理',
+      description: '当前授权不可用，进入店铺工作台查看处理入口。',
+    }
+  }
+  return {
+    label: '去授权',
+    description: '当前未配置本地授权，进入店铺工作台查看授权状态。',
+  }
+}
+
 function compactText(value: string, width = 180) {
   return (
     <span className="block truncate text-[var(--color-text-secondary)]" style={{ maxWidth: width }} title={value || '-'}>
@@ -525,16 +563,19 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
       align: 'right',
       hideable: false,
       resizable: false,
-      render: (_, profile) => (
-        <div className="client-data-table-actions" onClick={(event) => event.stopPropagation()}>
-          <Link className="client-data-table-action-link" to={`/shops/${encodeURIComponent(profile.shopId)}`}>
-            详情
-          </Link>
-          <Link className="client-data-table-action-link" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`}>
-            工作台
-          </Link>
-        </div>
-      ),
+      render: (_, profile) => {
+        const action = shopProfileAction(profile)
+        return (
+          <div className="client-data-table-actions" onClick={(event) => event.stopPropagation()}>
+            <Link className="client-data-table-action-link" to={`/shops/${encodeURIComponent(profile.shopId)}`}>
+              详情
+            </Link>
+            <Link className="client-data-table-action-link" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`} title={action.description}>
+              {action.label}
+            </Link>
+          </div>
+        )
+      },
     },
   ]
 }

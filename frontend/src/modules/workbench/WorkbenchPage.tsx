@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Card, toast } from '../../shared/components'
+import { Alert, Button, Card, toast } from '../../shared/components'
 import { useAuthStore } from '../../store/authStore'
 import { buildRunEvidenceIndex, fetchWorkspaceRuns, type RunRecord, type ShopRunEvidence } from '../runEvidence'
 import {
@@ -153,6 +153,9 @@ export function WorkbenchPage() {
   const visibleRows = useMemo(() => {
     return activeQueue === 'all' ? rows : rows.filter((row) => row.queue === activeQueue)
   }, [activeQueue, rows])
+  const requestedShopMissing = Boolean(
+    requestedShopId && !loading && !rows.some((row) => row.shop.shopId === requestedShopId)
+  )
 
   async function runRecommendedAction(row: WorkbenchRow) {
     const action = row.recommendedAction
@@ -228,6 +231,14 @@ export function WorkbenchPage() {
           <div className="rounded-lg border border-[var(--color-accent)]/20 bg-[var(--color-accent)]/10 px-4 py-2 text-sm text-[var(--color-accent)]">
             正在执行：{runningAction.shopId}
           </div>
+        ) : null}
+
+        {requestedShopMissing ? (
+          <Alert
+            type="warning"
+            title="该店铺还没有本地授权实例"
+            message="店铺资料已来自 ASM 主数据，但店铺工作台只处理已接入本地授权实例的店铺。请先完成授权接入或在管理端检查资料授权关系。"
+          />
         ) : null}
 
         <Card padding="none">
