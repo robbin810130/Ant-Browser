@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Activity, ArrowLeft, ExternalLink, ListChecks } from 'lucide-react'
-import { Badge, Button, Card, Loading, toast } from '../../../shared/components'
-import { fetchOperationTasks, operationTaskStatusLabel } from '../../operations/api'
-import type { OperationTask, OperationTaskStatus } from '../../operations/types'
-import { fetchWorkspaceRuns } from '../../runEvidence'
-import type { RunRecord } from '../../runEvidence'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { Alert, Badge, Button, Card, Loading, toast } from '../../../shared/components'
 import { asmStatusKind, asmStatusLabel, dataCompletenessLabel, fetchShopProfile, sourceLabel } from '../api'
 import type { ShopProfile } from '../types'
 
@@ -54,40 +50,11 @@ function completenessBadge(status: string) {
   return <Badge variant="default">{dataCompletenessLabel(status)}</Badge>
 }
 
-function taskStatusBadge(status: OperationTaskStatus) {
-  if (status === 'running') return <Badge variant="info">{operationTaskStatusLabel(status)}</Badge>
-  if (status === 'blocked') return <Badge variant="warning">{operationTaskStatusLabel(status)}</Badge>
-  if (status === 'failed') return <Badge variant="error">{operationTaskStatusLabel(status)}</Badge>
-  if (status === 'completed') return <Badge variant="success">{operationTaskStatusLabel(status)}</Badge>
-  return <Badge variant="default">{operationTaskStatusLabel(status)}</Badge>
-}
-
-function runStatusBadge(status: string, label: string) {
-  const text = label || status || '-'
-  if (status === 'succeeded' || status === 'completed') return <Badge variant="success">{text}</Badge>
-  if (status === 'failed') return <Badge variant="error">{text}</Badge>
-  if (status === 'accepted' || status === 'authorizing' || status === 'launching' || status === 'capturing') {
-    return <Badge variant="info">{text}</Badge>
-  }
-  if (status === 'awaiting_verification') return <Badge variant="warning">{text}</Badge>
-  return <Badge variant="default">{text}</Badge>
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-md border border-dashed border-[var(--color-border-muted)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
-      {text}
-    </div>
-  )
-}
-
 export function ShopProfileDetailPage() {
   const { shopId = '' } = useParams()
   const [profile, setProfile] = useState<ShopProfile | null>(null)
-  const [tasks, setTasks] = useState<OperationTask[]>([])
-  const [runs, setRuns] = useState<RunRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [activityLoading, setActivityLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -103,36 +70,20 @@ export function ShopProfileDetailPage() {
 
     async function load() {
       setLoading(true)
-      setActivityLoading(true)
       try {
+        setErrorMessage('')
         const next = await fetchShopProfile(normalizedShopId)
         if (!cancelled) setProfile(next)
       } catch (error) {
         console.error('load shop profile failed', error)
-        toast.error('加载店铺详情失败')
-        if (!cancelled) setProfile(null)
+        const message = error instanceof Error ? error.message : '加载店铺详情失败'
+        toast.error(message)
+        if (!cancelled) {
+          setProfile(null)
+          setErrorMessage(message)
+        }
       } finally {
         if (!cancelled) setLoading(false)
-      }
-
-      try {
-        const [nextTasks, nextRuns] = await Promise.all([
-          fetchOperationTasks({ shopId: normalizedShopId, limit: 5 }),
-          fetchWorkspaceRuns({ shopId: normalizedShopId, limit: 5 }),
-        ])
-        if (!cancelled) {
-          setTasks(nextTasks)
-          setRuns(nextRuns.items)
-        }
-      } catch (error) {
-        console.error('load shop activity failed', error)
-        toast.error('加载店铺运营动态失败')
-        if (!cancelled) {
-          setTasks([])
-          setRuns([])
-        }
-      } finally {
-        if (!cancelled) setActivityLoading(false)
       }
     }
 
@@ -161,7 +112,15 @@ export function ShopProfileDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           返回店铺资料
         </Link>
-        <p className="text-sm text-[var(--color-text-muted)]">店铺资料不存在</p>
+        {errorMessage ? (
+          <Alert
+            type="warning"
+            title="店铺资料未连接真实客户端链路"
+            message={errorMessage}
+          />
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)]">店铺资料不存在</p>
+        )}
       </div>
     )
   }
@@ -201,101 +160,40 @@ export function ShopProfileDetailPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="基础资料" subtitle="ASM 店铺业务主数据">
           <DetailRow label="店铺名称" value={profile.shopName} />
+          <DetailRow label="ASM Shop ID" value={profile.asmShopId} />
           <DetailRow label="Shop ID" value={profile.shopId} />
-          <DetailRow label="平台" value={platformLabel(profile.platformCode)} />
-          <DetailRow label="负责人" value={profile.ownerName} />
+          <DetailRow label="店铺编码" value={profile.shopCode} />
+          <DetailRow label="店铺别名" value={profile.shopAlias} />
+          <DetailRow label="完整店铺名" value={profile.fullShopName} />
+          <DetailRow label="平台" value={profile.platformName || platformLabel(profile.platformCode)} />
+          <DetailRow label="平台子类型" value={profile.platformSubtype} />
           <DetailRow label="主营类目" value={profile.mainCategory} />
         </Card>
-        <Card title="ASM 与执行摘要" subtitle="执行详情在店铺工作台查看">
+        <Card title="ASM 状态" subtitle="来自 ASM 店铺资料与本地授权状态">
           <DetailRow label="ASM 状态" value={asmBadge(profile.asmStatus)} />
           <DetailRow label="授权状态" value={authorizationBadge(profile)} />
           <DetailRow label="数据完整度" value={completenessBadge(profile.dataCompleteness)} />
           <DetailRow label="最近同步" value={profile.lastSyncedAt} />
           <DetailRow label="数据来源" value={sourceLabel(profile.source)} />
+          <DetailRow label="高级会员" value={profile.advancedMemberName} />
         </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card
-          title="该店铺运营任务"
-          subtitle={activityLoading ? '正在读取任务状态' : `当前 ${tasks.length} 个任务`}
-          actions={(
-            <Link to={`/operations?shopId=${encodeURIComponent(profile.shopId)}`}>
-              <Button size="sm" variant="secondary">
-                <ListChecks className="h-4 w-4" />
-                查看全部
-              </Button>
-            </Link>
-          )}
-        >
-          <div className="space-y-3">
-            {activityLoading ? (
-              <Loading text="加载运营任务..." />
-            ) : tasks.length === 0 ? (
-              <EmptyState text="暂无该店铺运营任务" />
-            ) : (
-              tasks.map((task) => (
-                <div key={task.taskId} className="rounded-md border border-[var(--color-border-muted)] px-3 py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--color-text-primary)]" title={task.title || task.taskId}>
-                        {task.title || task.taskId}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]" title={task.blockedReason || task.failureMessage || task.taskType}>
-                        {task.blockedReason || task.failureMessage || task.taskType || '-'}
-                      </p>
-                    </div>
-                    <div className="shrink-0">{taskStatusBadge(task.status)}</div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
-                    <span>{task.taskType || '-'}</span>
-                    <span>{task.updatedAt || '-'}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        <Card title="经营归属" subtitle="ASM 运营负责人信息">
+          <DetailRow label="负责人" value={profile.ownerName} />
+          <DetailRow label="运营" value={profile.operatorName} />
+          <DetailRow label="运营账号" value={profile.operatorUsername} />
+          <DetailRow label="业务经理" value={profile.businessManagerName} />
+          <DetailRow label="业务经理账号" value={profile.businessManagerUsername} />
+          <DetailRow label="部门" value={profile.department} />
+          <DetailRow label="分公司" value={profile.subCompanyName} />
         </Card>
-
-        <Card
-          title="最近执行记录"
-          subtitle={activityLoading ? '正在读取执行证据' : `最近 ${runs.length} 条`}
-          actions={(
-            <Link to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`}>
-              <Button size="sm" variant="secondary">
-                <Activity className="h-4 w-4" />
-                去处理
-              </Button>
-            </Link>
-          )}
-        >
-          <div className="space-y-3">
-            {activityLoading ? (
-              <Loading text="加载执行记录..." />
-            ) : runs.length === 0 ? (
-              <EmptyState text="暂无该店铺执行记录" />
-            ) : (
-              runs.map((run) => (
-                <div key={run.runId} className="rounded-md border border-[var(--color-border-muted)] px-3 py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--color-text-primary)]" title={run.runId}>
-                        {run.taskType || run.taskId || run.runId}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]" title={run.failureMessage || run.runtime?.pageTitle || run.runId}>
-                        {run.failureMessage || run.runtime?.pageTitle || run.runId}
-                      </p>
-                    </div>
-                    <div className="shrink-0">{runStatusBadge(run.status, run.statusLabel)}</div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
-                    <span>{run.startedAt || '-'}</span>
-                    <span>{run.finishedAt || '进行中'}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        <Card title="联系与品牌" subtitle="ASM 店铺扩展资料">
+          <DetailRow label="店铺地址" value={profile.shopUrl} />
+          <DetailRow label="邮箱" value={profile.shopEmail} />
+          <DetailRow label="电话" value={profile.shopPhone} />
+          <DetailRow label="品牌" value={profile.brandName} />
         </Card>
       </div>
     </div>
