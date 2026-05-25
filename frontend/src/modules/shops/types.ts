@@ -4,6 +4,7 @@ export interface ShopProfile {
   platformCode: string
   asmStatus: string
   authorizationStatus: string
+  authorizationStatusLabel: string
   ownerName: string
   mainCategory: string
   dataCompleteness: string

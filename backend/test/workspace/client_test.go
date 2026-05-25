@@ -159,16 +159,17 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 				"message": "ok",
 				"data": map[string]any{
 					"items": []map[string]any{{
-						"shopId":              " shop-asm-001 ",
-						"shopName":            " 真实 ASM 店铺 ",
-						"platformCode":        "1688",
-						"asmStatus":           "connected",
-						"authorizationStatus": "valid",
-						"ownerName":           "运营一组",
-						"mainCategory":        "日用百货",
-						"dataCompleteness":    "complete",
-						"lastSyncedAt":        "2026-05-23T10:00:00+08:00",
-						"source":              "asm",
+						"shopId":                   " shop-asm-001 ",
+						"shopName":                 " 真实 ASM 店铺 ",
+						"platformCode":             "1688",
+						"asmStatus":                "connected",
+						"authorizationStatus":      "valid",
+						"authorizationStatusLabel": "已授权",
+						"ownerName":                "运营一组",
+						"mainCategory":             "日用百货",
+						"dataCompleteness":         "complete",
+						"lastSyncedAt":             "2026-05-23T10:00:00+08:00",
+						"source":                   "asm",
 					}},
 				},
 			})
@@ -196,7 +197,7 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 	if got.ShopID != "shop-asm-001" || got.ShopName != "真实 ASM 店铺" {
 		t.Fatalf("unexpected profile normalization: %#v", got)
 	}
-	if got.Source != "asm" || got.ASMStatus != "connected" || got.AuthorizationStatus != "valid" {
+	if got.Source != "asm" || got.ASMStatus != "connected" || got.AuthorizationStatus != "valid" || got.AuthorizationStatusLabel != "已授权" {
 		t.Fatalf("expected real ASM profile fields, got %#v", got)
 	}
 }

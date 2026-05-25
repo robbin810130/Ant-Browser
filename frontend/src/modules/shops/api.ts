@@ -11,6 +11,26 @@ export function asmStatusKind(status: string): AsmStatusKind {
   return 'unavailable'
 }
 
+export function asmStatusLabel(status: string): string {
+  const kind = asmStatusKind(status)
+  if (kind === 'connected') return 'ASM 已接入'
+  if (kind === 'error') return 'ASM 异常'
+  return 'ASM 待接入'
+}
+
+export function dataCompletenessLabel(status: string): string {
+  if (status === 'complete') return '完整'
+  if (status === 'partial') return '待完善'
+  return '未知'
+}
+
+export function sourceLabel(source: string): string {
+  if (source === 'asm') return 'ASM 店铺资料'
+  if (source === 'authorized_shop_projection') return '授权店铺投影'
+  if (source) return source
+  return '-'
+}
+
 export function normalizeShopProfile(input: any): ShopProfile {
   return {
     shopId: String(input?.shopId || ''),
@@ -18,6 +38,7 @@ export function normalizeShopProfile(input: any): ShopProfile {
     platformCode: String(input?.platformCode || ''),
     asmStatus: String(input?.asmStatus || 'unavailable'),
     authorizationStatus: String(input?.authorizationStatus || ''),
+    authorizationStatusLabel: String(input?.authorizationStatusLabel || input?.authorizationStatus || ''),
     ownerName: String(input?.ownerName || ''),
     mainCategory: String(input?.mainCategory || ''),
     dataCompleteness: String(input?.dataCompleteness || 'unknown'),

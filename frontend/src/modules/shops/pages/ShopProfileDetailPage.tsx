@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
-import { Button, Card, Loading, toast } from '../../../shared/components'
-import { fetchShopProfile } from '../api'
+import { Badge, Button, Card, Loading, toast } from '../../../shared/components'
+import { asmStatusKind, asmStatusLabel, dataCompletenessLabel, fetchShopProfile, sourceLabel } from '../api'
 import type { ShopProfile } from '../types'
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid gap-1 border-b border-[var(--color-border-muted)] py-3 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
       <span className="text-sm text-[var(--color-text-muted)]">{label}</span>
@@ -20,6 +21,33 @@ function platformLabel(platformCode: string) {
   if (!platformCode) return '-'
   if (platformCode === 'alibaba') return '1688 / Alibaba'
   return platformCode
+}
+
+function asmBadge(status: string) {
+  const kind = asmStatusKind(status)
+  if (kind === 'connected') return <Badge variant="success">{asmStatusLabel(status)}</Badge>
+  if (kind === 'error') return <Badge variant="error">{asmStatusLabel(status)}</Badge>
+  return <Badge variant="warning">{asmStatusLabel(status)}</Badge>
+}
+
+function authorizationBadge(profile: ShopProfile) {
+  const label = profile.authorizationStatusLabel || profile.authorizationStatus || '未配置'
+  if (profile.authorizationStatus === 'ready' || profile.authorizationStatus === 'valid') {
+    return <Badge variant="success">{label}</Badge>
+  }
+  if (profile.authorizationStatus === 'disabled' || profile.authorizationStatus === 'revoked') {
+    return <Badge variant="error">{label}</Badge>
+  }
+  if (profile.authorizationStatus) {
+    return <Badge variant="warning">{label}</Badge>
+  }
+  return <Badge variant="default">{label}</Badge>
+}
+
+function completenessBadge(status: string) {
+  if (status === 'complete') return <Badge variant="success">{dataCompletenessLabel(status)}</Badge>
+  if (status === 'partial') return <Badge variant="warning">{dataCompletenessLabel(status)}</Badge>
+  return <Badge variant="default">{dataCompletenessLabel(status)}</Badge>
 }
 
 export function ShopProfileDetailPage() {
@@ -100,6 +128,12 @@ export function ShopProfileDetailPage() {
           <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">
             {platformLabel(profile.platformCode)} · {profile.shopId}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {asmBadge(profile.asmStatus)}
+            {authorizationBadge(profile)}
+            {completenessBadge(profile.dataCompleteness)}
+            <Badge variant="default">{sourceLabel(profile.source)}</Badge>
+          </div>
         </div>
         <Link className="w-full shrink-0 sm:w-auto" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`}>
           <Button size="sm" className="w-full sm:w-auto">
@@ -118,11 +152,11 @@ export function ShopProfileDetailPage() {
           <DetailRow label="主营类目" value={profile.mainCategory} />
         </Card>
         <Card title="ASM 与执行摘要" subtitle="执行详情在店铺工作台查看">
-          <DetailRow label="ASM 状态" value={profile.asmStatus} />
-          <DetailRow label="授权状态" value={profile.authorizationStatus} />
-          <DetailRow label="数据完整度" value={profile.dataCompleteness} />
+          <DetailRow label="ASM 状态" value={asmBadge(profile.asmStatus)} />
+          <DetailRow label="授权状态" value={authorizationBadge(profile)} />
+          <DetailRow label="数据完整度" value={completenessBadge(profile.dataCompleteness)} />
           <DetailRow label="最近同步" value={profile.lastSyncedAt} />
-          <DetailRow label="数据来源" value={profile.source} />
+          <DetailRow label="数据来源" value={sourceLabel(profile.source)} />
         </Card>
       </div>
     </div>

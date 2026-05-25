@@ -1,22 +1,43 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertCircle, CheckCircle2, Database, RefreshCw, Store } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Database, RefreshCw, ShieldCheck, Store } from 'lucide-react'
 import { Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
-import { asmStatusKind, deriveShopProfileStats, fetchShopProfiles } from '../api'
+import {
+  asmStatusKind,
+  asmStatusLabel,
+  dataCompletenessLabel,
+  deriveShopProfileStats,
+  fetchShopProfiles,
+  sourceLabel,
+} from '../api'
 import type { ShopProfile } from '../types'
 
 function asmBadge(status: string) {
   const kind = asmStatusKind(status)
-  if (kind === 'connected') return <Badge variant="success">ASM 已接入</Badge>
-  if (kind === 'error') return <Badge variant="error">ASM 异常</Badge>
-  return <Badge variant="warning">ASM 待接入</Badge>
+  if (kind === 'connected') return <Badge variant="success">{asmStatusLabel(status)}</Badge>
+  if (kind === 'error') return <Badge variant="error">{asmStatusLabel(status)}</Badge>
+  return <Badge variant="warning">{asmStatusLabel(status)}</Badge>
 }
 
 function dataCompletenessBadge(status: string) {
-  if (status === 'complete') return <Badge variant="success">完整</Badge>
-  if (status === 'unknown') return <Badge variant="default">未知</Badge>
-  return <Badge variant="warning">待完善</Badge>
+  if (status === 'complete') return <Badge variant="success">{dataCompletenessLabel(status)}</Badge>
+  if (status === 'unknown') return <Badge variant="default">{dataCompletenessLabel(status)}</Badge>
+  return <Badge variant="warning">{dataCompletenessLabel(status)}</Badge>
+}
+
+function authorizationBadge(profile: ShopProfile) {
+  const label = profile.authorizationStatusLabel || profile.authorizationStatus || '-'
+  if (profile.authorizationStatus === 'ready' || profile.authorizationStatus === 'valid') {
+    return <Badge variant="success">{label}</Badge>
+  }
+  if (profile.authorizationStatus === 'disabled' || profile.authorizationStatus === 'revoked') {
+    return <Badge variant="error">{label}</Badge>
+  }
+  if (profile.authorizationStatus) {
+    return <Badge variant="warning">{label}</Badge>
+  }
+  return <Badge variant="default">未配置</Badge>
 }
 
 function platformLabel(platformCode: string) {
@@ -98,7 +119,7 @@ export function ShopProfileListPage() {
       key: 'authorizationStatus',
       title: '授权状态',
       width: 140,
-      render: (value) => mutedText(String(value || '')),
+      render: (_, record) => authorizationBadge(record),
     },
     {
       key: 'ownerName',
@@ -127,6 +148,12 @@ export function ShopProfileListPage() {
           {String(value || '-')}
         </span>
       ),
+    },
+    {
+      key: 'source',
+      title: '来源',
+      width: 150,
+      render: (value) => <Badge variant="default">{sourceLabel(String(value || ''))}</Badge>,
     },
   ]
 
@@ -159,6 +186,13 @@ export function ShopProfileListPage() {
       </div>
 
       <Card padding="none">
+        <div className="flex flex-col gap-2 border-b border-[var(--color-border-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <span>资料源：ASM 店铺资料</span>
+          <span className="inline-flex items-center gap-1 text-[var(--color-text-secondary)]">
+            <ShieldCheck className="h-4 w-4" />
+            真实接入状态
+          </span>
+        </div>
         <Table
           columns={columns}
           data={profiles}
