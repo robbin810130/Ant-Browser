@@ -276,6 +276,13 @@ input, select, textarea {
   position: relative;
 }
 
+.client-data-table-fill {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .client-data-table-grid {
   table-layout: fixed;
   border-collapse: separate;
@@ -293,8 +300,37 @@ input, select, textarea {
 }
 
 .client-data-table-pagination {
+  flex-shrink: 0;
   border-top: 1px solid var(--color-border-muted);
   border-bottom: 0;
+}
+
+.client-data-table-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.client-data-table-fill .client-data-table-toolbar {
+  flex-shrink: 0;
+}
+
+.client-data-table-fill .client-data-table-scroll {
+  flex: 1;
+}
+
+.client-data-table-selection-cell {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.client-data-table-selection-cell input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent);
 }
 
 .client-data-table-column-panel {
@@ -341,8 +377,20 @@ input, select, textarea {
   box-shadow: -8px 0 12px -12px rgb(15 23 42 / 0.45);
 }
 
+.client-data-table-cell-fixed-left {
+  position: sticky;
+  z-index: 6;
+  background: var(--color-bg-surface);
+  box-shadow: 8px 0 12px -12px rgb(15 23 42 / 0.45);
+}
+
 .client-data-table-cell-fixed-right-header {
   z-index: 20;
+  background: var(--color-bg-muted);
+}
+
+.client-data-table-cell-fixed-left-header {
+  z-index: 21;
   background: var(--color-bg-muted);
 }
 

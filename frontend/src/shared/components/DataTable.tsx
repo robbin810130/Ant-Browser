@@ -11,7 +11,7 @@ export interface DataTableColumn<T> {
   title: ReactNode
   width?: string | number
   minWidth?: number
-  fixed?: 'right'
+  fixed?: 'left' | 'right'
   align?: 'left' | 'center' | 'right'
   render?: (value: any, record: T, index: number) => ReactNode
   sortValue?: (record: T) => string | number | null | undefined
@@ -23,6 +23,8 @@ export interface DataTableColumn<T> {
   defaultVisible?: boolean
 }
 
+type StoredVisibleColumns = string[] | { keys?: unknown; version?: number }
+
 interface DataTableProps<T> {
   columns: DataTableColumn<T>[]
   data: T[]
@@ -33,6 +35,8 @@ interface DataTableProps<T> {
   maxHeight?: string
   defaultPageSize?: number
   pageSizeOptions?: number[]
+  selectable?: boolean
+  fillHeight?: boolean
   onRowClick?: (record: T) => void
 }
 
@@ -75,6 +79,8 @@ export function DataTable<T extends Record<string, any>>({
   maxHeight = 'calc(100vh - 360px)',
   defaultPageSize = 25,
   pageSizeOptions = [25, 50, 100],
+  selectable = false,
+  fillHeight = false,
   onRowClick,
 }: DataTableProps<T>) {
   const columnKeys = useMemo(() => columns.map((column) => column.key), [columns])
@@ -86,9 +92,15 @@ export function DataTable<T extends Record<string, any>>({
   const [visibleKeys, setVisibleKeys] = useState<string[]>(() => {
     if (!storageKey) return defaultVisibleKeys
     try {
-      const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]')
+      const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]') as StoredVisibleColumns
       if (Array.isArray(parsed) && parsed.every((key) => columnKeys.includes(String(key)))) {
-        return parsed.length > 0 ? parsed.map(String) : defaultVisibleKeys
+        const storedKeys = parsed.map(String)
+        const mergedKeys = columnKeys.filter((key) => storedKeys.includes(key) || defaultVisibleKeys.includes(key))
+        return parsed.length > 0 ? mergedKeys : defaultVisibleKeys
+      }
+      if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.keys) && parsed.keys.every((key) => columnKeys.includes(String(key)))) {
+        const storedKeys = parsed.keys.map(String)
+        return storedKeys.length > 0 ? storedKeys : defaultVisibleKeys
       }
     } catch {
       // localStorage can be unavailable in restricted shells.
@@ -100,6 +112,7 @@ export function DataTable<T extends Record<string, any>>({
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(defaultPageSize)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     if (!widthStorageKey) return {}
     try {
@@ -118,7 +131,7 @@ export function DataTable<T extends Record<string, any>>({
   useEffect(() => {
     if (!storageKey) return
     try {
-      localStorage.setItem(storageKey, JSON.stringify(visibleKeys))
+      localStorage.setItem(storageKey, JSON.stringify({ version: 2, keys: visibleKeys }))
     } catch {
       // ignore storage write errors
     }
@@ -147,6 +160,18 @@ export function DataTable<T extends Record<string, any>>({
     return clampColumnWidth(columnWidths[column.key] ?? parseColumnWidth(column.width), minWidth)
   }
 
+  const fixedLeftOffsets = useMemo(() => {
+    let offset = selectable ? 48 : 0
+    const offsets: Record<string, number> = {}
+    for (const column of visibleColumns) {
+      if (column.fixed === 'left') {
+        offsets[column.key] = offset
+        offset += getColumnWidth(column)
+      }
+    }
+    return offsets
+  }, [columnWidths, selectable, visibleColumns])
+
   const fixedRightOffsets = useMemo(() => {
     let offset = 0
     const offsets: Record<string, number> = {}
@@ -161,8 +186,8 @@ export function DataTable<T extends Record<string, any>>({
   }, [columnWidths, visibleColumns])
 
   const tableWidth = useMemo(
-    () => visibleColumns.reduce((total, column) => total + getColumnWidth(column), 0),
-    [columnWidths, visibleColumns],
+    () => visibleColumns.reduce((total, column) => total + getColumnWidth(column), selectable ? 48 : 0),
+    [columnWidths, selectable, visibleColumns],
   )
 
   const filteredRows = useMemo(() => {
@@ -194,14 +219,24 @@ export function DataTable<T extends Record<string, any>>({
   const endIndex = Math.min(startIndex + pageSize, sortedRows.length)
   const pageRows = sortedRows.slice(startIndex, endIndex)
 
-  useEffect(() => {
-    if (page !== safePage) setPage(safePage)
-  }, [page, safePage])
-
   const getRowKey = (record: T, index: number) => {
     if (typeof rowKey === 'function') return rowKey(record)
     return String(record[rowKey] ?? index)
   }
+
+  const pageRowKeys = useMemo(() => pageRows.map((record, index) => getRowKey(record, startIndex + index)), [pageRows, rowKey, startIndex])
+  const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys])
+  const selectedPageCount = pageRowKeys.filter((key) => selectedKeySet.has(key)).length
+  const allPageSelected = pageRowKeys.length > 0 && selectedPageCount === pageRowKeys.length
+  const somePageSelected = selectedPageCount > 0 && selectedPageCount < pageRowKeys.length
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage)
+  }, [page, safePage])
+
+  useEffect(() => {
+    setSelectedKeys((current) => current.filter((key) => sortedRows.some((record, index) => getRowKey(record, index) === key)))
+  }, [sortedRows, rowKey])
 
   const toggleSort = (column: DataTableColumn<T>) => {
     if (!column.sortable) return
@@ -229,6 +264,7 @@ export function DataTable<T extends Record<string, any>>({
     setKeyword('')
     setSortState(null)
     setPage(1)
+    setSelectedKeys([])
   }
 
   const startColumnResize = (event: ReactMouseEvent, column: DataTableColumn<T>) => {
@@ -270,9 +306,37 @@ export function DataTable<T extends Record<string, any>>({
     if (column.fixed === 'right') {
       style.position = 'sticky'
       style.right = fixedRightOffsets[column.key] ?? 0
+    } else if (column.fixed === 'left') {
+      style.position = 'sticky'
+      style.left = fixedLeftOffsets[column.key] ?? 0
     }
 
     return style
+  }
+
+  const togglePageSelection = () => {
+    if (pageRowKeys.length === 0) return
+    setSelectedKeys((current) => {
+      const next = new Set(current)
+      if (allPageSelected) {
+        pageRowKeys.forEach((key) => next.delete(key))
+      } else {
+        pageRowKeys.forEach((key) => next.add(key))
+      }
+      return Array.from(next)
+    })
+  }
+
+  const toggleRowSelection = (key: string) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return Array.from(next)
+    })
   }
 
   if (loading) {
@@ -287,7 +351,7 @@ export function DataTable<T extends Record<string, any>>({
   }
 
   return (
-    <div className="client-data-table">
+    <div className={clsx('client-data-table', fillHeight && 'client-data-table-fill')}>
       <div className="client-data-table-toolbar">
         <div className="relative min-w-0 flex-1 sm:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
@@ -328,15 +392,31 @@ export function DataTable<T extends Record<string, any>>({
         </div>
       </div>
 
-      <div className="overflow-auto" style={{ maxHeight }}>
+      <div className="client-data-table-scroll" style={fillHeight ? undefined : { maxHeight }}>
         <table className="client-data-table-grid" style={{ width: tableWidth, minWidth: tableWidth }}>
           <thead className="sticky top-0 z-10">
             <tr>
+              {selectable ? (
+                <th
+                  className="client-data-table-selection-cell client-data-table-cell-fixed-left client-data-table-cell-fixed-left-header bg-[var(--color-bg-muted)]"
+                  style={{ left: 0 }}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="选择当前页店铺"
+                    aria-checked={somePageSelected ? 'mixed' : allPageSelected}
+                    checked={allPageSelected}
+                    disabled={pageRowKeys.length === 0}
+                    onChange={togglePageSelection}
+                  />
+                </th>
+              ) : null}
               {visibleColumns.map((column) => (
                 <th
                   key={column.key}
                   className={clsx(
                     'relative bg-[var(--color-bg-muted)] px-4 py-3 text-left align-top text-xs font-semibold text-[var(--color-text-muted)]',
+                    column.fixed === 'left' && 'client-data-table-cell-fixed-left client-data-table-cell-fixed-left-header',
                     column.fixed === 'right' && 'client-data-table-cell-fixed-right client-data-table-cell-fixed-right-header',
                     column.align === 'center' && 'text-center',
                     column.align === 'right' && 'text-right',
@@ -374,7 +454,7 @@ export function DataTable<T extends Record<string, any>>({
           <tbody className="divide-y divide-[var(--color-border-muted)] bg-[var(--color-bg-surface)]">
             {pageRows.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length} className="px-4 py-16 text-center text-sm text-[var(--color-text-muted)]">
+                <td colSpan={visibleColumns.length + (selectable ? 1 : 0)} className="px-4 py-16 text-center text-sm text-[var(--color-text-muted)]">
                   {emptyText}
                 </td>
               </tr>
@@ -385,11 +465,26 @@ export function DataTable<T extends Record<string, any>>({
                   className={clsx('transition-colors hover:bg-[var(--color-bg-muted)]/60', onRowClick && 'cursor-pointer')}
                   onClick={() => onRowClick?.(record)}
                 >
+                  {selectable ? (
+                    <td
+                      className="client-data-table-selection-cell client-data-table-cell-fixed-left bg-[var(--color-bg-surface)]"
+                      style={{ left: 0 }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`选择第 ${startIndex + index + 1} 行`}
+                        checked={selectedKeySet.has(getRowKey(record, startIndex + index))}
+                        onChange={() => toggleRowSelection(getRowKey(record, startIndex + index))}
+                      />
+                    </td>
+                  ) : null}
                   {visibleColumns.map((column) => (
                     <td
                       key={column.key}
                       className={clsx(
                         'px-4 py-3.5 align-top text-sm text-[var(--color-text-secondary)]',
+                        column.fixed === 'left' && 'client-data-table-cell-fixed-left',
                         column.fixed === 'right' && 'client-data-table-cell-fixed-right',
                         column.align === 'center' && 'text-center',
                         column.align === 'right' && 'text-right',
