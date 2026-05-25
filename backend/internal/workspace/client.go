@@ -134,6 +134,7 @@ func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
 		item.PlatformCode = strings.TrimSpace(item.PlatformCode)
 		item.PlatformName = strings.TrimSpace(item.PlatformName)
 		item.PlatformSubtype = strings.TrimSpace(item.PlatformSubtype)
+		item.ShopStatus = strings.TrimSpace(item.ShopStatus)
 		item.ASMStatus = strings.TrimSpace(item.ASMStatus)
 		item.AuthorizationStatus = strings.TrimSpace(item.AuthorizationStatus)
 		item.AuthorizationStatusLabel = strings.TrimSpace(item.AuthorizationStatusLabel)
@@ -147,10 +148,25 @@ func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
 		item.ShopURL = strings.TrimSpace(item.ShopURL)
 		item.ShopEmail = strings.TrimSpace(item.ShopEmail)
 		item.ShopPhone = strings.TrimSpace(item.ShopPhone)
+		item.LegalRepName = strings.TrimSpace(item.LegalRepName)
+		item.BusinessLicense = strings.TrimSpace(item.BusinessLicense)
+		item.UnifiedSocialCode = strings.TrimSpace(item.UnifiedSocialCode)
+		item.RegisteredAddress = strings.TrimSpace(item.RegisteredAddress)
+		item.CategoryIDs = trimStringSlice(item.CategoryIDs)
+		item.CategoryNames = trimStringSlice(item.CategoryNames)
 		item.BrandName = strings.TrimSpace(item.BrandName)
+		item.BrandIDs = trimStringSlice(item.BrandIDs)
 		item.AdvancedMemberName = strings.TrimSpace(item.AdvancedMemberName)
+		item.TrustPassExpireAt = strings.TrimSpace(item.TrustPassExpireAt)
+		item.JSTShopSummary = strings.TrimSpace(item.JSTShopSummary)
+		item.MabangShopSummary = strings.TrimSpace(item.MabangShopSummary)
+		item.ERPShopSummary = strings.TrimSpace(item.ERPShopSummary)
+		item.AbnormalSummary = strings.TrimSpace(item.AbnormalSummary)
+		item.TableSource = strings.TrimSpace(item.TableSource)
 		item.MainCategory = strings.TrimSpace(item.MainCategory)
 		item.DataCompleteness = strings.TrimSpace(item.DataCompleteness)
+		item.SourceCreatedAt = strings.TrimSpace(item.SourceCreatedAt)
+		item.SourceUpdatedAt = strings.TrimSpace(item.SourceUpdatedAt)
 		item.LastSyncedAt = strings.TrimSpace(item.LastSyncedAt)
 		item.Source = strings.TrimSpace(item.Source)
 		if item.ASMStatus == "" {
@@ -165,6 +181,20 @@ func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
 		profiles = append(profiles, item)
 	}
 	return profiles
+}
+
+func trimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			trimmed = append(trimmed, value)
+		}
+	}
+	return trimmed
 }
 
 func (c *WorkspaceClient) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {

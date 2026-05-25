@@ -41,6 +41,15 @@ export function sourceLabel(source: string): string {
   return '-'
 }
 
+function normalizeStringArray(input: unknown): string[] {
+  return Array.isArray(input) ? input.map((item) => String(item || '').trim()).filter(Boolean) : []
+}
+
+function normalizeNumber(input: unknown): number {
+  const value = Number(input)
+  return Number.isFinite(value) ? value : 0
+}
+
 export function normalizeShopProfile(input: any): ShopProfile {
   return {
     shopId: String(input?.shopId || ''),
@@ -52,6 +61,8 @@ export function normalizeShopProfile(input: any): ShopProfile {
     platformCode: String(input?.platformCode || ''),
     platformName: String(input?.platformName || ''),
     platformSubtype: String(input?.platformSubtype || ''),
+    shopStatusCode: normalizeNumber(input?.shopStatusCode),
+    shopStatus: String(input?.shopStatus || ''),
     asmStatus: String(input?.asmStatus || 'unavailable'),
     authorizationStatus: String(input?.authorizationStatus || ''),
     authorizationStatusLabel: String(input?.authorizationStatusLabel || input?.authorizationStatus || ''),
@@ -65,10 +76,31 @@ export function normalizeShopProfile(input: any): ShopProfile {
     shopUrl: String(input?.shopUrl || ''),
     shopEmail: String(input?.shopEmail || ''),
     shopPhone: String(input?.shopPhone || ''),
+    legalRepName: String(input?.legalRepName || ''),
+    businessLicense: String(input?.businessLicense || ''),
+    unifiedSocialCode: String(input?.unifiedSocialCode || ''),
+    registeredAddress: String(input?.registeredAddress || ''),
+    categoryIds: normalizeStringArray(input?.categoryIds),
+    categoryNames: normalizeStringArray(input?.categoryNames),
     brandName: String(input?.brandName || ''),
+    brandIds: normalizeStringArray(input?.brandIds),
+    advancedMember: normalizeNumber(input?.advancedMember),
     advancedMemberName: String(input?.advancedMemberName || ''),
+    trustPassExpireAt: String(input?.trustPassExpireAt || ''),
+    jstShopCount: normalizeNumber(input?.jstShopCount),
+    jstShopSummary: String(input?.jstShopSummary || ''),
+    mabangShopCount: normalizeNumber(input?.mabangShopCount),
+    mabangShopSummary: String(input?.mabangShopSummary || ''),
+    erpShopCount: normalizeNumber(input?.erpShopCount),
+    erpShopSummary: String(input?.erpShopSummary || ''),
+    abnormalCount: normalizeNumber(input?.abnormalCount),
+    abnormalSummary: String(input?.abnormalSummary || ''),
+    tableSource: String(input?.tableSource || ''),
+    isPush: normalizeNumber(input?.isPush),
     mainCategory: String(input?.mainCategory || ''),
     dataCompleteness: String(input?.dataCompleteness || 'unknown'),
+    sourceCreatedAt: String(input?.sourceCreatedAt || ''),
+    sourceUpdatedAt: String(input?.sourceUpdatedAt || ''),
     lastSyncedAt: String(input?.lastSyncedAt || ''),
     source: String(input?.source || ''),
   }

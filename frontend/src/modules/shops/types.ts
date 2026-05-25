@@ -8,6 +8,8 @@ export interface ShopProfile {
   platformCode: string
   platformName: string
   platformSubtype: string
+  shopStatusCode: number
+  shopStatus: string
   asmStatus: string
   authorizationStatus: string
   authorizationStatusLabel: string
@@ -21,10 +23,31 @@ export interface ShopProfile {
   shopUrl: string
   shopEmail: string
   shopPhone: string
+  legalRepName: string
+  businessLicense: string
+  unifiedSocialCode: string
+  registeredAddress: string
+  categoryIds: string[]
+  categoryNames: string[]
   brandName: string
+  brandIds: string[]
+  advancedMember: number
   advancedMemberName: string
+  trustPassExpireAt: string
+  jstShopCount: number
+  jstShopSummary: string
+  mabangShopCount: number
+  mabangShopSummary: string
+  erpShopCount: number
+  erpShopSummary: string
+  abnormalCount: number
+  abnormalSummary: string
+  tableSource: string
+  isPush: number
   mainCategory: string
   dataCompleteness: string
+  sourceCreatedAt: string
+  sourceUpdatedAt: string
   lastSyncedAt: string
   source: string
 }
