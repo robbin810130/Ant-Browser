@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, HardDrive, Link2, Monitor, RefreshCw, Store, WifiOff } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button, Card, toast } from '../../../shared/components'
+import { fetchShopProfiles } from '../../shops/api'
 import {
   deriveWorkspaceDashboardStats,
   fetchWorkspaceAuthorizedShops,
   fetchWorkspaceSummary,
 } from '../api'
 import { WorkspaceSummaryCards } from '../components/WorkspaceSummaryCards'
+import type { ShopProfile } from '../../shops/types'
 import type { WorkspaceAuthorizedShop, WorkspaceSummary } from '../types'
 
 function statusText(summary: WorkspaceSummary) {
@@ -30,10 +32,14 @@ function statusTone(summary: WorkspaceSummary) {
 export function WorkspaceDashboardPage() {
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null)
   const [shops, setShops] = useState<WorkspaceAuthorizedShop[]>([])
+  const [shopProfiles, setShopProfiles] = useState<ShopProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  const stats = useMemo(() => deriveWorkspaceDashboardStats(shops), [shops])
+  const stats = useMemo(() => ({
+    ...deriveWorkspaceDashboardStats(shops),
+    asmShopProfileCount: shopProfiles.length,
+  }), [shopProfiles.length, shops])
 
   async function load(silent = false) {
     if (silent) {
@@ -43,12 +49,14 @@ export function WorkspaceDashboardPage() {
     }
 
     try {
-      const [nextSummary, nextShops] = await Promise.all([
+      const [nextSummary, nextShops, nextShopProfiles] = await Promise.all([
         fetchWorkspaceSummary(),
         fetchWorkspaceAuthorizedShops(),
+        fetchShopProfiles(),
       ])
       setSummary(nextSummary)
       setShops(nextShops)
+      setShopProfiles(nextShopProfiles)
     } catch (error) {
       console.error('load workspace dashboard failed', error)
       toast.error('加载 Workspace 总览失败')
@@ -163,11 +171,15 @@ export function WorkspaceDashboardPage() {
             <div className="rounded-xl border border-[var(--color-border-muted)] bg-[var(--color-bg-subtle)] p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                 <Store className="h-4 w-4 text-[var(--color-text-secondary)]" />
-                店铺授权概况
+                店铺与授权概况
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-[var(--color-text-muted)]">已授权账号</span>
+                  <span className="text-[var(--color-text-muted)]">ASM 店铺资料</span>
+                  <span className="text-[var(--color-text-primary)]">{loading ? '-' : stats.asmShopProfileCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--color-text-muted)]">授权实例</span>
                   <span className="text-[var(--color-text-primary)]">{loading ? '-' : stats.totalAccounts}</span>
                 </div>
                 <div className="flex items-center justify-between">

@@ -64,6 +64,7 @@ export function deriveWorkspaceDashboardStats(shops: WorkspaceAuthorizedShop[]):
   const runningInstanceCount = shops.filter((shop) => shop.instanceRunning).length
 
   return {
+    asmShopProfileCount: 0,
     totalAccounts: shops.length,
     readyShopCount,
     manualAttentionCount,
