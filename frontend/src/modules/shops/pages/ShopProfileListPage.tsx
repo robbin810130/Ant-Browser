@@ -58,8 +58,8 @@ export function ShopProfileListPage() {
   }
 
   return (
-    <div className="space-y-5 p-5 animate-fade-in">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden animate-fade-in">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold text-[var(--color-text-primary)]">店铺资料</h1>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
@@ -78,14 +78,14 @@ export function ShopProfileListPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="店铺资料" value={loading ? '-' : stats.total} icon={<Store className="h-5 w-5" />} />
         <StatCard title="ASM 已接入" value={loading ? '-' : stats.asmConnected} icon={<CheckCircle2 className="h-5 w-5" />} />
         <StatCard title="ASM 待接入" value={loading ? '-' : stats.unavailable} icon={<AlertCircle className="h-5 w-5" />} />
         <StatCard title="资料待完善" value={loading ? '-' : stats.incomplete} icon={<Database className="h-5 w-5" />} />
       </div>
 
-      <Card padding="none">
+      <Card padding="none" className="flex min-h-0 flex-1 flex-col" bodyClassName="flex min-h-0 flex-1 flex-col">
         {errorMessage ? (
           <div className="border-b border-[var(--color-border-muted)] p-4">
             <Alert
@@ -109,7 +109,8 @@ export function ShopProfileListPage() {
           rowKey="shopId"
           loading={loading}
           emptyText={errorMessage ? '店铺资料未连接' : asmSnapshotMissing ? 'ASM 店铺资料尚未同步' : '暂无 ASM 店铺资料'}
-          maxHeight="calc(100vh - 330px)"
+          fillHeight
+          selectable
           storageKey="client-shop-profile-table-columns"
           onRowClick={openProfile}
         />

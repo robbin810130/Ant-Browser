@@ -63,6 +63,8 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
       key: 'shopName',
       title: '店铺',
       width: 280,
+      minWidth: 240,
+      fixed: 'left',
       sortable: true,
       filterable: true,
       sortValue: (profile) => profile.shopName || profile.shopId,
