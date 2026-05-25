@@ -40,10 +40,18 @@ export function authorizationBadge(profile: ShopProfile) {
   if (profile.authorizationStatus === 'ready' || profile.authorizationStatus === 'valid') {
     return <Badge variant="success">{label}</Badge>
   }
-  if (profile.authorizationStatus === 'disabled' || profile.authorizationStatus === 'revoked') {
+  if (
+    profile.authorizationStatus === 'validation_failed' ||
+    profile.authorizationStatus === 'disabled' ||
+    profile.authorizationStatus === 'revoked'
+  ) {
     return <Badge variant="error">{label}</Badge>
   }
-  if (profile.authorizationStatus) {
+  if (
+    profile.authorizationStatus === 'binding' ||
+    profile.authorizationStatus === 'awaiting_verification' ||
+    profile.authorizationStatus === 'relogin_required'
+  ) {
     return <Badge variant="warning">{label}</Badge>
   }
   return <Badge variant="default">{label}</Badge>
