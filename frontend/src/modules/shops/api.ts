@@ -26,6 +26,7 @@ export function dataCompletenessLabel(status: string): string {
 
 export function sourceLabel(source: string): string {
   if (source === 'asm') return 'ASM 店铺资料'
+  if (source === 'dev_mock') return '开发模拟资料'
   if (source === 'authorized_shop_projection') return '授权店铺投影'
   if (source) return source
   return '-'
