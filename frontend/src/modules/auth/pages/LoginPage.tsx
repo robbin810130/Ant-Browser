@@ -216,6 +216,9 @@ export function LoginPage() {
                     }}
                     placeholder="请输入用户名"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     error={Boolean(errorMessage) && !username.trim()}
                     disabled={submitting}
                   />

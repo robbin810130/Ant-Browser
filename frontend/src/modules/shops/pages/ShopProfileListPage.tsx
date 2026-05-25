@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Database, RefreshCw, ShieldCheck, Store } from 'lucide-react'
-import { Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
+import { Alert, Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import {
   asmStatusKind,
@@ -58,9 +58,11 @@ export function ShopProfileListPage() {
   const [profiles, setProfiles] = useState<ShopProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   const stats = useMemo(() => deriveShopProfileStats(profiles), [profiles])
   const usingMockProfiles = profiles.some((profile) => profile.source === 'dev_mock')
+  const asmSnapshotMissing = !loading && !errorMessage && profiles.length === 0
 
   async function load(silent = false) {
     if (silent) {
@@ -70,10 +72,14 @@ export function ShopProfileListPage() {
     }
 
     try {
+      setErrorMessage('')
       setProfiles(await fetchShopProfiles())
     } catch (error) {
       console.error('load shop profiles failed', error)
-      toast.error('加载店铺资料失败')
+      const message = error instanceof Error ? error.message : '加载店铺资料失败'
+      setProfiles([])
+      setErrorMessage(message)
+      toast.error(message)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -188,18 +194,49 @@ export function ShopProfileListPage() {
 
       <Card padding="none">
         <div className="flex flex-col gap-2 border-b border-[var(--color-border-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>{usingMockProfiles ? '资料源：开发模拟资料' : '资料源：ASM 店铺资料'}</span>
+          <span>
+            {errorMessage
+              ? '资料源：未连接'
+              : asmSnapshotMissing
+                ? '资料源：ASM 店铺资料未同步'
+                : usingMockProfiles
+                  ? '资料源：开发模拟资料'
+                  : '资料源：ASM 店铺资料'}
+          </span>
           <span className="inline-flex items-center gap-1 text-[var(--color-text-secondary)]">
             <ShieldCheck className="h-4 w-4" />
-            {usingMockProfiles ? '当前未连接 Wails 客户端后端' : '真实接入状态'}
+            {errorMessage
+              ? '请在 Ant Browser 客户端本体中验证'
+              : asmSnapshotMissing
+                ? '等待 ASM 同步'
+                : usingMockProfiles
+                  ? '当前使用显式开发模拟模式'
+                  : '真实接入状态'}
           </span>
         </div>
+        {errorMessage ? (
+          <div className="border-b border-[var(--color-border-muted)] p-4">
+            <Alert
+              type="warning"
+              title="店铺资料未连接真实客户端链路"
+              message={errorMessage}
+            />
+          </div>
+        ) : asmSnapshotMissing ? (
+          <div className="border-b border-[var(--color-border-muted)] p-4">
+            <Alert
+              type="warning"
+              title="ASM 店铺资料尚未同步"
+              message="当前客户端已连接真实 workspace，但服务端没有可用的 ASM 店铺快照。请先配置 ASM API 与登录令牌并执行 ASM 店铺同步，完成后再刷新本页。"
+            />
+          </div>
+        ) : null}
         <Table
           columns={columns}
           data={profiles}
           rowKey="shopId"
           loading={loading}
-          emptyText="暂无 ASM 店铺资料"
+          emptyText={errorMessage ? '店铺资料未连接' : asmSnapshotMissing ? 'ASM 店铺资料尚未同步' : '暂无 ASM 店铺资料'}
           maxHeight="calc(100vh - 340px)"
           className="min-w-0"
         />

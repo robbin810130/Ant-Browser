@@ -126,11 +126,28 @@ type OpenReportRequest struct {
 type ShopProfileRecord struct {
 	ShopID                   string `json:"shopId"`
 	ShopName                 string `json:"shopName"`
+	ASMShopID                string `json:"asmShopId"`
+	ShopCode                 string `json:"shopCode"`
+	ShopAlias                string `json:"shopAlias"`
+	FullShopName             string `json:"fullShopName"`
 	PlatformCode             string `json:"platformCode"`
+	PlatformName             string `json:"platformName"`
+	PlatformSubtype          string `json:"platformSubtype"`
 	ASMStatus                string `json:"asmStatus"`
 	AuthorizationStatus      string `json:"authorizationStatus"`
 	AuthorizationStatusLabel string `json:"authorizationStatusLabel"`
 	OwnerName                string `json:"ownerName"`
+	OperatorName             string `json:"operatorName"`
+	OperatorUsername         string `json:"operatorUsername"`
+	BusinessManagerName      string `json:"businessManagerName"`
+	BusinessManagerUsername  string `json:"businessManagerUsername"`
+	Department               string `json:"department"`
+	SubCompanyName           string `json:"subCompanyName"`
+	ShopURL                  string `json:"shopUrl"`
+	ShopEmail                string `json:"shopEmail"`
+	ShopPhone                string `json:"shopPhone"`
+	BrandName                string `json:"brandName"`
+	AdvancedMemberName       string `json:"advancedMemberName"`
 	MainCategory             string `json:"mainCategory"`
 	DataCompleteness         string `json:"dataCompleteness"`
 	LastSyncedAt             string `json:"lastSyncedAt"`

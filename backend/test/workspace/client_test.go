@@ -161,11 +161,28 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 					"items": []map[string]any{{
 						"shopId":                   " shop-asm-001 ",
 						"shopName":                 " 真实 ASM 店铺 ",
+						"asmShopId":                "1001",
+						"shopCode":                 "b2b-code-001",
+						"shopAlias":                "真实 ASM 店铺",
+						"fullShopName":             "阿里巴巴-真实 ASM 店铺",
 						"platformCode":             "1688",
+						"platformName":             "1688",
+						"platformSubtype":          "supplier",
 						"asmStatus":                "connected",
 						"authorizationStatus":      "valid",
 						"authorizationStatusLabel": "已授权",
 						"ownerName":                "运营一组",
+						"operatorName":             "ASM 运营",
+						"operatorUsername":         "asm_operator",
+						"businessManagerName":      "ASM 业务",
+						"businessManagerUsername":  "asm_manager",
+						"department":               "销售部",
+						"subCompanyName":           "华南分公司",
+						"shopUrl":                  "https://example.1688.com",
+						"shopEmail":                "shop@example.com",
+						"shopPhone":                "13800000000",
+						"brandName":                "真实品牌",
+						"advancedMemberName":       "高级会员",
 						"mainCategory":             "日用百货",
 						"dataCompleteness":         "complete",
 						"lastSyncedAt":             "2026-05-23T10:00:00+08:00",
@@ -199,6 +216,9 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 	}
 	if got.Source != "asm" || got.ASMStatus != "connected" || got.AuthorizationStatus != "valid" || got.AuthorizationStatusLabel != "已授权" {
 		t.Fatalf("expected real ASM profile fields, got %#v", got)
+	}
+	if got.ASMShopID != "1001" || got.FullShopName != "阿里巴巴-真实 ASM 店铺" || got.OperatorName != "ASM 运营" || got.BusinessManagerName != "ASM 业务" {
+		t.Fatalf("expected expanded ASM profile fields, got %#v", got)
 	}
 }
 
