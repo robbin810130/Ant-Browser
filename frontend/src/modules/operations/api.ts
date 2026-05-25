@@ -29,6 +29,14 @@ export function normalizeOperationTask(input: any): OperationTask {
   }
 }
 
+export function operationTaskStatusLabel(status: OperationTaskStatus): string {
+  if (status === 'running') return '运行中'
+  if (status === 'blocked') return '阻塞'
+  if (status === 'failed') return '失败'
+  if (status === 'completed') return '已完成'
+  return '等待中'
+}
+
 function buildOperationTaskQuery(query: OperationTaskQuery = {}): workspace.OperationTaskQuery {
   return {
     Limit: Number(query.Limit ?? query.limit ?? 100),
@@ -40,7 +48,7 @@ function buildOperationTaskQuery(query: OperationTaskQuery = {}): workspace.Oper
 
 export async function fetchOperationTasks(query: OperationTaskQuery = {}): Promise<OperationTask[]> {
   if (useDevWorkspaceFallback()) {
-    return [
+    let items = [
       normalizeOperationTask({
         taskId: 'op-price-audit',
         shopId: 'shop-ready',
@@ -73,6 +81,14 @@ export async function fetchOperationTasks(query: OperationTaskQuery = {}): Promi
         failureCode: 'AUTH_EXPIRED',
       }),
     ]
+    const shopId = String(query.ShopID ?? query.shopId ?? '').trim()
+    const status = String(query.Status ?? query.status ?? '').trim()
+    const taskType = String(query.TaskType ?? query.taskType ?? '').trim()
+    const limit = Number(query.Limit ?? query.limit ?? 100)
+    if (shopId) items = items.filter((item) => item.shopId === shopId)
+    if (status) items = items.filter((item) => item.status === status)
+    if (taskType) items = items.filter((item) => item.taskType === taskType)
+    return items.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 100)
   }
 
   const payload = await WorkspaceOperationTasks(buildOperationTaskQuery(query))

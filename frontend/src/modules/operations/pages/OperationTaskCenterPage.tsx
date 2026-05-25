@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ListChecks, RefreshCw } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
-import { deriveOperationTaskCounts, fetchOperationTasks } from '../api'
+import { deriveOperationTaskCounts, fetchOperationTasks, operationTaskStatusLabel } from '../api'
 import type { OperationTask, OperationTaskStatus } from '../types'
 
 function statusBadge(status: OperationTaskStatus) {
-  if (status === 'running') return <Badge variant="info">运行中</Badge>
-  if (status === 'blocked') return <Badge variant="warning">阻塞</Badge>
-  if (status === 'failed') return <Badge variant="error">失败</Badge>
-  if (status === 'completed') return <Badge variant="success">已完成</Badge>
-  return <Badge variant="default">等待中</Badge>
+  if (status === 'running') return <Badge variant="info">{operationTaskStatusLabel(status)}</Badge>
+  if (status === 'blocked') return <Badge variant="warning">{operationTaskStatusLabel(status)}</Badge>
+  if (status === 'failed') return <Badge variant="error">{operationTaskStatusLabel(status)}</Badge>
+  if (status === 'completed') return <Badge variant="success">{operationTaskStatusLabel(status)}</Badge>
+  return <Badge variant="default">{operationTaskStatusLabel(status)}</Badge>
 }
 
 function compactText(value: string) {
@@ -22,16 +23,18 @@ function compactText(value: string) {
 }
 
 export function OperationTaskCenterPage() {
+  const [searchParams] = useSearchParams()
   const [tasks, setTasks] = useState<OperationTask[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const shopId = searchParams.get('shopId')?.trim() || ''
   const counts = useMemo(() => deriveOperationTaskCounts(tasks), [tasks])
 
   async function load(silent = false) {
     if (silent) setRefreshing(true)
     else setLoading(true)
     try {
-      setTasks(await fetchOperationTasks())
+      setTasks(await fetchOperationTasks({ shopId }))
     } catch (error) {
       console.error('load operation tasks failed', error)
       toast.error('加载运营任务失败')
@@ -43,7 +46,7 @@ export function OperationTaskCenterPage() {
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [shopId])
 
   const columns: TableColumn<OperationTask>[] = [
     {
@@ -82,7 +85,7 @@ export function OperationTaskCenterPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">运营任务</h1>
           <p className="mt-1 break-words text-sm text-[var(--color-text-muted)]">
-            跨店铺任务视图，本阶段先建立任务归属和状态边界。
+            {shopId ? `当前仅看店铺 ${shopId} 的运营任务。` : '跨店铺任务视图，本阶段先建立任务归属和状态边界。'}
           </p>
         </div>
         <Button className="w-full shrink-0 sm:w-auto" variant="secondary" size="sm" onClick={() => void load(true)} loading={refreshing}>
@@ -112,4 +115,3 @@ export function OperationTaskCenterPage() {
     </div>
   )
 }
-
