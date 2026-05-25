@@ -71,11 +71,23 @@ function joinValues(values: string[]) {
   return values.length > 0 ? values.join('、') : ''
 }
 
+const COLUMN_GROUPS = {
+  shop: '店铺基础',
+  platform: '平台与状态',
+  ownership: '经营归属',
+  brand: '品牌与类目',
+  contact: '联系与主体',
+  external: '外部系统',
+  sync: '同步与异常',
+  action: '固定列',
+} as const
+
 export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
   return [
     {
       key: 'shopName',
       title: '店铺',
+      group: COLUMN_GROUPS.shop,
       width: 280,
       minWidth: 240,
       fixed: 'left',
@@ -102,6 +114,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopCode',
       title: '店铺编码',
+      group: COLUMN_GROUPS.shop,
       width: 170,
       sortable: true,
       filterable: true,
@@ -110,6 +123,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopAlias',
       title: '店铺别名',
+      group: COLUMN_GROUPS.shop,
       width: 180,
       sortable: true,
       filterable: true,
@@ -119,6 +133,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'fullShopName',
       title: '完整店铺名',
+      group: COLUMN_GROUPS.shop,
       width: 280,
       sortable: true,
       filterable: true,
@@ -128,6 +143,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'asmShopId',
       title: 'ASM ID',
+      group: COLUMN_GROUPS.shop,
       width: 130,
       sortable: true,
       filterable: true,
@@ -137,6 +153,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'platformCode',
       title: '平台',
+      group: COLUMN_GROUPS.platform,
       width: 140,
       sortable: true,
       filterable: true,
@@ -146,6 +163,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'platformSubtype',
       title: '平台子类型',
+      group: COLUMN_GROUPS.platform,
       width: 140,
       sortable: true,
       filterable: true,
@@ -155,6 +173,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopStatus',
       title: '店铺状态',
+      group: COLUMN_GROUPS.platform,
       width: 130,
       sortable: true,
       filterable: true,
@@ -164,6 +183,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopStatusCode',
       title: '状态码',
+      group: COLUMN_GROUPS.platform,
       width: 110,
       sortable: true,
       filterable: true,
@@ -173,6 +193,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'asmStatus',
       title: 'ASM 状态',
+      group: COLUMN_GROUPS.platform,
       width: 140,
       sortable: true,
       filterable: true,
@@ -182,6 +203,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'authorizationStatus',
       title: '授权状态',
+      group: COLUMN_GROUPS.platform,
       width: 140,
       sortable: true,
       filterable: true,
@@ -191,6 +213,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'operatorName',
       title: '运营',
+      group: COLUMN_GROUPS.ownership,
       width: 140,
       sortable: true,
       filterable: true,
@@ -200,6 +223,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'businessManagerName',
       title: '业务经理',
+      group: COLUMN_GROUPS.ownership,
       width: 150,
       sortable: true,
       filterable: true,
@@ -209,6 +233,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'operatorUsername',
       title: '运营账号',
+      group: COLUMN_GROUPS.ownership,
       width: 150,
       sortable: true,
       filterable: true,
@@ -218,6 +243,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'businessManagerUsername',
       title: '业务账号',
+      group: COLUMN_GROUPS.ownership,
       width: 150,
       sortable: true,
       filterable: true,
@@ -227,6 +253,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'department',
       title: '部门',
+      group: COLUMN_GROUPS.ownership,
       width: 150,
       sortable: true,
       filterable: true,
@@ -235,6 +262,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'subCompanyName',
       title: '分公司',
+      group: COLUMN_GROUPS.ownership,
       width: 170,
       sortable: true,
       filterable: true,
@@ -244,6 +272,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'brandName',
       title: '品牌',
+      group: COLUMN_GROUPS.brand,
       width: 150,
       sortable: true,
       filterable: true,
@@ -252,6 +281,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'brandIds',
       title: '品牌 ID',
+      group: COLUMN_GROUPS.brand,
       width: 180,
       sortable: true,
       filterable: true,
@@ -262,6 +292,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'advancedMemberName',
       title: '高级会员',
+      group: COLUMN_GROUPS.brand,
       width: 150,
       sortable: true,
       filterable: true,
@@ -271,6 +302,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'mainCategory',
       title: '主营类目',
+      group: COLUMN_GROUPS.brand,
       width: 180,
       sortable: true,
       filterable: true,
@@ -279,6 +311,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'categoryNames',
       title: '全部类目',
+      group: COLUMN_GROUPS.brand,
       width: 220,
       sortable: true,
       filterable: true,
@@ -289,6 +322,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'categoryIds',
       title: '类目 ID',
+      group: COLUMN_GROUPS.brand,
       width: 180,
       sortable: true,
       filterable: true,
@@ -299,6 +333,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopUrl',
       title: '店铺地址',
+      group: COLUMN_GROUPS.contact,
       width: 220,
       sortable: true,
       filterable: true,
@@ -308,6 +343,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopEmail',
       title: '邮箱',
+      group: COLUMN_GROUPS.contact,
       width: 180,
       sortable: true,
       filterable: true,
@@ -317,6 +353,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'shopPhone',
       title: '电话',
+      group: COLUMN_GROUPS.contact,
       width: 150,
       sortable: true,
       filterable: true,
@@ -326,6 +363,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'legalRepName',
       title: '法人',
+      group: COLUMN_GROUPS.contact,
       width: 140,
       sortable: true,
       filterable: true,
@@ -335,6 +373,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'businessLicense',
       title: '营业执照',
+      group: COLUMN_GROUPS.contact,
       width: 190,
       sortable: true,
       filterable: true,
@@ -344,6 +383,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'unifiedSocialCode',
       title: '统一社会信用代码',
+      group: COLUMN_GROUPS.contact,
       width: 210,
       sortable: true,
       filterable: true,
@@ -353,6 +393,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'registeredAddress',
       title: '注册地址',
+      group: COLUMN_GROUPS.contact,
       width: 240,
       sortable: true,
       filterable: true,
@@ -362,6 +403,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'trustPassExpireAt',
       title: '诚信通到期',
+      group: COLUMN_GROUPS.contact,
       width: 170,
       sortable: true,
       defaultVisible: false,
@@ -371,6 +413,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'jstShopCount',
       title: '聚水潭店铺',
+      group: COLUMN_GROUPS.external,
       width: 130,
       sortable: true,
       filterable: true,
@@ -381,6 +424,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'mabangShopCount',
       title: '马帮店铺',
+      group: COLUMN_GROUPS.external,
       width: 130,
       sortable: true,
       filterable: true,
@@ -391,6 +435,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'erpShopCount',
       title: 'ERP 店铺',
+      group: COLUMN_GROUPS.external,
       width: 130,
       sortable: true,
       filterable: true,
@@ -401,6 +446,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'abnormalSummary',
       title: '异常信息',
+      group: COLUMN_GROUPS.sync,
       width: 180,
       sortable: true,
       filterable: true,
@@ -411,6 +457,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'tableSource',
       title: '表来源',
+      group: COLUMN_GROUPS.sync,
       width: 140,
       sortable: true,
       filterable: true,
@@ -420,6 +467,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'isPush',
       title: '是否推送',
+      group: COLUMN_GROUPS.sync,
       width: 120,
       sortable: true,
       filterable: true,
@@ -429,6 +477,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'sourceCreatedAt',
       title: 'ASM 创建时间',
+      group: COLUMN_GROUPS.sync,
       width: 180,
       sortable: true,
       defaultVisible: false,
@@ -438,6 +487,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'sourceUpdatedAt',
       title: 'ASM 更新时间',
+      group: COLUMN_GROUPS.sync,
       width: 180,
       sortable: true,
       defaultVisible: false,
@@ -447,6 +497,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'lastSyncedAt',
       title: '最近同步',
+      group: COLUMN_GROUPS.sync,
       width: 180,
       sortable: true,
       sortValue: (profile) => Date.parse(profile.lastSyncedAt || '') || 0,
@@ -459,6 +510,7 @@ export function buildShopProfileColumns(): DataTableColumn<ShopProfile>[] {
     {
       key: 'actions',
       title: '操作',
+      group: COLUMN_GROUPS.action,
       width: 150,
       minWidth: 140,
       fixed: 'right',

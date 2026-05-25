@@ -9,6 +9,7 @@ type SortOrder = 'asc' | 'desc'
 export interface DataTableColumn<T> {
   key: string
   title: ReactNode
+  group?: string
   width?: string | number
   minWidth?: number
   fixed?: 'left' | 'right'
@@ -67,6 +68,10 @@ function parseColumnWidth(width: string | number | undefined, fallback = 140) {
 
 function clampColumnWidth(width: number, minWidth: number) {
   return Math.max(minWidth, Math.round(width))
+}
+
+function columnTitleText(title: ReactNode) {
+  return typeof title === 'string' || typeof title === 'number' ? String(title) : '列'
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -154,6 +159,20 @@ export function DataTable<T extends Record<string, any>>({
     () => columns.filter((column) => column.hideable === false || visibleKeys.includes(column.key)),
     [columns, visibleKeys],
   )
+
+  const columnGroups = useMemo(() => {
+    const groups: Array<{ title: string; columns: DataTableColumn<T>[] }> = []
+    for (const column of columns) {
+      const title = column.group || '其他字段'
+      const group = groups.find((item) => item.title === title)
+      if (group) {
+        group.columns.push(column)
+      } else {
+        groups.push({ title, columns: [column] })
+      }
+    }
+    return groups
+  }, [columns])
 
   const getColumnWidth = (column: DataTableColumn<T>) => {
     const minWidth = column.minWidth ?? 96
@@ -373,18 +392,27 @@ export function DataTable<T extends Record<string, any>>({
           </Button>
           {columnPanelOpen ? (
             <div className="client-data-table-column-panel">
-              <div className="mb-2 text-xs font-semibold text-[var(--color-text-primary)]">显示/隐藏列</div>
-              <div className="space-y-1">
-                {columns.map((column) => (
-                  <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]">
-                    <input
-                      type="checkbox"
-                      checked={column.hideable === false || visibleKeys.includes(column.key)}
-                      disabled={column.hideable === false || (visibleKeys.includes(column.key) && visibleKeys.length === 1)}
-                      onChange={() => toggleVisible(column.key)}
-                    />
-                    <span>{column.title}</span>
-                  </label>
+              <div className="mb-3 text-xs font-semibold text-[var(--color-text-primary)]">显示/隐藏列</div>
+              <div className="space-y-3">
+                {columnGroups.map((group) => (
+                  <div key={group.title} className="client-data-table-column-group">
+                    <div className="client-data-table-column-group-title">{group.title}</div>
+                    <div className="space-y-1">
+                      {group.columns.map((column) => (
+                        <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]">
+                          <input
+                            type="checkbox"
+                            checked={column.hideable === false || visibleKeys.includes(column.key)}
+                            disabled={column.hideable === false || (visibleKeys.includes(column.key) && visibleKeys.length === 1)}
+                            onChange={() => toggleVisible(column.key)}
+                          />
+                          <span className="min-w-0 truncate" title={columnTitleText(column.title)}>
+                            {column.title}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
