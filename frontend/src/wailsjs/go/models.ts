@@ -1492,6 +1492,7 @@ export namespace workspace {
 	    platformCode: string;
 	    asmStatus: string;
 	    authorizationStatus: string;
+	    authorizationStatusLabel: string;
 	    ownerName: string;
 	    mainCategory: string;
 	    dataCompleteness: string;
@@ -1509,6 +1510,7 @@ export namespace workspace {
 	        this.platformCode = source["platformCode"];
 	        this.asmStatus = source["asmStatus"];
 	        this.authorizationStatus = source["authorizationStatus"];
+	        this.authorizationStatusLabel = source["authorizationStatusLabel"];
 	        this.ownerName = source["ownerName"];
 	        this.mainCategory = source["mainCategory"];
 	        this.dataCompleteness = source["dataCompleteness"];
@@ -1545,4 +1547,3 @@ export namespace workspace {
 	}
 
 }
-

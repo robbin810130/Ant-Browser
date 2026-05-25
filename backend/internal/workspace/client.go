@@ -109,13 +109,14 @@ func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileR
 	profiles := make([]ShopProfileRecord, 0, len(shops))
 	for _, shop := range shops {
 		profiles = append(profiles, ShopProfileRecord{
-			ShopID:              strings.TrimSpace(shop.ShopID),
-			ShopName:            strings.TrimSpace(shop.ShopName),
-			PlatformCode:        strings.TrimSpace(shop.PlatformCode),
-			ASMStatus:           "unavailable",
-			AuthorizationStatus: strings.TrimSpace(shop.SharedLoginStatus),
-			DataCompleteness:    "unknown",
-			Source:              "authorized_shop_projection",
+			ShopID:                   strings.TrimSpace(shop.ShopID),
+			ShopName:                 strings.TrimSpace(shop.ShopName),
+			PlatformCode:             strings.TrimSpace(shop.PlatformCode),
+			ASMStatus:                "unavailable",
+			AuthorizationStatus:      strings.TrimSpace(shop.SharedLoginStatus),
+			AuthorizationStatusLabel: strings.TrimSpace(shop.SharedLoginStatusLabel),
+			DataCompleteness:         "unknown",
+			Source:                   "authorized_shop_projection",
 		})
 	}
 	return profiles, nil
@@ -129,6 +130,7 @@ func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
 		item.PlatformCode = strings.TrimSpace(item.PlatformCode)
 		item.ASMStatus = strings.TrimSpace(item.ASMStatus)
 		item.AuthorizationStatus = strings.TrimSpace(item.AuthorizationStatus)
+		item.AuthorizationStatusLabel = strings.TrimSpace(item.AuthorizationStatusLabel)
 		item.OwnerName = strings.TrimSpace(item.OwnerName)
 		item.MainCategory = strings.TrimSpace(item.MainCategory)
 		item.DataCompleteness = strings.TrimSpace(item.DataCompleteness)

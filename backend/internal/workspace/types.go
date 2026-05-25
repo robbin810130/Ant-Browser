@@ -124,16 +124,17 @@ type OpenReportRequest struct {
 }
 
 type ShopProfileRecord struct {
-	ShopID              string `json:"shopId"`
-	ShopName            string `json:"shopName"`
-	PlatformCode        string `json:"platformCode"`
-	ASMStatus           string `json:"asmStatus"`
-	AuthorizationStatus string `json:"authorizationStatus"`
-	OwnerName           string `json:"ownerName"`
-	MainCategory        string `json:"mainCategory"`
-	DataCompleteness    string `json:"dataCompleteness"`
-	LastSyncedAt        string `json:"lastSyncedAt"`
-	Source              string `json:"source"`
+	ShopID                   string `json:"shopId"`
+	ShopName                 string `json:"shopName"`
+	PlatformCode             string `json:"platformCode"`
+	ASMStatus                string `json:"asmStatus"`
+	AuthorizationStatus      string `json:"authorizationStatus"`
+	AuthorizationStatusLabel string `json:"authorizationStatusLabel"`
+	OwnerName                string `json:"ownerName"`
+	MainCategory             string `json:"mainCategory"`
+	DataCompleteness         string `json:"dataCompleteness"`
+	LastSyncedAt             string `json:"lastSyncedAt"`
+	Source                   string `json:"source"`
 }
 
 type RunQuery struct {
