@@ -24,7 +24,6 @@ export interface WorkspaceAuthorizedShop {
 }
 
 export interface WorkspaceDashboardStats {
-  asmShopProfileCount: number
   totalAccounts: number
   readyShopCount: number
   manualAttentionCount: number
