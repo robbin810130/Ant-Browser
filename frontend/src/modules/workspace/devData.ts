@@ -71,7 +71,7 @@ export const devShopProfiles: ShopProfile[] = [
     mainCategory: '日用百货',
     dataCompleteness: 'complete',
     lastSyncedAt: '2026-05-23T09:10:00+08:00',
-    source: 'asm',
+    source: 'dev_mock',
   },
   {
     shopId: 'shop-manual',
@@ -84,7 +84,7 @@ export const devShopProfiles: ShopProfile[] = [
     mainCategory: '数码配件',
     dataCompleteness: 'partial',
     lastSyncedAt: '2026-05-23T09:05:00+08:00',
-    source: 'asm',
+    source: 'dev_mock',
   },
   {
     shopId: 'shop-credential',
@@ -97,7 +97,7 @@ export const devShopProfiles: ShopProfile[] = [
     mainCategory: '家居收纳',
     dataCompleteness: 'partial',
     lastSyncedAt: '2026-05-22T18:30:00+08:00',
-    source: 'asm',
+    source: 'dev_mock',
   },
 ]
 

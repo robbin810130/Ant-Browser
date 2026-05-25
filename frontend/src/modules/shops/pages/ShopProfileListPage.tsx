@@ -60,6 +60,7 @@ export function ShopProfileListPage() {
   const [refreshing, setRefreshing] = useState(false)
 
   const stats = useMemo(() => deriveShopProfileStats(profiles), [profiles])
+  const usingMockProfiles = profiles.some((profile) => profile.source === 'dev_mock')
 
   async function load(silent = false) {
     if (silent) {
@@ -187,10 +188,10 @@ export function ShopProfileListPage() {
 
       <Card padding="none">
         <div className="flex flex-col gap-2 border-b border-[var(--color-border-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>资料源：ASM 店铺资料</span>
+          <span>{usingMockProfiles ? '资料源：开发模拟资料' : '资料源：ASM 店铺资料'}</span>
           <span className="inline-flex items-center gap-1 text-[var(--color-text-secondary)]">
             <ShieldCheck className="h-4 w-4" />
-            真实接入状态
+            {usingMockProfiles ? '当前未连接 Wails 客户端后端' : '真实接入状态'}
           </span>
         </div>
         <Table
