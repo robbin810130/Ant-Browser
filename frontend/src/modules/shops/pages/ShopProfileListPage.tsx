@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, CheckCircle2, Database, RefreshCw, Store } from 'lucide-react'
-import { Alert, Button, Card, DataTable, StatCard, toast } from '../../../shared/components'
-import {
-  deriveShopProfileStats,
-  fetchShopProfiles,
-} from '../api'
+import { RefreshCw } from 'lucide-react'
+import { Alert, Button, Card, DataTable, toast } from '../../../shared/components'
+import { fetchShopProfiles } from '../api'
 import { buildShopProfileColumns } from '../profilePresentation'
 import type { ShopProfile } from '../types'
 import { ShopProfileDetailDrawer } from './ShopProfileDetailPage'
@@ -18,7 +15,6 @@ export function ShopProfileListPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
-  const stats = useMemo(() => deriveShopProfileStats(profiles), [profiles])
   const columns = useMemo(() => buildShopProfileColumns(), [])
   const asmSnapshotMissing = !loading && !errorMessage && profiles.length === 0
   const selectedShopId = decodeURIComponent(shopId || '').trim()
@@ -76,13 +72,6 @@ export function ShopProfileListPage() {
           <RefreshCw className="h-4 w-4" />
           刷新
         </Button>
-      </div>
-
-      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="店铺资料" value={loading ? '-' : stats.total} icon={<Store className="h-5 w-5" />} />
-        <StatCard title="ASM 已接入" value={loading ? '-' : stats.asmConnected} icon={<CheckCircle2 className="h-5 w-5" />} />
-        <StatCard title="ASM 待接入" value={loading ? '-' : stats.unavailable} icon={<AlertCircle className="h-5 w-5" />} />
-        <StatCard title="资料待完善" value={loading ? '-' : stats.incomplete} icon={<Database className="h-5 w-5" />} />
       </div>
 
       <Card padding="none" className="flex min-h-0 flex-1 flex-col" bodyClassName="flex min-h-0 flex-1 flex-col">

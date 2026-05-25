@@ -487,24 +487,24 @@ export type DetailField = {
 export type DetailGroup = {
   title: string
   subtitle: string
+  tone?: 'primary' | 'muted'
   fields: DetailField[]
 }
 
 export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[] {
   return [
     {
-      title: '基础资料',
-      subtitle: 'ASM 店铺业务主数据',
+      title: '概览',
+      subtitle: '运营识别店铺时优先看的基础信息',
       fields: [
         { label: '店铺名称', value: profile.shopName },
-        { label: 'ASM Shop ID', value: profile.asmShopId },
-        { label: 'Shop ID', value: profile.shopId },
-        { label: '店铺编码', value: profile.shopCode },
-        { label: '店铺别名', value: profile.shopAlias },
         { label: '完整店铺名', value: profile.fullShopName },
+        { label: '店铺编码', value: profile.shopCode },
+        { label: 'Shop ID', value: profile.shopId },
+        { label: 'ASM Shop ID', value: profile.asmShopId },
+        { label: '店铺别名', value: profile.shopAlias },
         { label: '平台', value: profile.platformName || platformLabel(profile.platformCode) },
         { label: '平台子类型', value: profile.platformSubtype },
-        { label: '店铺状态', value: profile.shopStatus || profile.shopStatusCode },
         { label: '主营类目', value: profile.mainCategory },
         { label: '全部类目', value: joinValues(profile.categoryNames) },
         { label: '类目 ID', value: joinValues(profile.categoryIds) },
@@ -512,7 +512,7 @@ export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[
     },
     {
       title: '经营归属',
-      subtitle: '客户端只展示运营识别需要的归属字段',
+      subtitle: '用于确认当前店铺归属和责任人',
       fields: [
         { label: '负责人', value: profile.ownerName },
         { label: '运营', value: profile.operatorName },
@@ -524,9 +524,25 @@ export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[
       ],
     },
     {
-      title: '联系与品牌',
-      subtitle: 'ASM 店铺扩展资料',
+      title: '授权与打开状态',
+      subtitle: '区分 ASM 主资料状态和本地授权状态',
       fields: [
+        { label: 'ASM 状态', value: asmBadge(profile.asmStatus) },
+        { label: 'ASM 店铺状态', value: profile.shopStatus || profile.shopStatusCode },
+        { label: '授权状态', value: authorizationBadge(profile) },
+        { label: '资料完整度', value: dataCompletenessBadge(profile.dataCompleteness) },
+        { label: '最近同步', value: formatProfileTime(profile.lastSyncedAt) },
+        { label: '数据来源', value: sourceLabel(profile.source) },
+      ],
+    },
+    {
+      title: '品牌与联系',
+      subtitle: '运营定位店铺和联系主体时使用',
+      fields: [
+        { label: '品牌', value: profile.brandName },
+        { label: '品牌 ID', value: joinValues(profile.brandIds) },
+        { label: '高级会员', value: profile.advancedMemberName },
+        { label: '诚信通到期', value: formatProfileTime(profile.trustPassExpireAt) },
         {
           label: '店铺地址',
           value: profile.shopUrl ? (
@@ -538,15 +554,12 @@ export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[
         },
         { label: '邮箱', value: profile.shopEmail },
         { label: '电话', value: profile.shopPhone },
-        { label: '品牌', value: profile.brandName },
-        { label: '品牌 ID', value: joinValues(profile.brandIds) },
-        { label: '高级会员', value: profile.advancedMemberName },
-        { label: '诚信通到期', value: formatProfileTime(profile.trustPassExpireAt) },
       ],
     },
     {
       title: '主体资质',
-      subtitle: 'ASM 店铺主体与工商识别字段',
+      subtitle: '管理型资料，客户端弱化展示',
+      tone: 'muted',
       fields: [
         { label: '法人', value: profile.legalRepName },
         { label: '营业执照', value: profile.businessLicense },
@@ -556,7 +569,8 @@ export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[
     },
     {
       title: '外部系统',
-      subtitle: 'ASM 返回的系统关联摘要',
+      subtitle: 'ASM 返回的外部系统关联摘要',
+      tone: 'muted',
       fields: [
         { label: '聚水潭店铺数', value: profile.jstShopCount },
         { label: '聚水潭店铺', value: profile.jstShopSummary },
@@ -567,20 +581,16 @@ export function buildShopProfileDetailGroups(profile: ShopProfile): DetailGroup[
       ],
     },
     {
-      title: '状态与同步',
-      subtitle: 'ASM 资料状态与本地授权状态',
+      title: '同步与异常',
+      subtitle: '资料治理和排障时使用',
+      tone: 'muted',
       fields: [
-        { label: 'ASM 状态', value: asmBadge(profile.asmStatus) },
-        { label: '授权状态', value: authorizationBadge(profile) },
-        { label: '资料完整度', value: dataCompletenessBadge(profile.dataCompleteness) },
         { label: '异常数量', value: profile.abnormalCount },
         { label: '异常摘要', value: profile.abnormalSummary },
         { label: '表来源', value: profile.tableSource },
         { label: '是否推送', value: yesNo(profile.isPush) },
         { label: 'ASM 创建时间', value: formatProfileTime(profile.sourceCreatedAt) },
         { label: 'ASM 更新时间', value: formatProfileTime(profile.sourceUpdatedAt) },
-        { label: '最近同步', value: formatProfileTime(profile.lastSyncedAt) },
-        { label: '数据来源', value: sourceLabel(profile.source) },
       ],
     },
   ]
