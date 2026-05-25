@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useState } from 'react'
+import { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns, RotateCcw, Search } from 'lucide-react'
 import { Button } from './Button'
@@ -10,12 +10,16 @@ export interface DataTableColumn<T> {
   key: string
   title: ReactNode
   width?: string | number
+  minWidth?: number
+  fixed?: 'right'
   align?: 'left' | 'center' | 'right'
   render?: (value: any, record: T, index: number) => ReactNode
   sortValue?: (record: T) => string | number | null | undefined
   filterValue?: (record: T) => string | number | null | undefined
   sortable?: boolean
   filterable?: boolean
+  resizable?: boolean
+  hideable?: boolean
   defaultVisible?: boolean
 }
 
@@ -48,6 +52,19 @@ function compareValues(left: unknown, right: unknown, order: SortOrder) {
   return String(left ?? '').localeCompare(String(right ?? ''), 'zh-CN', { numeric: true }) * direction
 }
 
+function parseColumnWidth(width: string | number | undefined, fallback = 140) {
+  if (typeof width === 'number' && Number.isFinite(width)) return width
+  if (typeof width === 'string') {
+    const parsed = Number.parseInt(width, 10)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function clampColumnWidth(width: number, minWidth: number) {
+  return Math.max(minWidth, Math.round(width))
+}
+
 export function DataTable<T extends Record<string, any>>({
   columns,
   data,
@@ -61,6 +78,7 @@ export function DataTable<T extends Record<string, any>>({
   onRowClick,
 }: DataTableProps<T>) {
   const columnKeys = useMemo(() => columns.map((column) => column.key), [columns])
+  const widthStorageKey = storageKey ? `${storageKey}:widths` : ''
   const defaultVisibleKeys = useMemo(
     () => columns.filter((column) => column.defaultVisible !== false).map((column) => column.key),
     [columns],
@@ -82,6 +100,20 @@ export function DataTable<T extends Record<string, any>>({
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(defaultPageSize)
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    if (!widthStorageKey) return {}
+    try {
+      const parsed = JSON.parse(localStorage.getItem(widthStorageKey) || '{}')
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      return Object.fromEntries(
+        Object.entries(parsed)
+          .filter(([key, value]) => columnKeys.includes(key) && typeof value === 'number' && Number.isFinite(value))
+          .map(([key, value]) => [key, value as number]),
+      )
+    } catch {
+      return {}
+    }
+  })
 
   useEffect(() => {
     if (!storageKey) return
@@ -93,12 +125,44 @@ export function DataTable<T extends Record<string, any>>({
   }, [storageKey, visibleKeys])
 
   useEffect(() => {
+    if (!widthStorageKey) return
+    try {
+      localStorage.setItem(widthStorageKey, JSON.stringify(columnWidths))
+    } catch {
+      // ignore storage write errors
+    }
+  }, [columnWidths, widthStorageKey])
+
+  useEffect(() => {
     setPage(1)
   }, [keyword, pageSize, sortState])
 
   const visibleColumns = useMemo(
-    () => columns.filter((column) => visibleKeys.includes(column.key)),
+    () => columns.filter((column) => column.hideable === false || visibleKeys.includes(column.key)),
     [columns, visibleKeys],
+  )
+
+  const getColumnWidth = (column: DataTableColumn<T>) => {
+    const minWidth = column.minWidth ?? 96
+    return clampColumnWidth(columnWidths[column.key] ?? parseColumnWidth(column.width), minWidth)
+  }
+
+  const fixedRightOffsets = useMemo(() => {
+    let offset = 0
+    const offsets: Record<string, number> = {}
+    for (let index = visibleColumns.length - 1; index >= 0; index -= 1) {
+      const column = visibleColumns[index]
+      if (column.fixed === 'right') {
+        offsets[column.key] = offset
+        offset += getColumnWidth(column)
+      }
+    }
+    return offsets
+  }, [columnWidths, visibleColumns])
+
+  const tableWidth = useMemo(
+    () => visibleColumns.reduce((total, column) => total + getColumnWidth(column), 0),
+    [columnWidths, visibleColumns],
   )
 
   const filteredRows = useMemo(() => {
@@ -149,6 +213,8 @@ export function DataTable<T extends Record<string, any>>({
   }
 
   const toggleVisible = (key: string) => {
+    const column = columns.find((item) => item.key === key)
+    if (column?.hideable === false) return
     setVisibleKeys((current) => {
       if (current.includes(key)) {
         return current.length === 1 ? current : current.filter((item) => item !== key)
@@ -159,9 +225,54 @@ export function DataTable<T extends Record<string, any>>({
 
   const resetTable = () => {
     setVisibleKeys(defaultVisibleKeys)
+    setColumnWidths({})
     setKeyword('')
     setSortState(null)
     setPage(1)
+  }
+
+  const startColumnResize = (event: ReactMouseEvent, column: DataTableColumn<T>) => {
+    if (column.resizable === false) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    const startWidth = getColumnWidth(column)
+    const minWidth = column.minWidth ?? 96
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const nextWidth = clampColumnWidth(startWidth + moveEvent.clientX - startX, minWidth)
+      setColumnWidths((current) => ({
+        ...current,
+        [column.key]: nextWidth,
+      }))
+    }
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('client-data-table-resizing')
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.body.classList.add('client-data-table-resizing')
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }
+
+  const getCellStyle = (column: DataTableColumn<T>): CSSProperties => {
+    const width = getColumnWidth(column)
+    const style: CSSProperties = {
+      width,
+      minWidth: width,
+      maxWidth: width,
+    }
+
+    if (column.fixed === 'right') {
+      style.position = 'sticky'
+      style.right = fixedRightOffsets[column.key] ?? 0
+    }
+
+    return style
   }
 
   if (loading) {
@@ -204,8 +315,8 @@ export function DataTable<T extends Record<string, any>>({
                   <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]">
                     <input
                       type="checkbox"
-                      checked={visibleKeys.includes(column.key)}
-                      disabled={visibleKeys.includes(column.key) && visibleKeys.length === 1}
+                      checked={column.hideable === false || visibleKeys.includes(column.key)}
+                      disabled={column.hideable === false || (visibleKeys.includes(column.key) && visibleKeys.length === 1)}
                       onChange={() => toggleVisible(column.key)}
                     />
                     <span>{column.title}</span>
@@ -218,18 +329,19 @@ export function DataTable<T extends Record<string, any>>({
       </div>
 
       <div className="overflow-auto" style={{ maxHeight }}>
-        <table className="min-w-full">
+        <table className="client-data-table-grid" style={{ width: tableWidth, minWidth: tableWidth }}>
           <thead className="sticky top-0 z-10">
             <tr>
               {visibleColumns.map((column) => (
                 <th
                   key={column.key}
                   className={clsx(
-                    'bg-[var(--color-bg-muted)] px-4 py-3 text-left align-top text-xs font-semibold text-[var(--color-text-muted)]',
+                    'relative bg-[var(--color-bg-muted)] px-4 py-3 text-left align-top text-xs font-semibold text-[var(--color-text-muted)]',
+                    column.fixed === 'right' && 'client-data-table-cell-fixed-right client-data-table-cell-fixed-right-header',
                     column.align === 'center' && 'text-center',
                     column.align === 'right' && 'text-right',
                   )}
-                  style={{ width: column.width }}
+                  style={getCellStyle(column)}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <button
@@ -247,6 +359,14 @@ export function DataTable<T extends Record<string, any>>({
                       ) : null}
                     </button>
                   </div>
+                  {column.resizable !== false ? (
+                    <button
+                      type="button"
+                      aria-label={`调整${String(column.title)}列宽`}
+                      className="client-data-table-resize-handle"
+                      onMouseDown={(event) => startColumnResize(event, column)}
+                    />
+                  ) : null}
                 </th>
               ))}
             </tr>
@@ -270,9 +390,11 @@ export function DataTable<T extends Record<string, any>>({
                       key={column.key}
                       className={clsx(
                         'px-4 py-3.5 align-top text-sm text-[var(--color-text-secondary)]',
+                        column.fixed === 'right' && 'client-data-table-cell-fixed-right',
                         column.align === 'center' && 'text-center',
                         column.align === 'right' && 'text-right',
                       )}
+                      style={getCellStyle(column)}
                     >
                       {column.render ? column.render(record[column.key], record, startIndex + index) : record[column.key]}
                     </td>
