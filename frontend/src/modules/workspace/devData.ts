@@ -2,6 +2,32 @@ import type { RunRecord } from '../runEvidence/types'
 import type { ShopProfile } from '../shops/types'
 import type { WorkspaceAuthorizedShop, WorkspaceSummary } from './types'
 
+const devShopProfileExtraFields = {
+  shopStatusCode: 1,
+  shopStatus: '正常',
+  legalRepName: '',
+  businessLicense: '',
+  unifiedSocialCode: '',
+  registeredAddress: '',
+  categoryIds: [] as string[],
+  categoryNames: [] as string[],
+  brandIds: [] as string[],
+  advancedMember: 0,
+  trustPassExpireAt: '',
+  jstShopCount: 0,
+  jstShopSummary: '',
+  mabangShopCount: 0,
+  mabangShopSummary: '',
+  erpShopCount: 0,
+  erpShopSummary: '',
+  abnormalCount: 0,
+  abnormalSummary: '',
+  tableSource: 'dev_mock',
+  isPush: 0,
+  sourceCreatedAt: '',
+  sourceUpdatedAt: '',
+}
+
 export function useDevWorkspaceFallback(): boolean {
   return (
     Boolean((import.meta as any).env?.DEV)
@@ -65,6 +91,7 @@ export const devAuthorizedShops: WorkspaceAuthorizedShop[] = [
 
 export const devShopProfiles: ShopProfile[] = [
   {
+    ...devShopProfileExtraFields,
     shopId: 'shop-ready',
     shopName: '义乌百货样板店',
     asmShopId: 'dev-1001',
@@ -95,6 +122,7 @@ export const devShopProfiles: ShopProfile[] = [
     source: 'dev_mock',
   },
   {
+    ...devShopProfileExtraFields,
     shopId: 'shop-manual',
     shopName: '深圳数码配件店',
     asmShopId: 'dev-1002',
@@ -125,6 +153,7 @@ export const devShopProfiles: ShopProfile[] = [
     source: 'dev_mock',
   },
   {
+    ...devShopProfileExtraFields,
     shopId: 'shop-credential',
     shopName: '广州家居源头厂',
     asmShopId: 'dev-1003',
