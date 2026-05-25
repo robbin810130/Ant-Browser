@@ -31,7 +31,7 @@ export function ShopProfileListPage() {
       setProfiles(await fetchShopProfiles())
     } catch (error) {
       console.error('load shop profiles failed', error)
-      const message = error instanceof Error ? error.message : '加载店铺资料失败'
+      const message = error instanceof Error ? error.message : String(error || '加载店铺资料失败')
       setProfiles([])
       setErrorMessage(message)
       toast.error(message)

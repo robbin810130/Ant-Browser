@@ -185,10 +185,10 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 						"businessLicense":          "营业执照-001",
 						"unifiedSocialCode":        "91440000123456789X",
 						"registeredAddress":        "广东省深圳市",
-						"categoryIds":              []string{" cat-1 "},
+						"categoryIds":              []any{101, " 202 "},
 						"categoryNames":            []string{" 日用百货 "},
 						"brandName":                "真实品牌",
-						"brandIds":                 []string{" brand-1 "},
+						"brandIds":                 []any{303, " brand-1 "},
 						"advancedMember":           1,
 						"advancedMemberName":       "高级会员",
 						"trustPassExpireAt":        "2027-05-23T00:00:00+08:00",
@@ -244,8 +244,11 @@ func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
 	if got.LegalRepName != "张法人" || got.BusinessLicense != "营业执照-001" || got.UnifiedSocialCode != "91440000123456789X" {
 		t.Fatalf("expected ASM qualification fields, got %#v", got)
 	}
-	if len(got.CategoryIDs) != 1 || got.CategoryIDs[0] != "cat-1" || len(got.CategoryNames) != 1 || got.CategoryNames[0] != "日用百货" {
+	if len(got.CategoryIDs) != 2 || got.CategoryIDs[0] != "101" || got.CategoryIDs[1] != "202" || len(got.CategoryNames) != 1 || got.CategoryNames[0] != "日用百货" {
 		t.Fatalf("expected normalized ASM category fields, got %#v", got)
+	}
+	if len(got.BrandIDs) != 2 || got.BrandIDs[0] != "303" || got.BrandIDs[1] != "brand-1" {
+		t.Fatalf("expected normalized ASM brand fields, got %#v", got)
 	}
 	if got.JSTShopCount != 1 || got.JSTShopSummary != "聚水潭店铺" || got.AbnormalSummary != "资质待复核" || got.TableSource != "shop_merged" {
 		t.Fatalf("expected ASM integration summary fields, got %#v", got)

@@ -10,6 +10,7 @@ import {
   buildShopProfileDetailGroups,
   formatProfileTime,
   platformLabel,
+  shopProfileAction,
 } from '../profilePresentation'
 import type { ShopProfile } from '../types'
 
@@ -90,6 +91,7 @@ export function ShopProfileDetailDrawer({ shopId, open, onClose }: ShopProfileDe
   }, [open, shopId])
 
   const title = profile?.shopName || profile?.shopId || shopId
+  const action = profile ? shopProfileAction(profile) : null
 
   return (
     <Drawer
@@ -118,10 +120,10 @@ export function ShopProfileDetailDrawer({ shopId, open, onClose }: ShopProfileDe
                   <Badge variant="default">{sourceLabel(profile.source)}</Badge>
                 </div>
               </div>
-              <Link className="shrink-0" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`}>
+              <Link className="shrink-0" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`} title={action?.description}>
                 <Button size="sm" className="w-full sm:w-auto">
                   <ExternalLink className="h-4 w-4" />
-                  进入工作台
+                  {action?.label || '进入工作台'}
                 </Button>
               </Link>
             </div>

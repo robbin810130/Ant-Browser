@@ -1,5 +1,12 @@
 package workspace
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 type WorkspaceSummary struct {
 	Status              string `json:"status"`
 	AgentStatus         string `json:"agentStatus"`
@@ -175,6 +182,78 @@ type ShopProfileRecord struct {
 	SourceUpdatedAt          string   `json:"sourceUpdatedAt"`
 	LastSyncedAt             string   `json:"lastSyncedAt"`
 	Source                   string   `json:"source"`
+}
+
+func (record *ShopProfileRecord) UnmarshalJSON(data []byte) error {
+	type alias ShopProfileRecord
+	aux := struct {
+		CategoryIDs   json.RawMessage `json:"categoryIds"`
+		CategoryNames json.RawMessage `json:"categoryNames"`
+		BrandIDs      json.RawMessage `json:"brandIds"`
+		*alias
+	}{
+		alias: (*alias)(record),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	var err error
+	if len(aux.CategoryIDs) > 0 {
+		record.CategoryIDs, err = decodeFlexibleStringList(aux.CategoryIDs)
+		if err != nil {
+			return fmt.Errorf("categoryIds: %w", err)
+		}
+	}
+	if len(aux.CategoryNames) > 0 {
+		record.CategoryNames, err = decodeFlexibleStringList(aux.CategoryNames)
+		if err != nil {
+			return fmt.Errorf("categoryNames: %w", err)
+		}
+	}
+	if len(aux.BrandIDs) > 0 {
+		record.BrandIDs, err = decodeFlexibleStringList(aux.BrandIDs)
+		if err != nil {
+			return fmt.Errorf("brandIds: %w", err)
+		}
+	}
+	return nil
+}
+
+func decodeFlexibleStringList(data []byte) ([]string, error) {
+	if len(bytes.TrimSpace(data)) == 0 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, nil
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var values []any
+	if err := decoder.Decode(&values); err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		var text string
+		switch item := value.(type) {
+		case nil:
+			continue
+		case string:
+			text = item
+		case json.Number:
+			text = item.String()
+		default:
+			return nil, fmt.Errorf("unsupported item type %T", value)
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			result = append(result, text)
+		}
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
 }
 
 type RunQuery struct {
