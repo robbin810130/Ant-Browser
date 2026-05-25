@@ -38,7 +38,6 @@ function lazyNamed<TModule extends Record<string, ComponentType<any>>>(
 
 const WorkspaceDashboardPage = lazyNamed(() => import('./modules/workspace/pages/WorkspaceDashboardPage'), 'WorkspaceDashboardPage')
 const ShopProfileListPage = lazyNamed(() => import('./modules/shops/pages/ShopProfileListPage'), 'ShopProfileListPage')
-const ShopProfileDetailPage = lazyNamed(() => import('./modules/shops/pages/ShopProfileDetailPage'), 'ShopProfileDetailPage')
 const WorkbenchPage = lazyNamed(() => import('./modules/workbench/WorkbenchPage'), 'WorkbenchPage')
 const OperationTaskCenterPage = lazyNamed(() => import('./modules/operations/pages/OperationTaskCenterPage'), 'OperationTaskCenterPage')
 const SettingsPage = lazyNamed(() => import('./modules/settings/SettingsPage'), 'SettingsPage')
@@ -482,7 +481,7 @@ function App() {
               <Route element={<ProtectedAppShell />}>
                 <Route path="/" element={<WorkspaceDashboardPage />} />
                 <Route path="/shops" element={<ShopProfileListPage />} />
-                <Route path="/shops/:shopId" element={<ShopProfileDetailPage />} />
+                <Route path="/shops/:shopId" element={<ShopProfileListPage />} />
                 <Route path="/workbench" element={<WorkbenchPage />} />
                 <Route path="/operations" element={<OperationTaskCenterPage />} />
                 <Route path="/charts" element={<ChartsPage />} />
