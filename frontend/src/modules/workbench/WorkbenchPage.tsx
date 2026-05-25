@@ -5,11 +5,20 @@ import { Alert, Button, Card, toast } from '../../shared/components'
 import { useAuthStore } from '../../store/authStore'
 import { buildRunEvidenceIndex, fetchWorkspaceRuns, type RunRecord, type ShopRunEvidence } from '../runEvidence'
 import {
+  fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
   openWorkspaceShop,
   startWorkspaceSharedLoginBind,
   startWorkspaceSharedLoginValidate,
 } from '../workspace/api'
+import { SharedLoginSessionModal } from '../workspace/components/SharedLoginSessionModal'
+import {
+  isTerminalSharedLoginStatus,
+  resolveSharedLoginActionError,
+  sharedLoginActionSuccessMessage,
+  type SharedLoginAction,
+  type SharedLoginDialogState,
+} from '../workspace/sharedLoginSession'
 import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
@@ -75,6 +84,7 @@ export function WorkbenchPage() {
   const [activeQueue, setActiveQueue] = useState<ActiveQueue>('all')
   const [selectedRow, setSelectedRow] = useState<WorkbenchRow | null>(null)
   const [runningAction, setRunningAction] = useState<RunningWorkbenchAction | null>(null)
+  const [sharedLoginDialog, setSharedLoginDialog] = useState<SharedLoginDialogState | null>(null)
   const runningActionRef = useRef<RunningWorkbenchAction | null>(null)
 
   async function load(silent = false) {
@@ -184,16 +194,19 @@ export function WorkbenchPage() {
           toast.error(result.message || '打开店铺后台失败')
           return
         }
+        toast.success(actionSuccessLabel(action, row.shop))
+        await load(true)
       } else if (action === 'bind') {
-        await startWorkspaceSharedLoginBind(accessToken.trim(), row.shop.shopId)
+        await startSharedLoginAction('bind', row.shop)
       } else {
-        await startWorkspaceSharedLoginValidate(accessToken.trim(), row.shop.shopId)
+        await startSharedLoginAction('validate', row.shop)
       }
-      toast.success(actionSuccessLabel(action, row.shop))
-      await load(true)
     } catch (error: any) {
       console.error('run workbench recommended action failed', error)
-      toast.error(String(error?.message || actionFallbackError(action)))
+      if (action === 'bind' || action === 'validate') {
+        setSharedLoginDialog(null)
+      }
+      toast.error(action === 'bind' || action === 'validate' ? resolveSharedLoginActionError(action, error) : String(error?.message || actionFallbackError(action)))
     } finally {
       if (
         runningActionRef.current?.shopId === nextRunningAction.shopId
@@ -206,6 +219,116 @@ export function WorkbenchPage() {
       }
     }
   }
+
+  async function handleSharedLoginTerminal(
+    action: SharedLoginAction,
+    shopName: string,
+    status: string,
+    message: string,
+  ) {
+    await load(true)
+    if (status === 'completed' || status === 'succeeded') {
+      toast.success(sharedLoginActionSuccessMessage(action, shopName))
+      return
+    }
+    if (status === 'expired') {
+      toast.error('授权处理已过期，请重新发起')
+      return
+    }
+    toast.error(message || '授权处理失败，请重试')
+  }
+
+  async function startSharedLoginAction(action: SharedLoginAction, shop: WorkspaceAuthorizedShop) {
+    const token = accessToken.trim()
+    const shopName = shop.shopName || shop.shopId
+    setSharedLoginDialog({
+      action,
+      shopId: shop.shopId,
+      shopName,
+      session: null,
+      starting: true,
+      terminalHandled: false,
+      errorMessage: '',
+    })
+
+    const result = action === 'bind'
+      ? await startWorkspaceSharedLoginBind(token, shop.shopId)
+      : await startWorkspaceSharedLoginValidate(token, shop.shopId)
+    const nextShopName = result.detail.shopName || shopName
+    const terminal = isTerminalSharedLoginStatus(result.bindSession.status)
+    setSharedLoginDialog({
+      action,
+      shopId: shop.shopId,
+      shopName: nextShopName,
+      session: result.bindSession,
+      starting: false,
+      terminalHandled: terminal,
+      errorMessage: '',
+    })
+    if (terminal) {
+      await handleSharedLoginTerminal(action, nextShopName, result.bindSession.status, result.bindSession.message)
+    }
+  }
+
+  useEffect(() => {
+    if (!sharedLoginDialog || sharedLoginDialog.starting || !sharedLoginDialog.session) {
+      return
+    }
+
+    const token = accessToken.trim()
+    const bindSessionId = sharedLoginDialog.session.bindSessionId.trim()
+    if (!token || !bindSessionId || isTerminalSharedLoginStatus(sharedLoginDialog.session.status)) {
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const nextSession = await fetchWorkspaceSharedLoginBindSession(token, bindSessionId)
+        if (cancelled) return
+
+        const terminal = isTerminalSharedLoginStatus(nextSession.status)
+        setSharedLoginDialog((current) => {
+          if (!current || current.session?.bindSessionId !== bindSessionId) return current
+          return {
+            ...current,
+            session: nextSession,
+            terminalHandled: current.terminalHandled || terminal,
+            errorMessage: '',
+          }
+        })
+
+        if (terminal && !sharedLoginDialog.terminalHandled) {
+          await handleSharedLoginTerminal(sharedLoginDialog.action, sharedLoginDialog.shopName, nextSession.status, nextSession.message)
+        }
+      } catch (error: any) {
+        if (cancelled) return
+        console.error('poll shared login session failed', error)
+        setSharedLoginDialog((current) => {
+          if (!current || current.session?.bindSessionId !== bindSessionId) return current
+          return {
+            ...current,
+            errorMessage: String(error?.message || '轮询共享登录状态失败，请稍后重试'),
+          }
+        })
+      }
+    }, 1500)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    accessToken,
+    sharedLoginDialog,
+    sharedLoginDialog?.action,
+    sharedLoginDialog?.shopName,
+    sharedLoginDialog?.starting,
+    sharedLoginDialog?.terminalHandled,
+    sharedLoginDialog?.session?.bindSessionId,
+    sharedLoginDialog?.session?.status,
+    sharedLoginDialog?.session?.updatedAt,
+  ])
 
   return (
     <div className="grid h-full grid-cols-1 gap-5 overflow-auto p-5 animate-fade-in lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -258,6 +381,10 @@ export function WorkbenchPage() {
         runningAction={runningAction}
         onClose={() => setSelectedRow(null)}
         onAction={(row) => void runRecommendedAction(row)}
+      />
+      <SharedLoginSessionModal
+        dialog={sharedLoginDialog}
+        onClose={() => setSharedLoginDialog(null)}
       />
     </div>
   )
