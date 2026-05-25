@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns, Filter, RotateCcw } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns, RotateCcw, Search } from 'lucide-react'
 import { Button } from './Button'
 import { Input } from './Form'
 
@@ -79,7 +79,7 @@ export function DataTable<T extends Record<string, any>>({
   })
   const [columnPanelOpen, setColumnPanelOpen] = useState(false)
   const [sortState, setSortState] = useState<{ key: string; order: SortOrder } | null>(null)
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(defaultPageSize)
 
@@ -94,7 +94,7 @@ export function DataTable<T extends Record<string, any>>({
 
   useEffect(() => {
     setPage(1)
-  }, [filters, pageSize, sortState])
+  }, [keyword, pageSize, sortState])
 
   const visibleColumns = useMemo(
     () => columns.filter((column) => visibleKeys.includes(column.key)),
@@ -102,15 +102,16 @@ export function DataTable<T extends Record<string, any>>({
   )
 
   const filteredRows = useMemo(() => {
+    const normalizedKeyword = normalizeSearchValue(keyword)
+    if (!normalizedKeyword) return data
+
     return data.filter((record) =>
-      columns.every((column) => {
-        const filter = filters[column.key]?.trim()
-        if (!filter) return true
+      columns.some((column) => {
         const value = column.filterValue ? column.filterValue(record) : record[column.key]
-        return normalizeSearchValue(value).includes(normalizeSearchValue(filter))
+        return normalizeSearchValue(value).includes(normalizedKeyword)
       }),
     )
-  }, [columns, data, filters])
+  }, [columns, data, keyword])
 
   const sortedRows = useMemo(() => {
     if (!sortState) return filteredRows
@@ -158,7 +159,7 @@ export function DataTable<T extends Record<string, any>>({
 
   const resetTable = () => {
     setVisibleKeys(defaultVisibleKeys)
-    setFilters({})
+    setKeyword('')
     setSortState(null)
     setPage(1)
   }
@@ -177,10 +178,16 @@ export function DataTable<T extends Record<string, any>>({
   return (
     <div className="client-data-table">
       <div className="client-data-table-toolbar">
-        <div className="text-xs text-[var(--color-text-muted)]">
-          {sortedRows.length > 0 ? `第 ${startIndex + 1} - ${endIndex} 条，共 ${sortedRows.length} 条` : '第 0 - 0 条，共 0 条'}
+        <div className="relative min-w-0 flex-1 sm:max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <Input
+            className="h-9 pl-9 text-sm"
+            placeholder="搜索店铺名称、编码、运营、部门、类目..."
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
         </div>
-        <div className="relative flex items-center gap-2">
+        <div className="relative flex shrink-0 items-center gap-2">
           <Button variant="secondary" size="sm" onClick={resetTable}>
             <RotateCcw className="h-3.5 w-3.5" />
             重置
@@ -239,21 +246,7 @@ export function DataTable<T extends Record<string, any>>({
                         sortState.order === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
                       ) : null}
                     </button>
-                    {column.filterable ? <Filter className="h-3.5 w-3.5 opacity-50" /> : null}
                   </div>
-                  {column.filterable ? (
-                    <Input
-                      className="mt-2 h-7 text-xs"
-                      placeholder="筛选"
-                      value={filters[column.key] || ''}
-                      onChange={(event) =>
-                        setFilters((current) => ({
-                          ...current,
-                          [column.key]: event.target.value,
-                        }))
-                      }
-                    />
-                  ) : null}
                 </th>
               ))}
             </tr>
@@ -292,17 +285,22 @@ export function DataTable<T extends Record<string, any>>({
       </div>
 
       <div className="client-data-table-pagination">
-        <select
-          className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]"
-          value={pageSize}
-          onChange={(event) => setPageSize(Number(event.target.value) || defaultPageSize)}
-        >
-          {pageSizeOptions.map((option) => (
-            <option key={option} value={option}>
-              {option} / 页
-            </option>
-          ))}
-        </select>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <select
+            className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-2 py-1 text-xs text-[var(--color-text-secondary)]"
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value) || defaultPageSize)}
+          >
+            {pageSizeOptions.map((option) => (
+              <option key={option} value={option}>
+                {option} / 页
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-[var(--color-text-muted)]">
+            {sortedRows.length > 0 ? `第 ${startIndex + 1} - ${endIndex} 条，共 ${sortedRows.length} 条` : '第 0 - 0 条，共 0 条'}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
             <ChevronLeft className="h-3.5 w-3.5" />

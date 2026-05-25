@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, CheckCircle2, Database, RefreshCw, ShieldCheck, Store } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Database, RefreshCw, Store } from 'lucide-react'
 import { Alert, Button, Card, DataTable, StatCard, toast } from '../../../shared/components'
 import {
   deriveShopProfileStats,
@@ -20,7 +20,6 @@ export function ShopProfileListPage() {
 
   const stats = useMemo(() => deriveShopProfileStats(profiles), [profiles])
   const columns = useMemo(() => buildShopProfileColumns(), [])
-  const usingMockProfiles = profiles.some((profile) => profile.source === 'dev_mock')
   const asmSnapshotMissing = !loading && !errorMessage && profiles.length === 0
   const selectedShopId = decodeURIComponent(shopId || '').trim()
 
@@ -87,27 +86,6 @@ export function ShopProfileListPage() {
       </div>
 
       <Card padding="none">
-        <div className="flex flex-col gap-2 border-b border-[var(--color-border-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            {errorMessage
-              ? '资料源：未连接'
-              : asmSnapshotMissing
-                ? '资料源：ASM 店铺资料未同步'
-                : usingMockProfiles
-                  ? '资料源：开发模拟资料'
-                  : '资料源：ASM 店铺资料'}
-          </span>
-          <span className="inline-flex items-center gap-1 text-[var(--color-text-secondary)]">
-            <ShieldCheck className="h-4 w-4" />
-            {errorMessage
-              ? '请在 Ant Browser 客户端本体中验证'
-              : asmSnapshotMissing
-                ? '等待 ASM 同步'
-                : usingMockProfiles
-                  ? '当前使用显式开发模拟模式'
-                  : '真实接入状态'}
-          </span>
-        </div>
         {errorMessage ? (
           <div className="border-b border-[var(--color-border-muted)] p-4">
             <Alert
@@ -131,7 +109,7 @@ export function ShopProfileListPage() {
           rowKey="shopId"
           loading={loading}
           emptyText={errorMessage ? '店铺资料未连接' : asmSnapshotMissing ? 'ASM 店铺资料尚未同步' : '暂无 ASM 店铺资料'}
-          maxHeight="calc(100vh - 380px)"
+          maxHeight="calc(100vh - 330px)"
           storageKey="client-shop-profile-table-columns"
           onRowClick={openProfile}
         />
