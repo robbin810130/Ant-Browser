@@ -1,9 +1,9 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/managedinstance"
-	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/workspace"
 	"context"
 	"fmt"
@@ -101,7 +101,41 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 	if err != nil {
 		result.Code = "ANT_INSTANCE_OPEN_FAILED"
 		result.Message = err.Error()
-		return result, a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo)
+		log.Error("店铺后台打开失败，准备回传结果",
+			logger.F("shop_id", result.ShopID),
+			logger.F("profile_id", profileID),
+			logger.F("open_request_id", openContext.OpenRequestID),
+			logger.F("error", err.Error()),
+		)
+		reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo)
+		if reportErr != nil {
+			log.Error("店铺后台打开失败结果回传失败",
+				logger.F("shop_id", result.ShopID),
+				logger.F("profile_id", profileID),
+				logger.F("open_request_id", openContext.OpenRequestID),
+				logger.F("error", reportErr.Error()),
+			)
+		}
+		return result, reportErr
+	}
+	if managedResult == nil {
+		result.Code = "ANT_INSTANCE_OPEN_FAILED"
+		result.Message = "managed open returned nil result"
+		log.Error("店铺后台打开返回空结果，准备回传失败",
+			logger.F("shop_id", result.ShopID),
+			logger.F("profile_id", profileID),
+			logger.F("open_request_id", openContext.OpenRequestID),
+		)
+		reportErr := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo)
+		if reportErr != nil {
+			log.Error("店铺后台空结果回传失败",
+				logger.F("shop_id", result.ShopID),
+				logger.F("profile_id", profileID),
+				logger.F("open_request_id", openContext.OpenRequestID),
+				logger.F("error", reportErr.Error()),
+			)
+		}
+		return result, reportErr
 	}
 
 	result.Success = managedResult.Success
@@ -115,9 +149,31 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		CurrentURL: managedResult.CurrentURL,
 		PageTitle:  managedResult.PageTitle,
 	}
+	log.Info("店铺后台打开完成，准备回传结果",
+		logger.F("shop_id", result.ShopID),
+		logger.F("profile_id", profileID),
+		logger.F("open_request_id", openContext.OpenRequestID),
+		logger.F("success", result.Success),
+		logger.F("code", result.Code),
+		logger.F("current_url", result.CurrentURL),
+		logger.F("debug_port", runtimeInfo.DebugPort),
+	)
 	if err := a.reportWorkspaceOpenResult(context.Background(), openContext.OpenRequestID, result, runtimeInfo); err != nil {
+		log.Error("店铺后台打开结果回传失败",
+			logger.F("shop_id", result.ShopID),
+			logger.F("profile_id", profileID),
+			logger.F("open_request_id", openContext.OpenRequestID),
+			logger.F("success", result.Success),
+			logger.F("error", err.Error()),
+		)
 		return result, err
 	}
+	log.Info("店铺后台打开结果已回传",
+		logger.F("shop_id", result.ShopID),
+		logger.F("profile_id", profileID),
+		logger.F("open_request_id", openContext.OpenRequestID),
+		logger.F("success", result.Success),
+	)
 	return result, nil
 }
 

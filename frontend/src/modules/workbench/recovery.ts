@@ -17,6 +17,11 @@ const coreFailureCodes = new Set([
   'ANT_FINGERPRINT_CORE_REQUIRED',
 ])
 
+export const credentialFailureCodes = new Set([
+  'ANT_BACKEND_LOGIN_REQUIRED',
+  'ANT_SESSION_RESTORE_FAILED',
+])
+
 export function recoveryActionFor(input: {
   reclaimPending?: boolean
   profileExists?: boolean
@@ -29,6 +34,7 @@ export function recoveryActionFor(input: {
   if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) {
     return actions.core_management
   }
+  if (credentialFailureCodes.has(input.failureCode || '')) return actions.bind
   if (input.sharedLoginStatus === 'awaiting_verification') return actions.validate
   if (input.sharedLoginStatus === 'validation_failed') return actions.bind
   if (input.sharedLoginStatus !== 'ready') return actions.bind
