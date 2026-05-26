@@ -33,6 +33,26 @@ func TestEnsureNewWindowLaunchArgAddsFlagOnce(t *testing.T) {
 	}
 }
 
+func TestFingerprintSeedForProfileIDIsBoundedAndStable(t *testing.T) {
+	t.Parallel()
+
+	profileID := "alibaba:b2b-2220886712247ef48d"
+	first := fingerprintSeedForProfileID(profileID)
+	second := fingerprintSeedForProfileID(profileID)
+	if first != second {
+		t.Fatalf("fingerprint seed should be stable: first=%d second=%d", first, second)
+	}
+	if first <= 0 || first > 1<<31-1 {
+		t.Fatalf("fingerprint seed should stay in 31-bit positive range, got=%d", first)
+	}
+	if first == 2752483080011909091 {
+		t.Fatal("fingerprint seed should not use overflowing legacy value")
+	}
+	if fingerprintSeedForProfileID("") != 1 {
+		t.Fatalf("empty profile id should still produce valid seed")
+	}
+}
+
 func TestMacAppBundleRoot(t *testing.T) {
 	t.Parallel()
 

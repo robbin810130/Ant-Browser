@@ -23,7 +23,7 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
-import { recoveryActionFor } from './recovery'
+import { credentialFailureCodes, recoveryActionFor } from './recovery'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
@@ -51,12 +51,38 @@ function emptyEvidence(): ShopRunEvidence {
 }
 
 function queueFor(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): WorkbenchQueueKey {
+  const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
   if (shop.reclaimPending) return 'reclaim'
   if (evidence.activeRun || shop.instanceRunning) return 'running'
+  if (credentialFailureCodes.has(failureCode)) return 'credential'
   if (evidence.latestFailure?.failureCode || evidence.latestFailure?.failureMessage) return 'failed'
   if (shop.sharedLoginStatus === 'awaiting_verification') return 'manual'
   if (shop.sharedLoginStatus !== 'ready') return 'credential'
   return 'ready'
+}
+
+function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
+  if (evidence.latestFailure || !shop.lastOpenFailureCode) return evidence
+  return {
+    ...evidence,
+    latestFailure: {
+      runId: `desktop-open:${shop.shopId}:${shop.lastOpenFailedAt || shop.lastOpenFailureCode}`,
+      taskId: '',
+      shopId: shop.shopId,
+      taskType: 'open',
+      status: 'failed',
+      statusLabel: '打开失败',
+      startedAt: shop.lastOpenFailedAt,
+      finishedAt: shop.lastOpenFailedAt,
+      profileId: shop.profileId,
+      runtime: null,
+      bindSessionId: '',
+      manualActionRequired: false,
+      challengeType: '',
+      failureCode: shop.lastOpenFailureCode,
+      failureMessage: shop.lastOpenFailureMessage,
+    },
+  }
 }
 
 function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorizedShop) {
@@ -119,8 +145,8 @@ export function WorkbenchPage() {
 
     return shops
       .map((shop) => {
-        const evidence = index.byShop[shop.shopId] || emptyEvidence()
-        const failureCode = evidence.latestFailure?.failureCode || ''
+        const evidence = evidenceWithShopOpenFailure(shop, index.byShop[shop.shopId] || emptyEvidence())
+        const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
         const recovery = recoveryActionFor({
           reclaimPending: shop.reclaimPending,
           profileExists: shop.profileExists,
@@ -190,12 +216,12 @@ export function WorkbenchPage() {
     try {
       if (action === 'open') {
         const result = await openWorkspaceShop(row.shop.shopId)
+        await load(true)
         if (!result.success) {
           toast.error(result.message || '打开店铺后台失败')
           return
         }
         toast.success(actionSuccessLabel(action, row.shop))
-        await load(true)
       } else if (action === 'bind') {
         await startSharedLoginAction('bind', row.shop)
       } else {

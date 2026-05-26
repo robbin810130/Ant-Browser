@@ -1,34 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Badge, Button, Table } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
-import type { WorkbenchQueueKey, WorkbenchRow } from '../types'
-
-const queueLabels: Record<WorkbenchQueueKey, string> = {
-  ready: '可打开',
-  manual: '待验证',
-  credential: '凭据处理',
-  failed: '失败',
-  running: '运行中',
-  reclaim: '待回收',
-}
-
-function queueVariant(queue: WorkbenchQueueKey) {
-  if (queue === 'ready') return 'success' as const
-  if (queue === 'failed' || queue === 'reclaim') return 'error' as const
-  if (queue === 'running') return 'info' as const
-  return 'warning' as const
-}
-
-function actionLabel(action: WorkbenchRow['recommendedAction']) {
-  if (action === 'open') return '打开后台'
-  if (action === 'bind') return '更新凭据'
-  if (action === 'validate') return '本机验证'
-  if (action === 'retry') return '重试'
-  if (action === 'refresh') return '刷新同步'
-  if (action === 'core_management') return '配置内核'
-  if (action === 'diagnostics') return '查看诊断'
-  return '不可执行'
-}
+import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
+import type { WorkbenchRow } from '../types'
 
 function shortTime(value: string | undefined) {
   if (!value) return '-'
@@ -77,8 +51,8 @@ export function WorkbenchTable({
       title: '执行状态',
       width: 96,
       render: (_, row) => (
-        <Badge className="whitespace-nowrap" variant={queueVariant(row.queue)}>
-          {queueLabels[row.queue]}
+        <Badge className="whitespace-nowrap" variant={workbenchQueueVariant(row.queue)}>
+          {workbenchQueueLabels[row.queue]}
         </Badge>
       ),
     },
@@ -106,18 +80,18 @@ export function WorkbenchTable({
       key: 'failure',
       title: '最近失败',
       width: 180,
-      render: (_, row) => (
-        <div className="max-w-[150px]">
-          <div className="truncate text-xs text-[var(--color-text-secondary)]" title={row.failureCode || '-'}>
-            {row.failureCode || '-'}
-          </div>
-          {row.failureMessage ? (
-            <div className="mt-1 truncate text-xs text-[var(--color-text-muted)]" title={row.failureMessage}>
-              {row.failureMessage}
-            </div>
-          ) : null}
-        </div>
-      ),
+      render: (_, row) => {
+        const summary = row.failureCode || row.failureMessage || '-'
+        const title = [row.failureCode, row.failureMessage].filter(Boolean).join('\n') || '-'
+        return (
+          <span
+            className="block max-w-[150px] truncate text-xs text-[var(--color-text-secondary)]"
+            title={title}
+          >
+            {summary}
+          </span>
+        )
+      },
     },
     {
       key: 'profile',
@@ -150,8 +124,8 @@ export function WorkbenchTable({
               event.stopPropagation()
               onAction(row)
             }}
-          >
-            {actionLabel(row.recommendedAction)}
+            >
+            {workbenchActionLabel(row.recommendedAction)}
           </Button>
         )
       },

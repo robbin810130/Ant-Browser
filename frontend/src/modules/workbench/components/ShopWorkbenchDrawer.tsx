@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ListChecks } from 'lucide-react'
 import { Badge, Button, Modal } from '../../../shared/components'
 import { fetchWorkspaceRunEvents, RunTimeline, type RunEvent, type RunRecord } from '../../runEvidence'
+import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
 import type { WorkbenchRow } from '../types'
 
 function statusVariant(value: boolean) {
@@ -24,6 +27,24 @@ function DetailItem({ label, value }: { label: string; value: string }) {
       <div className="mt-1 break-all text-sm text-[var(--color-text-primary)]">{value || '-'}</div>
     </div>
   )
+}
+
+function evidenceTime(value: string | undefined) {
+  return value || '-'
+}
+
+function isDesktopOpenEvidence(run: RunRecord | null) {
+  return Boolean(run?.runId?.startsWith('desktop-open:'))
+}
+
+function desktopOpenEvidenceEvent(run: RunRecord): RunEvent {
+  return {
+    eventId: `${run.runId}:reported`,
+    stage: run.status || 'failed',
+    message: run.failureMessage || '打开店铺后台失败',
+    details: run.failureCode ? { failureCode: run.failureCode } : {},
+    createdAt: run.finishedAt || run.startedAt,
+  }
 }
 
 export function ShopWorkbenchDrawer({
@@ -63,6 +84,13 @@ export function ShopWorkbenchDrawer({
         return
       }
 
+      if (isDesktopOpenEvidence(selectedRun)) {
+        setEvents([desktopOpenEvidenceEvent(selectedRun)])
+        setEventsError('')
+        setEventsLoading(false)
+        return
+      }
+
       setEventsLoading(true)
       setEventsError('')
       try {
@@ -89,11 +117,15 @@ export function ShopWorkbenchDrawer({
   if (!row) return null
 
   const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+  const actionLabel = workbenchActionLabel(row.recommendedAction)
 
   return (
     <Modal open={open} onClose={onClose} title={modalTitle(row)} width="860px">
       <div className="space-y-5">
         <div className="flex flex-wrap gap-2">
+          <Badge variant={workbenchQueueVariant(row.queue)}>
+            {workbenchQueueLabels[row.queue]}
+          </Badge>
           <Badge variant={row.shop.sharedLoginStatus === 'ready' ? 'success' : 'warning'}>
             {row.shop.sharedLoginStatusLabel || row.shop.sharedLoginStatus || 'unknown'}
           </Badge>
@@ -113,10 +145,16 @@ export function ShopWorkbenchDrawer({
           <DetailItem label="平台" value={row.shop.platformCode} />
         </div>
 
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <DetailItem label="最近打开" value={evidenceTime(row.evidence.latestOpen?.startedAt)} />
+          <DetailItem label="最近验证" value={evidenceTime(row.evidence.latestValidation?.startedAt)} />
+          <DetailItem label="最近失败" value={row.failureCode || row.failureMessage || '-'} />
+        </div>
+
         <div className="rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-surface)] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-[var(--color-text-primary)]">推荐动作</div>
+              <div className="text-sm font-semibold text-[var(--color-text-primary)]">推荐动作：{actionLabel}</div>
               <p className="mt-1 break-words text-sm text-[var(--color-text-secondary)]">
                 {row.failureMessage || '当前店铺可按推荐动作继续处理。'}
               </p>
@@ -131,9 +169,24 @@ export function ShopWorkbenchDrawer({
               disabled={Boolean(runningAction && !isRunningThisRow)}
               onClick={() => onAction(row)}
             >
-              执行推荐动作
+              {actionLabel}
             </Button>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-[var(--color-border-default)] bg-[var(--color-bg-subtle)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[var(--color-text-primary)]">店铺级运营任务</div>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              当前只预留入口，完整任务系统后续接入。
+            </p>
+          </div>
+          <Link className="shrink-0" to={`/operations?shopId=${encodeURIComponent(row.shop.shopId)}`}>
+            <Button variant="secondary" size="sm" className="w-full whitespace-nowrap sm:w-auto">
+              <ListChecks className="h-4 w-4" />
+              运营任务
+            </Button>
+          </Link>
         </div>
 
         <div>

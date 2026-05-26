@@ -203,14 +203,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 		}
 	}
 	if !hasFingerprint {
-		seed := 0
-		for _, char := range profile.ProfileId {
-			seed = (seed << 5) - seed + int(char)
-		}
-		if seed < 0 {
-			seed = -seed
-		}
-		args = append(args, fmt.Sprintf("--fingerprint=%d", seed))
+		args = append(args, fmt.Sprintf("--fingerprint=%d", fingerprintSeedForProfileID(profile.ProfileId)))
 	}
 
 	if effectiveProxy == "direct://" {
@@ -689,6 +682,18 @@ func ensureNewWindowLaunchArg(args []string) []string {
 		}
 	}
 	return append(args, "--new-window")
+}
+
+func fingerprintSeedForProfileID(profileID string) int {
+	const maxSeed = 1<<31 - 1
+	seed := uint32(0)
+	for _, char := range strings.TrimSpace(profileID) {
+		seed = seed*31 + uint32(char)
+	}
+	if seed == 0 {
+		return 1
+	}
+	return int(seed%maxSeed + 1)
 }
 
 func appendLaunchTargets(args []string, profile *BrowserProfile, startURLs []string, skipDefaultStartURLs bool) []string {

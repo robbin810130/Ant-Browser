@@ -1,8 +1,8 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, ListChecks } from 'lucide-react'
 import clsx from 'clsx'
-import { Alert, Badge, Button, Card, Drawer, Loading, toast } from '../../../shared/components'
+import { Alert, Badge, Button, Drawer, Loading, toast } from '../../../shared/components'
 import { fetchShopProfile, sourceLabel } from '../api'
 import {
   asmBadge,
@@ -20,7 +20,7 @@ function isEmptyValue(value: ReactNode) {
 
 function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="grid gap-1 border-b border-[var(--color-border-muted)] py-3 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+    <div className="grid gap-1 border-b border-[var(--color-border-muted)] py-3 last:border-0 sm:grid-cols-[132px_minmax(0,1fr)] sm:gap-4">
       <span className="text-sm text-[var(--color-text-muted)]">{label}</span>
       <span className="min-w-0 break-all text-sm text-[var(--color-text-primary)] sm:text-right">
         {isEmptyValue(value) ? '-' : value}
@@ -29,15 +29,28 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-function OverviewItem({ label, value }: { label: string; value: ReactNode }) {
+function SummaryItem({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-surface)] px-3 py-2">
-      <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
-      <div className="mt-1 min-w-0 truncate text-sm font-medium text-[var(--color-text-primary)]" title={typeof value === 'string' ? value : undefined}>
+    <div className="min-w-0 border-b border-[var(--color-border-muted)] py-2 last:border-0">
+      <div className="text-xs text-[var(--color-text-muted)]">{label}</div>
+      <div className="mt-1 min-w-0 truncate text-sm font-medium text-[var(--color-text-primary)]" title={title || (typeof value === 'string' ? value : undefined)}>
         {isEmptyValue(value) ? '-' : value}
       </div>
     </div>
   )
+}
+
+function SummaryBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-surface)] px-4 py-3">
+      <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
+      <div className="mt-2">{children}</div>
+    </section>
+  )
+}
+
+function completeCategory(profile: ShopProfile) {
+  return profile.categoryNames.length > 0 ? profile.categoryNames.join('、') : profile.mainCategory
 }
 
 interface ShopProfileDetailDrawerProps {
@@ -92,6 +105,8 @@ export function ShopProfileDetailDrawer({ shopId, open, onClose }: ShopProfileDe
 
   const title = profile?.shopName || profile?.shopId || shopId
   const action = profile ? shopProfileAction(profile) : null
+  const workbenchUrl = profile ? `/workbench?shopId=${encodeURIComponent(profile.shopId)}` : '/workbench'
+  const operationsUrl = profile ? `/operations?shopId=${encodeURIComponent(profile.shopId)}` : '/operations'
 
   return (
     <Drawer
@@ -109,43 +124,94 @@ export function ShopProfileDetailDrawer({ shopId, open, onClose }: ShopProfileDe
       ) : profile ? (
         <div className="space-y-5">
           <section className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-subtle)] p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
               <div className="min-w-0">
-                <p className="break-all text-xs text-[var(--color-text-muted)]">
-                  {profile.fullShopName || profile.shopId}
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="min-w-0 break-words text-lg font-semibold text-[var(--color-text-primary)]">
+                    {profile.shopName || profile.shopId}
+                  </h2>
+                  <Badge variant="default">{profile.platformName || platformLabel(profile.platformCode)}</Badge>
+                </div>
+                <p className="mt-2 break-words text-sm text-[var(--color-text-secondary)]">
+                  {profile.fullShopName || profile.shopAlias || profile.shopId}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 grid gap-2 text-sm text-[var(--color-text-muted)] sm:grid-cols-2">
+                  <span className="min-w-0 truncate" title={profile.shopCode || '-'}>
+                    店铺编码：{profile.shopCode || '-'}
+                  </span>
+                  <span className="min-w-0 truncate" title={profile.shopId}>
+                    Shop ID：{profile.shopId}
+                  </span>
+                  <span className="min-w-0 truncate" title={completeCategory(profile) || '-'}>
+                    类目：{completeCategory(profile) || '-'}
+                  </span>
+                  <span className="min-w-0 truncate" title={profile.asmShopId || '-'}>
+                    ASM ID：{profile.asmShopId || '-'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-surface)] p-3">
+                <div className="flex flex-wrap gap-2">
                   {asmBadge(profile.asmStatus)}
                   {authorizationBadge(profile)}
                   <Badge variant="default">{sourceLabel(profile.source)}</Badge>
                 </div>
+                <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+                  {action?.description || '进入店铺工作台处理本地授权和打开后台。'}
+                </p>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  <Link to={workbenchUrl} title={action?.description}>
+                    <Button size="sm" className="w-full">
+                      <ExternalLink className="h-4 w-4" />
+                      {action?.label || '进入工作台'}
+                    </Button>
+                  </Link>
+                  <Link to={operationsUrl} title="店铺级运营任务入口，完整任务系统后续接入">
+                    <Button variant="secondary" size="sm" className="w-full">
+                      <ListChecks className="h-4 w-4" />
+                      运营任务
+                    </Button>
+                  </Link>
+                </div>
               </div>
-              <Link className="shrink-0" to={`/workbench?shopId=${encodeURIComponent(profile.shopId)}`} title={action?.description}>
-                <Button size="sm" className="w-full sm:w-auto">
-                  <ExternalLink className="h-4 w-4" />
-                  {action?.label || '进入工作台'}
-                </Button>
-              </Link>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <OverviewItem label="店铺编码" value={profile.shopCode} />
-              <OverviewItem label="平台" value={profile.platformName || platformLabel(profile.platformCode)} />
-              <OverviewItem label="主营类目" value={profile.mainCategory} />
-              <OverviewItem label="最近同步" value={formatProfileTime(profile.lastSyncedAt)} />
             </div>
           </section>
 
+          <div className="grid gap-3 lg:grid-cols-3">
+            <SummaryBlock title="经营归属">
+              <SummaryItem label="运营" value={profile.operatorName || profile.operatorUsername} />
+              <SummaryItem label="业务经理" value={profile.businessManagerName || profile.businessManagerUsername} />
+              <SummaryItem label="部门 / 分公司" value={[profile.department, profile.subCompanyName].filter(Boolean).join(' / ')} />
+            </SummaryBlock>
+            <SummaryBlock title="工作台摘要">
+              <SummaryItem label="推荐动作" value={action?.label || '进入工作台'} />
+              <SummaryItem label="授权状态" value={profile.authorizationStatusLabel || profile.authorizationStatus || '未配置'} />
+              <SummaryItem label="处理入口" value="工作台查看最近打开、验证和失败证据" title="工作台查看最近打开、验证和失败证据" />
+            </SummaryBlock>
+            <SummaryBlock title="最近同步">
+              <SummaryItem label="同步时间" value={formatProfileTime(profile.lastSyncedAt)} />
+              <SummaryItem label="ASM 更新时间" value={formatProfileTime(profile.sourceUpdatedAt)} />
+              <SummaryItem label="资料完整度" value={profile.dataCompleteness === 'complete' ? '完整' : profile.dataCompleteness === 'partial' ? '部分完整' : '未知'} />
+            </SummaryBlock>
+          </div>
+
           {buildShopProfileDetailGroups(profile).map((group) => (
-            <Card
+            <section
               key={group.title}
-              title={group.title}
-              subtitle={group.subtitle}
-              className={clsx(group.tone === 'muted' && 'bg-[var(--color-bg-subtle)]')}
+              className={clsx(
+                'rounded-lg border border-[var(--color-border-default)] px-4 py-3',
+                group.tone === 'muted' ? 'bg-[var(--color-bg-subtle)]' : 'bg-[var(--color-bg-surface)]',
+              )}
             >
+              <div className="mb-1">
+                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{group.title}</h3>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{group.subtitle}</p>
+              </div>
               {group.fields.map((field) => (
                 <DetailRow key={field.label} label={field.label} value={field.value} />
               ))}
-            </Card>
+            </section>
           ))}
         </div>
       ) : (

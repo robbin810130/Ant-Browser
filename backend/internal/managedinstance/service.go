@@ -1,6 +1,7 @@
 package managedinstance
 
 import (
+	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/browser"
 	"fmt"
 	"path/filepath"
@@ -61,36 +62,51 @@ func (s *Service) isSystemChromeExecutablePath(corePath string) bool {
 	}
 
 	appRoot := ""
+	stateRoot := ""
 	if s != nil && s.browserMgr != nil {
 		appRoot = filepath.Clean(strings.TrimSpace(s.browserMgr.AppRoot))
-	}
-	outsideAppRoot := appRoot != "" && corePath != appRoot
-	if outsideAppRoot {
-		if rel, err := filepath.Rel(appRoot, corePath); err == nil {
-			outsideAppRoot = strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".."
+		if appRoot != "" {
+			stateRoot = filepath.Clean(apppath.StateRoot(appRoot))
 		}
 	}
+	outsideTrustedRoots := !isPathInsideRoot(corePath, appRoot) && !isPathInsideRoot(corePath, stateRoot)
 
 	switch goruntime.GOOS {
 	case "darwin":
 		return strings.HasPrefix(corePath, "/Applications/Google Chrome.app/") ||
 			strings.HasPrefix(corePath, "/Applications/Chromium.app/") ||
 			strings.HasPrefix(corePath, "/System/Applications/Google Chrome.app/") ||
-			(outsideAppRoot && (strings.Contains(corePath, "/Google Chrome.app/Contents/MacOS/Google Chrome") ||
+			(outsideTrustedRoots && (strings.Contains(corePath, "/Google Chrome.app/Contents/MacOS/Google Chrome") ||
 				strings.Contains(corePath, "/Chromium.app/Contents/MacOS/Chromium")))
 	case "windows":
 		lower := strings.ToLower(corePath)
 		return strings.Contains(lower, `\google\chrome\application\chrome.exe`) ||
 			strings.Contains(lower, `\chromium\application\chrome.exe`) ||
-			(outsideAppRoot && strings.HasSuffix(lower, `\chrome.exe`) &&
+			(outsideTrustedRoots && strings.HasSuffix(lower, `\chrome.exe`) &&
 				(strings.Contains(lower, `\google\chrome\`) || strings.Contains(lower, `\chromium\`)))
 	default:
 		return strings.HasPrefix(corePath, "/usr/bin/google-chrome") ||
 			strings.HasPrefix(corePath, "/usr/bin/chromium") ||
 			strings.HasPrefix(corePath, "/opt/google/chrome/") ||
 			strings.HasPrefix(corePath, "/snap/chromium/") ||
-			(outsideAppRoot && (strings.Contains(corePath, "/google-chrome") || strings.Contains(corePath, "/chromium")))
+			(outsideTrustedRoots && (strings.Contains(corePath, "/google-chrome") || strings.Contains(corePath, "/chromium")))
 	}
+}
+
+func isPathInsideRoot(path string, root string) bool {
+	path = filepath.Clean(strings.TrimSpace(path))
+	root = filepath.Clean(strings.TrimSpace(root))
+	if path == "." || root == "." || path == "" || root == "" {
+		return false
+	}
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (s *Service) beginOpenRun(profileID string) *openRun {
