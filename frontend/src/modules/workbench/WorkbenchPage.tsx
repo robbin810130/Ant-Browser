@@ -5,6 +5,7 @@ import { Alert, Button, Card, toast } from '../../shared/components'
 import { useAuthStore } from '../../store/authStore'
 import { buildRunEvidenceIndex, fetchWorkspaceRuns, type RunRecord, type ShopRunEvidence } from '../runEvidence'
 import {
+  closeWorkspaceShop,
   fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
   openWorkspaceShop,
@@ -23,14 +24,16 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
-import { credentialFailureCodes, recoveryActionFor } from './recovery'
+import { recoveryActionFor } from './recovery'
+import { queueForWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
-type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'bind' | 'validate'> }
+type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> }
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
+  close: '',
   bind: '',
   validate: '',
   retry: '重试动作会在后续批量执行任务接入，当前请先查看运行证据。',
@@ -52,13 +55,13 @@ function emptyEvidence(): ShopRunEvidence {
 
 function queueFor(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): WorkbenchQueueKey {
   const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
-  if (shop.reclaimPending) return 'reclaim'
-  if (evidence.activeRun || shop.instanceRunning) return 'running'
-  if (credentialFailureCodes.has(failureCode)) return 'credential'
-  if (evidence.latestFailure?.failureCode || evidence.latestFailure?.failureMessage) return 'failed'
-  if (shop.sharedLoginStatus === 'awaiting_verification') return 'manual'
-  if (shop.sharedLoginStatus !== 'ready') return 'credential'
-  return 'ready'
+  return queueForWorkbenchState({
+    reclaimPending: shop.reclaimPending,
+    instanceRunning: shop.instanceRunning,
+    activeRun: Boolean(evidence.activeRun),
+    sharedLoginStatus: shop.sharedLoginStatus,
+    failureCode,
+  })
 }
 
 function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
@@ -88,6 +91,7 @@ function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: Sh
 function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorizedShop) {
   const name = shop.shopName || shop.shopId
   if (action === 'open') return `已打开 ${name}`
+  if (action === 'close') return `已关闭 ${name}`
   if (action === 'bind') return `${name} 更新凭据已发起`
   if (action === 'validate') return `${name} 本机验证已发起`
   return '动作已发起'
@@ -95,6 +99,7 @@ function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorize
 
 function actionFallbackError(action: WorkbenchActionKey) {
   if (action === 'open') return '打开店铺后台失败'
+  if (action === 'close') return '关闭店铺后台失败'
   if (action === 'bind') return '发起更新凭据失败'
   if (action === 'validate') return '发起本机验证失败'
   return '动作执行失败'
@@ -153,6 +158,7 @@ export function WorkbenchPage() {
           coreReady: shop.coreReady,
           sharedLoginStatus: shop.sharedLoginStatus,
           failureCode,
+          instanceRunning: shop.instanceRunning,
         })
 
         return {
@@ -200,7 +206,7 @@ export function WorkbenchPage() {
       return
     }
 
-    if (action !== 'open' && action !== 'bind' && action !== 'validate') {
+    if (action !== 'open' && action !== 'close' && action !== 'bind' && action !== 'validate') {
       toast.info(unsupportedActionMessage[action])
       return
     }
@@ -219,6 +225,14 @@ export function WorkbenchPage() {
         await load(true)
         if (!result.success) {
           toast.error(result.message || '打开店铺后台失败')
+          return
+        }
+        toast.success(actionSuccessLabel(action, row.shop))
+      } else if (action === 'close') {
+        const closed = await closeWorkspaceShop(row.shop.profileId)
+        await load(true)
+        if (!closed) {
+          toast.error('当前店铺后台未在运行')
           return
         }
         toast.success(actionSuccessLabel(action, row.shop))
