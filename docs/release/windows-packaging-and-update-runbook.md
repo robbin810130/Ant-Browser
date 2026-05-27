@@ -102,6 +102,50 @@ bat\publish.bat W -Version 1.1.0
    - `publish/output/AntBrowser-<version>-windows-amd64.zip`
    - `publish/output/AntBrowser-<version>-windows-amd64.zip.sha256`
 
+## Windows 应用本体自更新自动化门禁
+
+应用本体自更新必须用同一开发分支构造两个版本做闭环：
+
+- baseline：低版本安装包，例如 `1.1.0`
+- target：高版本更新包，例如 `1.1.5`
+
+一键回归命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\app-update\windows-app-update-e2e.ps1 -BaselineVersion 1.1.0 -TargetVersion 1.1.5
+```
+
+脚本会执行：
+
+1. 分别打包 baseline 与 target。
+2. 校验 target `AntBrowser-<version>-windows-amd64.zip` 与 `app-update-stable.json`。
+3. 静默安装 baseline 到 `%LOCALAPPDATA%\Programs\Ant Browser`。
+4. 使用 Windows 本地绝对路径配置 `DESKTOP_APP_UPDATE_MANIFEST_URL`。
+5. 通过临时 Go harness 调用 `Check -> Download -> Apply`。
+6. 显式设置 `WindowsBackend.CurrentExePath` 为已安装的 `ant-chrome.exe`，避免 `go run` 的临时程序被复制成 runner。
+7. 等待 runner 完成替换。
+8. 校验安装目录 `ant-chrome.exe` 的 SHA256 等于 target zip 内的 `ant-chrome.exe`。
+9. 校验 `state.json` 中 `localAppVersion` 等于 target 版本且没有 `lastError`。
+10. 校验 `data/app.db`、`runtime/`、`diagnostics/` 与 `config.yaml` 保留。
+
+如果 baseline 与 target 产物已提前生成并复制到测试目录，可跳过打包：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\app-update\windows-app-update-e2e.ps1 -BaselineVersion 1.1.0 -TargetVersion 1.1.5 -SkipPublish
+```
+
+默认测试目录：
+
+```text
+C:\AntBrowserUpdateTest
+```
+
+成功判定：
+
+```text
+[OK] Windows app-update e2e passed
+```
+
 ## Windows 真机安装回归
 
 ### 场景 1：安装包能正常安装
