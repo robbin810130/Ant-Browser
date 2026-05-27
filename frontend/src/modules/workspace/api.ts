@@ -2,6 +2,7 @@ import {
   FetchDesktopSharedLoginBindSession,
   StartDesktopSharedLoginBind,
   StartDesktopSharedLoginValidate,
+  StopInstance,
   WorkspaceAuthorizedShops,
   WorkspaceOpenShop,
   WorkspaceSummary,
@@ -161,6 +162,13 @@ export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenSh
         ...result,
         message: resolveOpenErrorMessage(result.code, result.message),
       }
+}
+
+export async function closeWorkspaceShop(profileId: string): Promise<boolean> {
+  const normalizedProfileId = profileId.trim()
+  if (!normalizedProfileId) return false
+  if (useDevWorkspaceFallback()) return true
+  return Boolean(await StopInstance(normalizedProfileId))
 }
 
 export async function startWorkspaceSharedLoginBind(accessToken: string, shopId: string): Promise<WorkspaceSharedLoginActionResult> {

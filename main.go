@@ -112,6 +112,9 @@ func isWailsDevExecutableDir(exeDir, tempDir string) bool {
 	if exeDirLower == "" {
 		return false
 	}
+	if _, err := os.Stat(filepath.Join(exeDir, "publish", "runtime-manifest.json")); err == nil {
+		return false
+	}
 
 	if tempDirLower != "" && strings.HasPrefix(exeDirLower, tempDirLower) {
 		return true

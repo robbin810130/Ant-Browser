@@ -18,6 +18,7 @@ export function workbenchQueueVariant(queue: WorkbenchQueueKey) {
 
 export function workbenchActionLabel(action: WorkbenchActionKey) {
   if (action === 'open') return '打开后台'
+  if (action === 'close') return '关闭后台'
   if (action === 'bind') return '更新凭据'
   if (action === 'validate') return '本机验证'
   if (action === 'retry') return '重试'

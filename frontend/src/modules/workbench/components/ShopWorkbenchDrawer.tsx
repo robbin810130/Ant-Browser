@@ -4,6 +4,7 @@ import { ListChecks } from 'lucide-react'
 import { Badge, Button, Modal } from '../../../shared/components'
 import { fetchWorkspaceRunEvents, RunTimeline, type RunEvent, type RunRecord } from '../../runEvidence'
 import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
+import { openFailurePresentation } from '../statusMatrix'
 import type { WorkbenchRow } from '../types'
 
 function statusVariant(value: boolean) {
@@ -118,6 +119,7 @@ export function ShopWorkbenchDrawer({
 
   const isRunningThisRow = runningAction?.shopId === row.shop.shopId
   const actionLabel = workbenchActionLabel(row.recommendedAction)
+  const failure = openFailurePresentation(row.failureCode, row.failureMessage)
 
   return (
     <Modal open={open} onClose={onClose} title={modalTitle(row)} width="860px">
@@ -148,7 +150,7 @@ export function ShopWorkbenchDrawer({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <DetailItem label="最近打开" value={evidenceTime(row.evidence.latestOpen?.startedAt)} />
           <DetailItem label="最近验证" value={evidenceTime(row.evidence.latestValidation?.startedAt)} />
-          <DetailItem label="最近失败" value={row.failureCode || row.failureMessage || '-'} />
+          <DetailItem label="最近失败" value={failure.evidence || '-'} />
         </div>
 
         <div className="rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-surface)] p-4">
@@ -156,7 +158,7 @@ export function ShopWorkbenchDrawer({
             <div className="min-w-0">
               <div className="text-sm font-semibold text-[var(--color-text-primary)]">推荐动作：{actionLabel}</div>
               <p className="mt-1 break-words text-sm text-[var(--color-text-secondary)]">
-                {row.failureMessage || '当前店铺可按推荐动作继续处理。'}
+                {failure.evidence || '当前店铺可按推荐动作继续处理。'}
               </p>
               {row.failureCode ? (
                 <p className="mt-2 break-all text-xs text-[var(--color-text-muted)]">失败码：{row.failureCode}</p>

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Badge, Button, Table } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
+import { openFailurePresentation } from '../statusMatrix'
 import type { WorkbenchRow } from '../types'
 
 function shortTime(value: string | undefined) {
@@ -81,7 +82,8 @@ export function WorkbenchTable({
       title: '最近失败',
       width: 180,
       render: (_, row) => {
-        const summary = row.failureCode || row.failureMessage || '-'
+        const failure = openFailurePresentation(row.failureCode, row.failureMessage)
+        const summary = failure.evidence || '-'
         const title = [row.failureCode, row.failureMessage].filter(Boolean).join('\n') || '-'
         return (
           <span

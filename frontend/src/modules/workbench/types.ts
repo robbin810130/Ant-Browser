@@ -2,7 +2,7 @@ import type { RunRecord, ShopRunEvidence } from '../runEvidence'
 import type { WorkspaceAuthorizedShop } from '../workspace/types'
 
 export type WorkbenchQueueKey = 'ready' | 'manual' | 'credential' | 'failed' | 'running' | 'reclaim'
-export type WorkbenchActionKey = 'open' | 'bind' | 'validate' | 'retry' | 'core_management' | 'refresh' | 'diagnostics' | 'none'
+export type WorkbenchActionKey = 'open' | 'close' | 'bind' | 'validate' | 'retry' | 'core_management' | 'refresh' | 'diagnostics' | 'none'
 export type ExecutableBatchActionKey = 'open' | 'bind' | 'validate' | 'retry' | 'refresh'
 
 export interface WorkbenchRow {
