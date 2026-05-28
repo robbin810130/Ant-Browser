@@ -147,6 +147,8 @@ export function ExportDesktopEnvironmentDiagnostics():Promise<string>;
 
 export function FetchDesktopAuthProfile(arg1:string):Promise<backend.DesktopAuthProfile>;
 
+export function GetDesktopServerConnection():Promise<backend.DesktopServerConnection>;
+
 export function FetchDesktopSharedLoginBindSession(arg1:string,arg2:string):Promise<backend.DesktopSharedLoginBindSession>;
 
 export function FetchRemoteAuthorProfile(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -210,6 +212,8 @@ export function SaveBrowserProxies(arg1:Array<config.BrowserProxy>):Promise<void
 export function SaveBrowserSettings(arg1:browser.Settings):Promise<void>;
 
 export function SaveDesktopAuthSession(arg1:string,arg2:boolean):Promise<void>;
+
+export function SaveDesktopServerConnection(arg1:string):Promise<backend.DesktopServerConnection>;
 
 export function SetLogLevel(arg1:string):Promise<void>;
 

@@ -3,9 +3,11 @@ import {
   ClearDesktopAuthSession,
   DesktopAuthStrongCleanup,
   FetchDesktopAuthProfile,
+  GetDesktopServerConnection,
   LoadDesktopAuthSession,
   LoginDesktopUser,
   SaveDesktopAuthSession,
+  SaveDesktopServerConnection,
 } from '../../wailsjs/go/main/App'
 import type { DesktopAuthProfile, DesktopAuthSession } from './types'
 
@@ -21,9 +23,11 @@ type DesktopAuthBindings = {
   ClearDesktopAuthSession?: () => Promise<void>
   DesktopAuthStrongCleanup?: (reason: DesktopAuthStrongCleanupReason) => Promise<void>
   FetchDesktopAuthProfile?: (accessToken: string) => Promise<any>
+  GetDesktopServerConnection?: () => Promise<any>
   LoadDesktopAuthSession?: () => Promise<any>
   LoginDesktopUser?: (username: string, password: string) => Promise<string>
   SaveDesktopAuthSession?: (accessToken: string, rememberMe: boolean) => Promise<void>
+  SaveDesktopServerConnection?: (serverOrigin: string) => Promise<any>
 }
 
 function getBinding<K extends keyof DesktopAuthBindings>(name: K): DesktopAuthBindings[K] | undefined {
@@ -33,9 +37,11 @@ function getBinding<K extends keyof DesktopAuthBindings>(name: K): DesktopAuthBi
     ClearDesktopAuthSession,
     DesktopAuthStrongCleanup,
     FetchDesktopAuthProfile,
+    GetDesktopServerConnection,
     LoadDesktopAuthSession,
     LoginDesktopUser,
     SaveDesktopAuthSession,
+    SaveDesktopServerConnection,
   }
   return fallback?.[name] ?? staticBindings[name]
 }
@@ -73,6 +79,20 @@ function normalizeDesktopAuthProfile(input: any): DesktopAuthProfile {
   }
 }
 
+export type DesktopServerConnection = {
+  serverOrigin: string
+  source: string
+  configPath: string
+}
+
+function normalizeDesktopServerConnection(input: any): DesktopServerConnection {
+  return {
+    serverOrigin: String(input?.serverOrigin || ''),
+    source: String(input?.source || ''),
+    configPath: String(input?.configPath || ''),
+  }
+}
+
 export async function loadDesktopAuthSession(): Promise<DesktopAuthSession> {
   const fn = getBinding('LoadDesktopAuthSession')
   if (shouldUseDevAuthFallback()) {
@@ -104,6 +124,31 @@ export async function loginDesktopUser(username: string, password: string): Prom
   }
   const accessToken = await fn(username.trim(), password.trim())
   return String(accessToken || '').trim()
+}
+
+export async function getDesktopServerConnection(): Promise<DesktopServerConnection> {
+  const fn = getBinding('GetDesktopServerConnection')
+  if (shouldUseDevAuthFallback() || !fn || !hasDesktopAuthBinding('GetDesktopServerConnection')) {
+    return normalizeDesktopServerConnection({
+      serverOrigin: 'http://127.0.0.1:4174',
+      source: 'dev-fallback',
+    })
+  }
+  return normalizeDesktopServerConnection(await fn())
+}
+
+export async function saveDesktopServerConnection(serverOrigin: string): Promise<DesktopServerConnection> {
+  const fn = getBinding('SaveDesktopServerConnection')
+  if (shouldUseDevAuthFallback()) {
+    return normalizeDesktopServerConnection({
+      serverOrigin: serverOrigin.trim(),
+      source: 'dev-fallback',
+    })
+  }
+  if (!fn || !hasDesktopAuthBinding('SaveDesktopServerConnection')) {
+    throw new Error('当前环境缺少 SaveDesktopServerConnection 绑定')
+  }
+  return normalizeDesktopServerConnection(await fn(serverOrigin))
 }
 
 export async function clearDesktopAuthSession(): Promise<void> {

@@ -151,6 +151,24 @@ export namespace backend {
 	}
 	
 	
+	export class DesktopServerConnection {
+	    serverOrigin: string;
+	    source: string;
+	    configPath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DesktopServerConnection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.serverOrigin = source["serverOrigin"];
+	        this.source = source["source"];
+	        this.configPath = source["configPath"];
+	    }
+	}
+	
+	
 	export class DesktopSharedLoginDetail {
 	    shopId: string;
 	    shopName: string;
