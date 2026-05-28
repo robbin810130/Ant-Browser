@@ -1,5 +1,13 @@
 # Windows 发布 / 安装 / 更新回归 Runbook
 
+## 小Q协作入口
+
+Windows 智能体小Q执行发布验证时，先读：
+
+- `docs/release/windows-agent-q-playbook.md`
+
+该手册定义了小Q的职责边界、服务器地址、打包命令、app-update e2e、远端 4174 登录验收和标准汇报格式。
+
 ## 目标
 
 这份 runbook 只服务内部发布、真机回归与排障，不面向终端用户。
