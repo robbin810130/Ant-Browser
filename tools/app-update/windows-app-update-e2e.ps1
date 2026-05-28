@@ -50,13 +50,20 @@ function Invoke-Native {
         [string[]]$Arguments = @()
     )
     & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$FilePath $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    $exitCode = 0
+    if (Test-Path variable:LASTEXITCODE) {
+        $exitCode = $global:LASTEXITCODE
+    }
+    if ($exitCode -ne 0) {
+        throw "$FilePath $($Arguments -join ' ') failed with exit code $exitCode"
     }
 }
 
 function Stop-AntBrowser {
-    Get-Process ant-chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+    foreach ($name in @("ant-chrome", "xray", "sing-box")) {
+        Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
+    Start-Sleep -Milliseconds 500
 }
 
 function Copy-ReleaseArtifacts {
@@ -229,6 +236,7 @@ Write-Step "Install baseline $BaselineVersion"
 Stop-AntBrowser
 Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
+Stop-AntBrowser
 Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
 if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf) {
     $beforeDataHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installRoot "data\app.db")).Hash
