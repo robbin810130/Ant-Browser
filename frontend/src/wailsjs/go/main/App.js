@@ -274,6 +274,10 @@ export function FetchDesktopAuthProfile(arg1) {
   return window['go']['main']['App']['FetchDesktopAuthProfile'](arg1);
 }
 
+export function GetDesktopServerConnection() {
+  return window['go']['main']['App']['GetDesktopServerConnection']();
+}
+
 export function FetchDesktopSharedLoginBindSession(arg1, arg2) {
   return window['go']['main']['App']['FetchDesktopSharedLoginBindSession'](arg1, arg2);
 }
@@ -400,6 +404,10 @@ export function SaveBrowserSettings(arg1) {
 
 export function SaveDesktopAuthSession(arg1, arg2) {
   return window['go']['main']['App']['SaveDesktopAuthSession'](arg1, arg2);
+}
+
+export function SaveDesktopServerConnection(arg1) {
+  return window['go']['main']['App']['SaveDesktopServerConnection'](arg1);
 }
 
 export function SetLogLevel(arg1) {
