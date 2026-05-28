@@ -21,7 +21,7 @@ $targetZip = Join-Path $targetDir "AntBrowser-$TargetVersion-windows-amd64.zip"
 $baselineInstaller = Join-Path $baselineDir "AntBrowser-Setup-$BaselineVersion.exe"
 $targetInstaller = Join-Path $targetDir "AntBrowser-Setup-$TargetVersion.exe"
 $extractDir = Join-Path $targetDir "extracted"
-$harnessDir = Join-Path $repoRoot "cmd\app-update-e2e"
+$harnessDir = Join-Path $repoRoot "backend\cmd\app-update-e2e"
 $harnessPath = Join-Path $harnessDir "main.go"
 
 function Write-Step {
@@ -78,9 +78,9 @@ function Publish-Version {
     Remove-Item -Recurse -Force $outputDir -ErrorAction SilentlyContinue
     Invoke-Native -FilePath (Join-Path $repoRoot "bat\publish.bat") -Arguments @("W", "-Version", $Version)
     Invoke-Native -FilePath "python" -Arguments @(
-        "tools\app-update\verify-app-update-package.py",
-        "publish\output\app-update-stable.json",
-        "publish\output\AntBrowser-$Version-windows-amd64.zip",
+        (Join-Path $repoRoot "tools\app-update\verify-app-update-package.py"),
+        (Join-Path $outputDir "app-update-stable.json"),
+        (Join-Path $outputDir "AntBrowser-$Version-windows-amd64.zip"),
         "windows-amd64"
     )
     Copy-ReleaseArtifacts -Version $Version -Destination $Destination
@@ -244,7 +244,7 @@ Write-Harness
 Write-Step "Run Check -> Download -> Apply"
 Push-Location $repoRoot
 try {
-    Invoke-Native -FilePath "go" -Arguments @("run", ".\cmd\app-update-e2e")
+    Invoke-Native -FilePath "go" -Arguments @("run", ".\backend\cmd\app-update-e2e")
 }
 finally {
     Pop-Location
