@@ -38,6 +38,8 @@ def main() -> None:
         "Get-FileHash",
         "state.json",
         "localAppVersion",
+        "lastErrorCode",
+        "lastErrorMessage",
         "data\\app.db",
     ]
     missing = [fragment for fragment in required_fragments if fragment not in text]
