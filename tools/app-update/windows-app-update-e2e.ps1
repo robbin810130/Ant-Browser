@@ -182,8 +182,16 @@ function Assert-UpdateSucceeded {
         throw "localAppVersion mismatch: expected $TargetVersion, got $($state.localAppVersion)"
     }
     if ($state.PSObject.Properties.Name -contains "lastError" -and $null -ne $state.lastError) {
-        $lastError = ($state.lastError | ConvertTo-Json -Depth 10 -Compress)
-        if ($lastError -ne "null" -and $lastError -ne "{}") {
+        $lastErrorCode = ""
+        $lastErrorMessage = ""
+        if ($state.lastError.PSObject.Properties.Name -contains "code") {
+            $lastErrorCode = [string]$state.lastError.code
+        }
+        if ($state.lastError.PSObject.Properties.Name -contains "message") {
+            $lastErrorMessage = [string]$state.lastError.message
+        }
+        if ($lastErrorCode.Trim() -ne "" -or $lastErrorMessage.Trim() -ne "") {
+            $lastError = ($state.lastError | ConvertTo-Json -Depth 10 -Compress)
             throw "app-update lastError is not empty: $lastError"
         }
     }
