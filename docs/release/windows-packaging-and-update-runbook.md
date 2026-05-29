@@ -154,6 +154,29 @@ C:\AntBrowserUpdateTest
 [OK] Windows app-update e2e passed
 ```
 
+### PowerShell / PATH 排障
+
+如果 Windows agent 在 PowerShell 中报 `go` 不在 PATH，先在同一个 PowerShell 会话显式定位 `go.exe`：
+
+```powershell
+$Candidates = @(
+  "C:\Program Files\Go\bin\go.exe",
+  "C:\Go\bin\go.exe",
+  "$env:LOCALAPPDATA\Programs\Go\bin\go.exe"
+)
+
+$GoExe = $Candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $GoExe) {
+  Get-ChildItem -Path "C:\Program Files", "C:\", "$env:LOCALAPPDATA\Programs" -Filter go.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
+  throw "go.exe not found"
+}
+
+$env:PATH = "$(Split-Path $GoExe);$env:PATH"
+go version
+```
+
+确认后继续执行 e2e。不要因为 PATH 问题跳过 app-update 门禁。
+
 ## Windows 真机安装回归
 
 ### 场景 1：安装包能正常安装
@@ -190,6 +213,44 @@ C:\AntBrowserUpdateTest
 
 1. Gate 放行
 2. 应用进入登录页或后续正常流程
+
+### 场景 5：app-update 后 server connection 保持
+
+这是 2026-05-29 `1.1.7` 验证周期新增的必测项。
+
+构造规则：
+
+- baseline 使用旧版，例如 `1.1.0`
+- target 使用包含 `b4c393d` 或后续修复的版本
+- 登录页服务端地址为 `http://192.168.210.169:4174`
+- 完成 `baseline -> target` 应用本体自更新
+
+预期：
+
+1. 更新完成后不手工修改任何 `server-connection.json`
+2. 重启客户端后可直接登录远端 `4174`
+3. `%ProgramData%\1688shop-agent\runtime\config\server-connection.json` 存在，且 `serverOrigin` 指向当前业务服务器
+4. `%LOCALAPPDATA%\Programs\Ant Browser\runtime\config\server-connection.json` 从旧版升级场景下可以不存在
+5. 如果两个路径都存在，客户端使用最新 mtime 的有效配置
+
+采集命令：
+
+```powershell
+$Paths = @(
+  "$env:ProgramData\1688shop-agent\runtime\config\server-connection.json",
+  "$env:LOCALAPPDATA\Programs\Ant Browser\runtime\config\server-connection.json"
+)
+
+foreach ($p in $Paths) {
+  Write-Host "==== $p ===="
+  if (Test-Path $p) {
+    Get-Item $p | Select-Object FullName, Length, LastWriteTime
+    Get-Content $p -Raw
+  } else {
+    Write-Host "MISSING"
+  }
+}
+```
 
 ## 更新回归场景
 
@@ -240,6 +301,27 @@ C:\AntBrowserUpdateTest
 ## 应用本体自更新回归场景
 
 应用本体更新与 runtime 更新分开验证。runtime 更新只切换 `runtime/current.json`；应用本体更新会替换用户态安装目录中的 `ant-chrome.exe` 与随包 payload。
+
+### 已验证稳定基线
+
+截至 2026-05-29：
+
+```text
+baseline: 1.1.0
+target: 1.1.7
+HEAD: b4c393d fix: preserve desktop server connection across updates
+manifest: http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json
+server: http://192.168.210.169:4174
+```
+
+验证结论：
+
+- app-update `Check -> Download -> Apply` 通过。
+- 真实客户端 `1.1.0 -> 1.1.7` 更新通过。
+- 更新后 `state.json` 为 `succeeded`，`localAppVersion` 为 `1.1.7`。
+- 安装目录 `ant-chrome.exe` SHA256 与 target zip 内 exe 一致。
+- 更新后不手工改 `server-connection.json`，重启后可直接登录远端 `4174`。
+- ProgramData 下的 `server-connection.json` 升级前后内容与 mtime 不变。
 
 ### 前置条件
 
@@ -302,6 +384,32 @@ python3 tools/app-update/verify-app-update-package.py publish/output/app-update-
    - `appUpdateRoot`
    - `appUpdateStatePath`
    - `appUpdatePlanPath`
+
+### C2：remote release hosting HTTP gate
+
+发布到远端服务器后，不能以 SFTP 或 SSH 文件列表作为最终依据。JumpServer 的 SFTP subsystem 可能写入隔离文件系统。
+
+test 通道必须验证：
+
+```powershell
+curl.exe -fsSI http://192.168.210.169:18080/releases/windows/test/<target-version>/app-update-stable.json
+curl.exe -fsSI http://192.168.210.169:18080/releases/windows/test/<target-version>/AntBrowser-<target-version>-windows-amd64.zip
+```
+
+stable 通道必须验证：
+
+```powershell
+curl.exe -fsSI http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json
+curl.exe -fsSI http://192.168.210.169:18080/releases/windows/stable/AntBrowser-<target-version>-windows-amd64.zip
+curl.exe -fsSI http://192.168.210.169:18080/releases/windows/stable/AntBrowser-Setup-<target-version>.exe
+```
+
+预期：
+
+1. 所有 URL 返回 `HTTP/1.1 200 OK`
+2. manifest `Content-Length` 与远端文件大小一致
+3. zip / exe `Content-Length` 与本地产物大小一致
+4. 任何 404 都必须停止验证并重新上传到真实 Nginx 文件系统
 
 ### D：manifest load fail
 
@@ -472,23 +580,23 @@ Signing, notarization, and Gatekeeper checks are release readiness checks. They 
 
 ## 小Q 的 Windows 安装包任务
 
-在 Windows 真机上，下一步只做这条线：
+在 Windows 真机上，统一按 `docs/release/windows-agent-q-playbook.md` 执行。默认发布验证分支是：
 
-1. 拉取 `codex/windows-phase1-stability`
-2. 执行：
+```text
+codex/windows-app-update-validation
+```
+
+开始前执行：
 
 ```powershell
 git fetch --all
-git checkout codex/windows-phase1-stability
-git pull --ff-only
-bat\publish.bat W
+git checkout codex/windows-app-update-validation
+git pull --ff-only origin codex/windows-app-update-validation
+git rev-parse --short HEAD
+git status --short
 ```
 
-3. 回报：
-   - `publish/output/AntBrowser-Setup-<version>.exe` 是否生成
-   - 打包完整控制台输出
-   - 安装后首启 Gate 表现
-   - 是否能放行到登录页
+然后按目标版本执行打包、e2e、远端 HTTP 200、真实客户端升级和 server-connection 证据采集。
 
 ## 常见失败点
 
