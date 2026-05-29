@@ -355,7 +355,7 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		})
 	}
 
-	workspaceServerOriginDetails := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	workspaceServerOriginDetails := m.app.resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config))
 	updateManifestResolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
 	appUpdateLayout := m.app.appUpdateLayout()
 
@@ -391,7 +391,7 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 }
 
 func (m *releaseRuntimeManager) checkWorkspaceHostStatus() release.CheckResult {
-	resolution := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	resolution := m.app.resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config))
 	serverOrigin := strings.TrimRight(strings.TrimSpace(resolution.Origin), "/")
 	if serverOrigin == "" {
 		return release.CheckResult{

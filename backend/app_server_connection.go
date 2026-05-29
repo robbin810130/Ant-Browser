@@ -17,7 +17,7 @@ type DesktopServerConnection struct {
 
 func (a *App) GetDesktopServerConnection() (*DesktopServerConnection, error) {
 	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
-	resolution := resolveWorkspaceServerOriginDetails(runtimeDir, a.config)
+	resolution := a.resolveWorkspaceServerOriginDetails(runtimeDir)
 	return &DesktopServerConnection{
 		ServerOrigin: strings.TrimRight(strings.TrimSpace(resolution.Origin), "/"),
 		Source:       strings.TrimSpace(resolution.Source),
@@ -32,11 +32,6 @@ func (a *App) SaveDesktopServerConnection(serverOrigin string) (*DesktopServerCo
 	}
 
 	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
-	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return nil, fmt.Errorf("创建服务端连接配置目录失败: %w", err)
-	}
-
 	payload, err := json.MarshalIndent(workspaceServerConnectionConfig{
 		ServerOrigin: normalizedOrigin,
 	}, "", "  ")
@@ -45,11 +40,33 @@ func (a *App) SaveDesktopServerConnection(serverOrigin string) (*DesktopServerCo
 	}
 	payload = append(payload, '\n')
 
-	if err := os.WriteFile(configPath, payload, 0o600); err != nil {
-		return nil, fmt.Errorf("写入服务端连接配置失败: %w", err)
+	for _, configPath := range desktopServerConnectionWritePaths(a.appRoot, runtimeDir) {
+		if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+			return nil, fmt.Errorf("创建服务端连接配置目录失败: %w", err)
+		}
+		if err := os.WriteFile(configPath, payload, 0o600); err != nil {
+			return nil, fmt.Errorf("写入服务端连接配置失败: %w", err)
+		}
 	}
 
 	return a.GetDesktopServerConnection()
+}
+
+func desktopServerConnectionWritePaths(appRoot, runtimeDir string) []string {
+	paths := []string{}
+	for _, dir := range []string{
+		strings.TrimSpace(runtimeDir),
+		workspaceInstallRuntimeDir(appRoot),
+	} {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		path := filepath.Join(dir, "config", "server-connection.json")
+		if !containsCleanPath(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func normalizeDesktopServerOrigin(input string) (string, error) {
