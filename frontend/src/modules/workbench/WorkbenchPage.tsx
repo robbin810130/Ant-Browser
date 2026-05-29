@@ -24,8 +24,7 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
-import { recoveryActionFor } from './recovery'
-import { queueForWorkbenchState } from './statusMatrix'
+import { deriveWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
@@ -51,17 +50,6 @@ function emptyEvidence(): ShopRunEvidence {
     latestFailure: null,
     activeRun: null,
   }
-}
-
-function queueFor(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): WorkbenchQueueKey {
-  const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
-  return queueForWorkbenchState({
-    reclaimPending: shop.reclaimPending,
-    instanceRunning: shop.instanceRunning,
-    activeRun: Boolean(evidence.activeRun),
-    sharedLoginStatus: shop.sharedLoginStatus,
-    failureCode,
-  })
 }
 
 function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
@@ -152,22 +140,26 @@ export function WorkbenchPage() {
       .map((shop) => {
         const evidence = evidenceWithShopOpenFailure(shop, index.byShop[shop.shopId] || emptyEvidence())
         const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
-        const recovery = recoveryActionFor({
+        const failureMessage = evidence.latestFailure?.failureMessage || ''
+        const workbenchState = deriveWorkbenchState({
           reclaimPending: shop.reclaimPending,
+          instanceRunning: shop.instanceRunning,
+          activeRun: Boolean(evidence.activeRun),
           profileExists: shop.profileExists,
           coreReady: shop.coreReady,
           sharedLoginStatus: shop.sharedLoginStatus,
           failureCode,
-          instanceRunning: shop.instanceRunning,
+          failureMessage,
         })
 
         return {
           shop,
           evidence,
-          queue: queueFor(shop, evidence),
-          recommendedAction: recovery.key,
+          workbenchState,
+          queue: workbenchState.queue,
+          recommendedAction: workbenchState.recommendedAction,
           failureCode,
-          failureMessage: evidence.latestFailure?.failureMessage || '',
+          failureMessage,
         }
       })
       .sort((a, b) => {
