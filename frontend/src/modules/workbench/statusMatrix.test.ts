@@ -4,6 +4,7 @@ import {
   queueForWorkbenchState,
   recoveryActionForState,
   openFailurePresentation,
+  deriveWorkbenchState,
 } from './statusMatrix'
 
 describe('workbench authorization status matrix', () => {
@@ -71,5 +72,85 @@ describe('workbench authorization status matrix', () => {
       sharedLoginStatus: 'ready',
       instanceRunning: true,
     }).key).toBe('close')
+  })
+
+  it('derives one shared workbench state for ready shops', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'ready',
+      profileExists: true,
+      coreReady: true,
+    })).toMatchObject({
+      rawAuthorizationStatus: 'ready',
+      normalizedAuthorizationStatus: 'ready',
+      queue: 'ready',
+      recommendedAction: 'open',
+      primaryLabel: '打开后台',
+      instanceRunning: false,
+      canExecute: true,
+    })
+  })
+
+  it('gives running shop instances the close action first', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'ready',
+      profileExists: true,
+      coreReady: true,
+      instanceRunning: true,
+    })).toMatchObject({
+      queue: 'running',
+      recommendedAction: 'close',
+      primaryLabel: '关闭后台',
+      instanceRunning: true,
+      canExecute: true,
+    })
+  })
+
+  it('keeps unknown authorization status on the credential path', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'mystery_status',
+      profileExists: true,
+      coreReady: true,
+    })).toMatchObject({
+      rawAuthorizationStatus: 'mystery_status',
+      normalizedAuthorizationStatus: 'mystery_status',
+      queue: 'credential',
+      recommendedAction: 'bind',
+      primaryLabel: '去授权',
+      canExecute: true,
+    })
+  })
+
+  it('routes core failures to core management', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'ready',
+      profileExists: true,
+      coreReady: false,
+      failureCode: 'ANT_CORE_NOT_FOUND',
+      failureMessage: '未找到指纹内核',
+    })).toMatchObject({
+      queue: 'failed',
+      recommendedAction: 'core_management',
+      primaryLabel: '配置指纹内核',
+      failureCode: 'ANT_CORE_NOT_FOUND',
+      failureLabel: '指纹内核不可用',
+      evidenceText: 'open · 打开失败：未找到指纹内核',
+      canExecute: true,
+    })
+  })
+
+  it('keeps target mismatch on diagnostics', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'ready',
+      profileExists: true,
+      coreReady: true,
+      failureCode: 'target_url_not_reached',
+      failureMessage: '没有进入目标后台',
+    })).toMatchObject({
+      queue: 'failed',
+      recommendedAction: 'diagnostics',
+      primaryLabel: '查看诊断',
+      failureLabel: '后台目标不匹配',
+      evidenceText: 'open · 打开失败：没有进入目标后台',
+    })
   })
 })

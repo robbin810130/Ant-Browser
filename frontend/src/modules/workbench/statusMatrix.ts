@@ -1,4 +1,4 @@
-import type { RecoveryAction, WorkbenchActionKey, WorkbenchQueueKey } from './types'
+import type { RecoveryAction, WorkbenchActionKey, WorkbenchQueueKey, WorkbenchState } from './types'
 
 export const credentialFailureCodes = new Set([
   'ANT_BACKEND_LOGIN_REQUIRED',
@@ -119,6 +119,12 @@ export function openFailurePresentation(failureCode = '', failureMessage = '') {
       evidence: `open · 打开失败：${message}`,
     }
   }
+  if (coreFailureCodes.has(failureCode)) {
+    return {
+      label: '指纹内核不可用',
+      evidence: `open · 打开失败：${message}`,
+    }
+  }
   return {
     label: failureCode ? '打开失败' : '',
     evidence: failureCode || failureMessage ? `open · 打开失败：${message}` : '',
@@ -157,4 +163,41 @@ export function recoveryActionForState(input: {
   if (presentation.recommendedAction !== 'open') return actions[presentation.recommendedAction]
   if (input.failureCode) return actions.retry
   return actions.open
+}
+
+export function deriveWorkbenchState(input: {
+  reclaimPending?: boolean
+  instanceRunning?: boolean
+  activeRun?: boolean
+  profileExists?: boolean
+  coreReady?: boolean
+  sharedLoginStatus?: string
+  failureCode?: string
+  failureMessage?: string
+}): WorkbenchState {
+  const rawAuthorizationStatus = input.sharedLoginStatus || 'not_configured'
+  const normalizedAuthorizationStatus = normalizeAuthorizationStatus(rawAuthorizationStatus)
+  const failure = openFailurePresentation(input.failureCode || '', input.failureMessage || '')
+  const action = recoveryActionForState(input)
+  const queue = queueForWorkbenchState(input)
+  const presentation = authorizationStatusPresentation(rawAuthorizationStatus)
+  const evidenceText = failure.evidence
+  const failureLabel = failure.label
+  const usesAuthorizationPresentation =
+    queue === presentation.queue && action.key === presentation.recommendedAction
+
+  return {
+    rawAuthorizationStatus,
+    normalizedAuthorizationStatus,
+    queue,
+    recommendedAction: action.key,
+    primaryLabel: usesAuthorizationPresentation ? presentation.primaryLabel : (action.label || presentation.primaryLabel),
+    description: evidenceText || action.description || presentation.description,
+    failureCode: input.failureCode || '',
+    failureLabel,
+    evidenceText,
+    diagnosticCode: action.key === 'diagnostics' ? (input.failureCode || '') : '',
+    instanceRunning: Boolean(input.instanceRunning || input.activeRun),
+    canExecute: action.key !== 'none',
+  }
 }
