@@ -611,6 +611,42 @@ func TestReportWorkspaceOpenResultSendsFailurePayload(t *testing.T) {
 	}
 }
 
+func TestBuildUnavailableShopOpenResultMapsManualVerification(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "awaiting_verification",
+	})
+	if result.Code != "ANT_MANUAL_VERIFICATION_REQUIRED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
+func TestBuildUnavailableShopOpenResultMapsValidationFailedToSessionRestore(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "validation_failed",
+	})
+	if result.Code != "ANT_SESSION_RESTORE_FAILED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
+func TestBuildUnavailableShopOpenResultMapsOtherUnavailableStatusToLoginRequired(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "relogin_required",
+	})
+	if result.Code != "ANT_BACKEND_LOGIN_REQUIRED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
 func TestWaitForTargetReadyRetriesUntilTargetAppears(t *testing.T) {
 	var listCalls atomic.Int32
 	server := startDevToolsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
