@@ -121,7 +121,7 @@ func (a *App) SaveDesktopAuthSession(accessToken string, rememberMe bool) error 
 }
 
 func (a *App) LoginDesktopUser(username, password string) (string, error) {
-	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
+	serverOrigin := a.resolveWorkspaceServerOrigin(resolveWorkspaceRuntimeDirWithConfig(a.config))
 	var envelope desktopAuthLoginEnvelope
 	if err := postWorkspaceJSON(strings.TrimRight(serverOrigin, "/")+"/api/auth/login", map[string]string{
 		"username": strings.TrimSpace(username),
@@ -143,7 +143,7 @@ func (a *App) FetchDesktopAuthProfile(accessToken string) (*DesktopAuthProfile, 
 		return nil, fmt.Errorf("desktop auth access token is required")
 	}
 
-	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
+	serverOrigin := a.resolveWorkspaceServerOrigin(resolveWorkspaceRuntimeDirWithConfig(a.config))
 	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, strings.TrimRight(serverOrigin, "/")+"/api/auth/me", nil)
 	if err != nil {
 		return nil, err
@@ -310,7 +310,7 @@ func (a *App) startDesktopSharedLoginAction(accessToken, shopID, pathTemplate st
 }
 
 func (a *App) doDesktopAuthedWorkspaceJSON(accessToken, method, path string, body any, dest any) error {
-	serverOrigin := resolveWorkspaceServerOriginWithConfig(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
+	serverOrigin := a.resolveWorkspaceServerOrigin(resolveWorkspaceRuntimeDirWithConfig(a.config))
 	serverOrigin = strings.TrimRight(strings.TrimSpace(serverOrigin), "/")
 	if serverOrigin == "" {
 		return fmt.Errorf("workspace server origin is required")
