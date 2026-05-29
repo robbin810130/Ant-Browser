@@ -44,6 +44,23 @@ describe('workbench authorization status matrix', () => {
     })
   })
 
+  it('keeps session restore failures on the credential path', () => {
+    expect(queueForWorkbenchState({
+      sharedLoginStatus: 'ready',
+      failureCode: 'ANT_SESSION_RESTORE_FAILED',
+    })).toBe('credential')
+    expect(recoveryActionForState({
+      profileExists: true,
+      coreReady: true,
+      sharedLoginStatus: 'ready',
+      failureCode: 'ANT_SESSION_RESTORE_FAILED',
+    }).key).toBe('bind')
+    expect(openFailurePresentation('ANT_SESSION_RESTORE_FAILED', '共享会话恢复失败')).toMatchObject({
+      label: '凭据失效',
+      evidence: 'open · 打开失败：共享会话恢复失败',
+    })
+  })
+
   it('separates target mismatch from credential failures', () => {
     expect(queueForWorkbenchState({
       sharedLoginStatus: 'ready',
