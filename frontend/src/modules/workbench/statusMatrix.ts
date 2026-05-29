@@ -85,7 +85,17 @@ export function authorizationStatusPresentation(status = '', label = ''): {
       description: '当前授权已停用，进入工作台重新启用或更新凭据。',
     }
   }
-  if (normalized === 'relogin_required' || normalized === 'validation_failed') {
+  if (normalized === 'validation_failed') {
+    return {
+      status: normalized,
+      label: displayLabel,
+      queue: 'credential',
+      recommendedAction: 'validate',
+      primaryLabel: '本机验证',
+      description: '验证失败，需要重新本机验证后再打开后台。',
+    }
+  }
+  if (normalized === 'relogin_required') {
     return {
       status: normalized,
       label: displayLabel,
