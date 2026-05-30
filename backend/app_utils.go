@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,7 +60,11 @@ func (a *App) ensureDefaultCores() {
 	log := logger.New("Browser")
 
 	// 扫描 chrome/ 目录，无论配置是否已有内核都执行一次，确保新增子目录被发现
-	detected := a.scanChromeDir("chrome")
+	detected := []browser.Core{}
+	if goruntime.GOOS == "darwin" {
+		detected = appendUniqueCoresByPath(detected, a.ensureMacDefaultCore()...)
+	}
+	detected = appendUniqueCoresByPath(detected, a.scanChromeDir("chrome")...)
 
 	if len(a.config.Browser.Cores) == 0 {
 		// 配置为空：直接用扫描结果，或兜底写一个占位
@@ -98,6 +104,42 @@ func (a *App) ensureDefaultCores() {
 	}
 }
 
+func appendUniqueCoresByPath(existing []browser.Core, next ...browser.Core) []browser.Core {
+	for _, core := range next {
+		corePath := strings.TrimSpace(core.CorePath)
+		if corePath == "" {
+			continue
+		}
+		duplicated := false
+		for _, item := range existing {
+			if strings.EqualFold(strings.TrimSpace(item.CorePath), corePath) {
+				duplicated = true
+				break
+			}
+		}
+		if !duplicated {
+			existing = append(existing, core)
+		}
+	}
+	return existing
+}
+
+func (a *App) ensureMacDefaultCore() []browser.Core {
+	if goruntime.GOOS != "darwin" {
+		return nil
+	}
+	coreRoot := a.resolveAppPath("chrome/fingerprint-macos")
+	if _, _, ok := browser.FindCoreExecutable(coreRoot); !ok {
+		return nil
+	}
+	return []browser.Core{{
+		CoreId:    "fingerprint-macos",
+		CoreName:  "Fingerprint Chromium (macOS)",
+		CorePath:  "chrome/fingerprint-macos",
+		IsDefault: len(a.config.Browser.Cores) == 0,
+	}}
+}
+
 func (a *App) autoDetectCores() {
 	log := logger.New("Browser")
 	// ensureDefaultCores 已完成扫描注册，这里只做路径有效性日志。
@@ -113,6 +155,38 @@ func (a *App) autoDetectCores() {
 		} else {
 			log.Warn("内核路径无效", logger.F("core_id", core.CoreId), logger.F("path", core.CorePath), logger.F("message", result.Message))
 		}
+	}
+}
+
+func (a *App) syncConfiguredCoresToDAO() {
+	if a == nil || a.browserMgr == nil || a.browserMgr.CoreDAO == nil || a.config == nil {
+		return
+	}
+
+	cores := append([]browser.Core{}, a.config.Browser.Cores...)
+	if len(cores) == 0 {
+		return
+	}
+
+	defaultCoreID := ""
+	for _, core := range cores {
+		if core.IsDefault {
+			defaultCoreID = core.CoreId
+			break
+		}
+	}
+	if defaultCoreID == "" {
+		cores[0].IsDefault = true
+		defaultCoreID = cores[0].CoreId
+	}
+
+	for _, core := range cores {
+		if err := a.browserMgr.CoreDAO.Upsert(core); err != nil {
+			continue
+		}
+	}
+	if defaultCoreID != "" {
+		_ = a.browserMgr.CoreDAO.SetDefault(defaultCoreID)
 	}
 }
 

@@ -421,6 +421,192 @@ func TestOpenManagedShopColdStartFlowRunsInsideServiceLayer(t *testing.T) {
 	}
 }
 
+func TestOpenManagedShopIsIdempotentForRepeatedClicks(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	profileID := "1688:b2b-222082061706256a1a"
+	profile := &browser.Profile{
+		ProfileId:  profileID,
+		CoreId:     "core-1688",
+		Running:    true,
+		DebugReady: true,
+		DebugPort:  9222,
+		Pid:        12345,
+	}
+	mgr.Profiles[profileID] = profile
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var startCalls atomic.Int32
+	var activateCalls atomic.Int32
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return profile, nil
+		},
+		FindRunningProfile: func(profileID string) (*browser.Profile, bool) {
+			return profile, true
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			startCalls.Add(1)
+			return nil, nil
+		},
+		ImportCookies: func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets: func(profileID string) ([]workspace.OpenRuntimeTarget, error) {
+			return []workspace.OpenRuntimeTarget{{
+				TargetID:   "backend-1",
+				CurrentURL: "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+				PageTitle:  "壹级供应链 - 1688后台管理",
+			}}, nil
+		},
+		ActivateTarget: func(profileID string, targetID string) error {
+			activateCalls.Add(1)
+			return nil
+		},
+		NavigateTarget: func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:   func(profileID string, targetURL string) (string, error) { return "", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error {
+			return nil
+		},
+		CloseTarget: func(profileID string, targetID string) error { return nil },
+	})
+
+	req := managedinstance.OpenRequest{
+		ShopID:      "b2b-222082061706256a1a",
+		ProfileID:   profileID,
+		ManagedMode: true,
+		TargetURL:   "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+		LaunchContext: workspace.ShopLaunchContext{
+			SuccessURLPatterns: []string{"https://work.1688.com/"},
+			LoginURLPatterns:   []string{"https://login.1688.com/"},
+		},
+	}
+
+	first, err := service.OpenManagedShop(req)
+	if err != nil {
+		t.Fatalf("first open managed shop: %v", err)
+	}
+	second, err := service.OpenManagedShop(req)
+	if err != nil {
+		t.Fatalf("second open managed shop: %v", err)
+	}
+	if !first.Success || !second.Success {
+		t.Fatalf("expected repeated open to succeed: first=%+v second=%+v", first, second)
+	}
+	if first.CurrentURL != second.CurrentURL {
+		t.Fatalf("expected repeated open to reuse current page: first=%+v second=%+v", first, second)
+	}
+	if startCalls.Load() != 0 {
+		t.Fatalf("expected no cold start on repeated clicks, got=%d", startCalls.Load())
+	}
+	if activateCalls.Load() != 2 {
+		t.Fatalf("expected activate path for both clicks, got=%d", activateCalls.Load())
+	}
+}
+
+func TestOpenManagedShopCreatesNewTargetWhenBrowserAliveButNoTabs(t *testing.T) {
+	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
+	profileID := "1688:b2b-222082061706256a1a"
+	profile := &browser.Profile{
+		ProfileId:  profileID,
+		CoreId:     "core-1688",
+		Running:    true,
+		DebugReady: true,
+		DebugPort:  9222,
+		Pid:        12345,
+	}
+	mgr.Profiles[profileID] = profile
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	var listCalls atomic.Int32
+	var createCalls atomic.Int32
+	var waitCalls atomic.Int32
+	var navigateCalls atomic.Int32
+	var importCalls atomic.Int32
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return profile, nil
+		},
+		FindRunningProfile: func(profileID string) (*browser.Profile, bool) {
+			return profile, true
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			return nil, nil
+		},
+		ImportCookies: func(profileID string, bundle workspace.SessionBundle) error {
+			importCalls.Add(1)
+			return nil
+		},
+		ListTargets: func(profileID string) ([]workspace.OpenRuntimeTarget, error) {
+			switch listCalls.Add(1) {
+			case 1:
+				return []workspace.OpenRuntimeTarget{{
+					TargetID:   "other-1",
+					CurrentURL: "https://www.1688.com/",
+					PageTitle:  "1688 首页",
+				}}, nil
+			default:
+				return []workspace.OpenRuntimeTarget{{
+					TargetID:   "backend-1",
+					CurrentURL: "https://work.1688.com/?tracelog=login_target_is_blank_1688",
+					PageTitle:  "1688-卖家工作台",
+				}}, nil
+			}
+		},
+		ActivateTarget: func(profileID string, targetID string) error { return nil },
+		NavigateTarget: func(profileID string, targetID string, targetURL string) error {
+			navigateCalls.Add(1)
+			return nil
+		},
+		CreateTarget: func(profileID string, targetURL string) (string, error) {
+			createCalls.Add(1)
+			return "backend-1", nil
+		},
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error {
+			waitCalls.Add(1)
+			return nil
+		},
+		CloseTarget: func(profileID string, targetID string) error { return nil },
+	})
+
+	result, err := service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:      "b2b-222082061706256a1a",
+		ProfileID:   profileID,
+		ManagedMode: true,
+		TargetURL:   "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+		LaunchContext: workspace.ShopLaunchContext{
+			SuccessURLPatterns: []string{"https://work.1688.com/"},
+			LoginURLPatterns:   []string{"https://login.1688.com/"},
+		},
+		SessionBundle: workspace.SessionBundle{
+			Cookies: []workspace.SessionCookie{{Name: "sid", Value: "1", Domain: ".1688.com", Path: "/"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("open managed shop: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success result, got %+v", result)
+	}
+	if createCalls.Load() != 1 {
+		t.Fatalf("expected one target creation, got=%d", createCalls.Load())
+	}
+	if waitCalls.Load() != 1 {
+		t.Fatalf("expected one target ready wait, got=%d", waitCalls.Load())
+	}
+	if navigateCalls.Load() != 1 {
+		t.Fatalf("expected one navigate after target creation, got=%d", navigateCalls.Load())
+	}
+	if importCalls.Load() != 1 {
+		t.Fatalf("expected one cookie import after target creation, got=%d", importCalls.Load())
+	}
+}
+
 func TestReconcileAuthorizedShopsCreatesAndReusesManagedProfiles(t *testing.T) {
 	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
 	existingProfileID := "1688:shop-001"

@@ -1,10 +1,10 @@
 package backend
 
 import (
-	"bytes"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/managedinstance"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -121,6 +121,73 @@ func TestWorkspaceOpenShopDelegatesToManagedInstanceService(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAuthorizedShopsRecoversRunningProfilesBeforeProjection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/local/shops" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{{
+						"shopId":                 "b2b-222082061706256a1a",
+						"shopName":               "壹级供应链",
+						"platformCode":           "alibaba",
+						"sharedLoginStatus":      "ready",
+						"sharedLoginStatusLabel": "ready",
+					}},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	devtools := startDevToolsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/version":
+			_, _ = w.Write([]byte(`{"Browser":"Chrome/142.0","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/browser"}`))
+		case "/json/list":
+			_, _ = w.Write([]byte(`[{"id":"page-1"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer devtools.Close()
+
+	root := t.TempDir()
+	browserMgr := browser.NewManager(config.DefaultConfig(), root)
+	browserMgr.Profiles = map[string]*browser.Profile{
+		"alibaba:b2b-222082061706256a1a": {
+			ProfileId:   "alibaba:b2b-222082061706256a1a",
+			ProfileName: "壹级供应链",
+			UserDataDir: "managed-profiles/alibaba__b2b-222082061706256a1a",
+			CoreId:      "fingerprint-macos",
+		},
+	}
+	if err := os.MkdirAll(browserMgr.ResolveUserDataDir(browserMgr.Profiles["alibaba:b2b-222082061706256a1a"]), 0755); err != nil {
+		t.Fatalf("创建 userDataDir 失败: %v", err)
+	}
+	writeDevToolsActivePortFile(t, browserMgr.ResolveUserDataDir(browserMgr.Profiles["alibaba:b2b-222082061706256a1a"]), devtools.port)
+
+	app := &App{
+		browserMgr:       browserMgr,
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), browserMgr, nil),
+	}
+
+	shops, err := app.WorkspaceAuthorizedShops()
+	if err != nil {
+		t.Fatalf("WorkspaceAuthorizedShops 返回错误: %v", err)
+	}
+	if len(shops) != 1 {
+		t.Fatalf("期望返回 1 个店铺，实际=%d", len(shops))
+	}
+	if !shops[0].InstanceRunning {
+		t.Fatalf("期望店铺投影已恢复为 running: %+v", shops[0])
+	}
+}
+
 func TestResolveWorkspaceAgentBaseURLFallsBackToDefaultWhenUnset(t *testing.T) {
 	t.Setenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL", "")
 	t.Setenv("AGENT_BASE_URL", "")
@@ -140,6 +207,24 @@ func TestResolveWorkspaceAgentBaseURLPrefersExplicitOverride(t *testing.T) {
 
 	if got != "http://127.0.0.1:49000" {
 		t.Fatalf("unexpected configured base url: %s", got)
+	}
+}
+
+func TestResolveWorkspaceAgentBaseURLFallsBackToAppConfig(t *testing.T) {
+	t.Setenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL", "")
+	t.Setenv("AGENT_BASE_URL", "")
+
+	app := &App{
+		config: &config.Config{
+			Workspace: config.WorkspaceConfig{
+				AgentBaseURL: "http://127.0.0.1:49000/",
+			},
+		},
+	}
+
+	got := app.resolveWorkspaceAgentBaseURL()
+	if got != "http://127.0.0.1:49000" {
+		t.Fatalf("unexpected config-driven base url: %s", got)
 	}
 }
 

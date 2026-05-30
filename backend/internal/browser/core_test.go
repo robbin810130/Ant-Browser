@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/config"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 )
 
@@ -127,5 +128,42 @@ func TestCountInstancesByCoreTreatsLegacyDefaultReferenceAsDefault(t *testing.T)
 
 	if got := mgr.CountInstancesByCore("core-142"); got != 3 {
 		t.Fatalf("默认内核实例计数错误: got=%d want=3", got)
+	}
+}
+
+func TestValidateCorePathAcceptsBareChromiumOnDarwin(t *testing.T) {
+	t.Parallel()
+
+	if goruntime.GOOS != "darwin" {
+		t.Skip("仅验证 macOS 内核布局")
+	}
+
+	root := t.TempDir()
+	coreDir := filepath.Join(root, "fingerprint-macos")
+	if err := os.MkdirAll(coreDir, 0o755); err != nil {
+		t.Fatalf("创建内核目录失败: %v", err)
+	}
+	exePath := filepath.Join(coreDir, "Chromium")
+	if err := os.WriteFile(exePath, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("写入 Chromium 可执行文件失败: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	mgr := NewManager(cfg, root)
+
+	result := mgr.ValidateCorePath("fingerprint-macos")
+	if !result.Valid {
+		t.Fatalf("期望 bare Chromium 被识别为有效内核，实际失败: %s", result.Message)
+	}
+
+	got, candidate, ok := FindCoreExecutable(coreDir)
+	if !ok {
+		t.Fatal("期望找到 bare Chromium 可执行文件")
+	}
+	if got != exePath {
+		t.Fatalf("可执行文件路径错误: got=%q want=%q", got, exePath)
+	}
+	if candidate != "Chromium" {
+		t.Fatalf("命中候选错误: got=%q want=%q", candidate, "Chromium")
 	}
 }

@@ -99,7 +99,9 @@ require_cmd() {
 }
 
 require_cmd python3
+require_cmd curl
 require_cmd ditto
+require_cmd hdiutil
 require_cmd wails
 
 if [[ -z "$VERSION" ]]; then
@@ -125,6 +127,9 @@ SINGBOX_SRC="$RUNTIME_DIR/sing-box"
 APP_BIN_DIR="$ROOT_DIR/build/bin"
 CHROME_README_SRC="$ROOT_DIR/chrome/README.md"
 CONFIG_INIT_SRC="$ROOT_DIR/publish/config.init.mac.yaml"
+FINGERPRINT_CORE_TAG="142.0.7444.175"
+FINGERPRINT_CORE_ASSET="ungoogled-chromium_142.0.7444.175-1.1_macos.dmg"
+FINGERPRINT_CORE_URL="https://github.com/adryfish/fingerprint-chromium/releases/download/${FINGERPRINT_CORE_TAG}/${FINGERPRINT_CORE_ASSET}"
 ZIP_NAME="AntBrowser-${VERSION}-macos-${ARCH}.zip"
 APP_EXPORT="$OUTPUT_DIR/AntBrowser-${VERSION}-macos-${ARCH}.app"
 STAGE_DIR="$STAGING_ROOT/$TARGET"
@@ -235,6 +240,24 @@ cp "$XRAY_SRC" "$APP_MACOS_DIR/bin/xray"
 cp "$SINGBOX_SRC" "$APP_MACOS_DIR/bin/sing-box"
 cp "$CONFIG_INIT_SRC" "$APP_MACOS_DIR/config.yaml"
 chmod +x "$APP_MACOS_DIR/bin/xray" "$APP_MACOS_DIR/bin/sing-box"
+
+echo "  - downloading fingerprint core ${FINGERPRINT_CORE_TAG}..."
+CORE_TMP_DIR="$(mktemp -d)"
+CORE_DMG="$CORE_TMP_DIR/fingerprint-core.dmg"
+CORE_MOUNT="$CORE_TMP_DIR/mount"
+mkdir -p "$CORE_MOUNT"
+curl -L --fail --retry 3 --retry-delay 2 -o "$CORE_DMG" "$FINGERPRINT_CORE_URL"
+hdiutil attach -nobrowse -readonly -mountpoint "$CORE_MOUNT" "$CORE_DMG" >/dev/null
+CORE_APP="$(find "$CORE_MOUNT" -maxdepth 2 -name '*.app' -type d | head -n 1)"
+if [[ -z "$CORE_APP" ]]; then
+  hdiutil detach "$CORE_MOUNT" >/dev/null || true
+  echo "[ERROR] fingerprint dmg missing .app bundle" >&2
+  exit 1
+fi
+mkdir -p "$APP_MACOS_DIR/chrome/fingerprint-macos"
+ditto "$CORE_APP" "$APP_MACOS_DIR/chrome/fingerprint-macos/Chromium.app"
+hdiutil detach "$CORE_MOUNT" >/dev/null || true
+rm -rf "$CORE_TMP_DIR"
 
 if [[ -f "$CHROME_README_SRC" ]]; then
   mkdir -p "$APP_MACOS_DIR/chrome"

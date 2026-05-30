@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/apppath"
+	"ant-chrome/backend/internal/authsession"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/database"
@@ -48,6 +49,7 @@ type App struct {
 	managedInstanceService *managedinstance.Service
 	speedScheduler         *browser.ProxySpeedScheduler
 	workspaceService       *workspace.WorkspaceService
+	authSessionStore       *authsession.Store
 	appRoot                string
 	version                string
 
@@ -70,9 +72,9 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		version = strings.TrimSpace(appVersion[0])
 	}
 	return &App{
-		appRoot:           strings.TrimSpace(appRoot),
-		version:           version,
-		xrayBridgeRefs:    make(map[string]string),
+		appRoot:        strings.TrimSpace(appRoot),
+		version:        version,
+		xrayBridgeRefs: make(map[string]string),
 	}
 }
 
@@ -100,6 +102,7 @@ func (a *App) startup(ctx context.Context) {
 		runtime.LogFatal(ctx, fmt.Sprintf("初始化 Linux 用户数据目录失败: %v", err))
 		return
 	}
+	a.authSessionStore = authsession.NewStore(apppath.StateRoot(a.appRoot))
 	cfg, err := LoadConfig(a.resolveAppPath("config.yaml"))
 	if err != nil {
 		cfg = config.DefaultConfig()
@@ -219,6 +222,9 @@ func (a *App) startup(ctx context.Context) {
 			logger.F("url", fmt.Sprintf("http://127.0.0.1:%d", a.launchServer.Port())),
 			logger.F("preferred_port", port),
 		)
+	}
+	if recovered := a.recoverRunningProfilesFromUserDataDirs(); recovered > 0 {
+		log.Info("已恢复运行中的浏览器实例", logger.F("count", recovered))
 	}
 
 	// 连接池失效通知
@@ -605,6 +611,8 @@ func (a *App) BrowserCoreExtendedInfo() []BrowserCoreExtendedInfo {
 
 // BrowserCoreScan 重新扫描 chrome 目录，自动注册新内核
 func (a *App) BrowserCoreScan() []BrowserCore {
+	a.ensureDefaultCores()
+	a.syncConfiguredCoresToDAO()
 	a.autoDetectCores()
 	return a.browserMgr.ListCores()
 }

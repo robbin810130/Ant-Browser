@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/managedinstance"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/workspace"
 	"context"
 	"fmt"
@@ -30,6 +31,7 @@ func (a *App) WorkspaceAuthorizedShops() ([]workspace.ShopInstanceProjection, er
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.recoverRunningProfilesFromUserDataDirs()
 	return a.workspaceService.FetchAuthorizedShops(context.Background())
 }
 
@@ -126,11 +128,20 @@ func (a *App) initWorkspaceService() {
 }
 
 func resolveWorkspaceAgentBaseURL() string {
+	return resolveWorkspaceAgentBaseURLWithConfig(nil)
+}
+
+func resolveWorkspaceAgentBaseURLWithConfig(cfg *config.Config) string {
 	for _, value := range []string{
 		os.Getenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL"),
 		os.Getenv("AGENT_BASE_URL"),
 	} {
 		if trimmed := strings.TrimRight(strings.TrimSpace(value), "/"); trimmed != "" {
+			return trimmed
+		}
+	}
+	if cfg != nil {
+		if trimmed := strings.TrimRight(strings.TrimSpace(cfg.Workspace.AgentBaseURL), "/"); trimmed != "" {
 			return trimmed
 		}
 	}
@@ -142,6 +153,9 @@ func (a *App) resolveWorkspaceAgentBaseURL() string {
 		if value := strings.TrimRight(strings.TrimSpace(a.workspaceAgentURL), "/"); value != "" {
 			return value
 		}
+	}
+	if a != nil {
+		return resolveWorkspaceAgentBaseURLWithConfig(a.config)
 	}
 	return resolveWorkspaceAgentBaseURL()
 }

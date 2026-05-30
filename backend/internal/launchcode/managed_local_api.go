@@ -3,9 +3,11 @@ package launchcode
 import (
 	"ant-chrome/backend/internal/workspace"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type ManagedProfileUpsertInput struct {
@@ -39,7 +41,9 @@ type localUpsertRequest struct {
 }
 
 type localLaunchRequest struct {
-	Headless bool `json:"headless"`
+	Headless      bool                    `json:"headless"`
+	TargetURL     string                  `json:"targetUrl"`
+	SessionBundle workspace.SessionBundle `json:"sessionBundle"`
 }
 
 type localClearSessionRequest struct {
@@ -173,7 +177,8 @@ func (s *LaunchServer) handleLocalProfileLaunch(w http.ResponseWriter, r *http.R
 		})
 		return
 	}
-	if _, err := decodeLocalLaunchRequest(r); err != nil {
+	payload, err := decodeLocalLaunchRequest(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok":      false,
 			"message": err.Error(),
@@ -181,7 +186,23 @@ func (s *LaunchServer) handleLocalProfileLaunch(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	profile, err := s.launchProfile(profileID, LaunchRequestParams{})
+	if controller, ok := s.starter.(managedRuntimeOperator); ok {
+		if err := controller.InjectManagedSessionBundle(profileID, payload.SessionBundle); err != nil {
+			writeJSON(w, mapLaunchErrorStatus(err), map[string]interface{}{
+				"ok":      false,
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
+	params := LaunchRequestParams{}
+	if targetURL := strings.TrimSpace(payload.TargetURL); targetURL != "" {
+		params.StartURLs = []string{targetURL}
+		params.SkipDefaultStartURLs = true
+	}
+
+	profile, err := s.launchProfile(profileID, params)
 	if err != nil {
 		status := mapLaunchErrorStatus(err)
 		writeJSON(w, status, map[string]interface{}{
@@ -192,11 +213,23 @@ func (s *LaunchServer) handleLocalProfileLaunch(w http.ResponseWriter, r *http.R
 	}
 	s.SetActiveProfile(profile)
 
+	currentURL := strings.TrimSpace(payload.TargetURL)
+	pageTitle := ""
+	if snapshot, ok := s.localLaunchSnapshot(profileID, payload); ok {
+		if snapshot.CurrentURL != "" {
+			currentURL = snapshot.CurrentURL
+		}
+		pageTitle = snapshot.PageTitle
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":        true,
-		"profileId": profileID,
-		"pid":       profile.Pid,
-		"debugPort": profile.DebugPort,
+		"ok":         true,
+		"profileId":  profileID,
+		"pid":        profile.Pid,
+		"debugPort":  profile.DebugPort,
+		"targetUrl":  strings.TrimSpace(payload.TargetURL),
+		"currentUrl": currentURL,
+		"pageTitle":  pageTitle,
 	})
 }
 
@@ -383,6 +416,7 @@ func decodeLocalLaunchRequest(r *http.Request) (*localLaunchRequest, error) {
 	if err := decodeLocalRequestBody(r, &req); err != nil {
 		return nil, err
 	}
+	req.TargetURL = strings.TrimSpace(req.TargetURL)
 	return &req, nil
 }
 
@@ -416,6 +450,78 @@ func decodeLocalRequestBody(r *http.Request, out interface{}) error {
 
 func errInvalidField(field string) error {
 	return &localValidationError{message: "invalid " + field}
+}
+
+type localRuntimeTarget struct {
+	Type  string `json:"type"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+func (s *LaunchServer) localLaunchSnapshot(profileID string, payload *localLaunchRequest) (workspace.OpenRuntimeSnapshot, bool) {
+	profile, _, errMsg := s.profileSnapshotByID(profileID)
+	if errMsg != "" || profile == nil || profile.DebugPort <= 0 {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", profile.DebugPort), nil)
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+
+	var rawTargets []localRuntimeTarget
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rawTargets); err != nil {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+
+	targets := make([]workspace.OpenRuntimeTarget, 0, len(rawTargets))
+	for _, target := range rawTargets {
+		if strings.TrimSpace(target.Type) != "page" {
+			continue
+		}
+		targets = append(targets, workspace.OpenRuntimeTarget{
+			CurrentURL: strings.TrimSpace(target.URL),
+			PageTitle:  strings.TrimSpace(target.Title),
+		})
+	}
+	if len(targets) == 0 {
+		return workspace.OpenRuntimeSnapshot{}, false
+	}
+
+	launchContext := workspace.ShopLaunchContext{
+		TargetURL: strings.TrimSpace(payload.TargetURL),
+		SuccessURLPatterns: []string{
+			"https://work.1688.com/",
+			"https://trade.1688.com/",
+			"https://air.1688.com/",
+			"https://seller.1688.com/",
+		},
+		LoginURLPatterns: []string{
+			"https://login.1688.com/",
+			"https://login.taobao.com/",
+			"https://login.alibaba.com/",
+		},
+	}
+	snapshots := make([]workspace.OpenRuntimeSnapshot, 0, len(targets))
+	for _, target := range targets {
+		snapshots = append(snapshots, workspace.OpenRuntimeSnapshot{
+			CurrentURL: target.CurrentURL,
+			PageTitle:  target.PageTitle,
+		})
+	}
+
+	snapshot := workspace.SelectPreferredOpenSnapshotForLaunchContext("", launchContext, snapshots)
+	return snapshot, strings.TrimSpace(snapshot.CurrentURL) != "" || strings.TrimSpace(snapshot.PageTitle) != ""
 }
 
 type localValidationError struct {

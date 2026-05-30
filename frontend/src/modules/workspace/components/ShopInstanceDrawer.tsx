@@ -14,6 +14,20 @@ function platformLabel(platformCode: string) {
   return platformCode
 }
 
+function localRuntimeSummary(shop: WorkspaceAuthorizedShop) {
+  if (shop.reclaimPending) return 'pending_reclaim'
+  if (!shop.profileExists) return 'profile_missing'
+  return shop.instanceRunning ? 'running' : 'stopped'
+}
+
+function localRuntimeHint(shop: WorkspaceAuthorizedShop) {
+  if (shop.reclaimPending) return '服务端授权已失效，本地实例等待回收'
+  if (!shop.profileExists) return '尚未建立本地 managed profile 映射'
+  if (!shop.coreReady) return '本地 profile 已存在，但缺少可用指纹内核'
+  if (shop.instanceRunning) return '本地 managed 实例已运行，可直接复用'
+  return '本地 profile 已就绪，可按需冷启动'
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border-muted)] py-3 last:border-0">
@@ -33,6 +47,9 @@ export function ShopInstanceDrawer({ open, shop, onClose }: ShopInstanceDrawerPr
           <ShopInstanceStatusBadge shop={shop} />
           <Badge variant="default">{platformLabel(shop.platformCode)}</Badge>
           {shop.instanceRunning ? <Badge variant="info">本机实例运行中</Badge> : <Badge variant="default">本机实例未运行</Badge>}
+          {shop.profileExists ? <Badge variant="default">Profile 已映射</Badge> : <Badge variant="warning">Profile 待创建</Badge>}
+          {shop.coreReady ? <Badge variant="success">指纹内核就绪</Badge> : <Badge variant="warning">指纹内核缺失</Badge>}
+          {shop.reclaimPending ? <Badge variant="warning">待回收</Badge> : null}
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -48,7 +65,11 @@ export function ShopInstanceDrawer({ open, shop, onClose }: ShopInstanceDrawerPr
             <h4 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">本地实例映射</h4>
             <DetailRow label="Profile ID" value={shop.profileId || '-'} />
             <DetailRow label="Instance ID" value={shop.instanceId || '-'} />
-            <DetailRow label="本机运行态" value={shop.instanceRunning ? 'running' : 'stopped'} />
+            <DetailRow label="本机运行态" value={localRuntimeSummary(shop)} />
+            <DetailRow label="本地映射" value={shop.profileExists ? 'present' : 'missing'} />
+            <DetailRow label="指纹内核" value={shop.coreReady ? 'ready' : 'missing'} />
+            <DetailRow label="回收状态" value={shop.reclaimPending ? 'pending' : 'active'} />
+            <DetailRow label="运行态说明" value={localRuntimeHint(shop)} />
             <DetailRow label="最近验证" value="暂无" />
             <DetailRow label="最近打开" value="暂无" />
           </div>

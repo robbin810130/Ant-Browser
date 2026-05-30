@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 )
 
@@ -21,8 +22,7 @@ const (
 	defaultWorkspaceAgentListenHost   = "127.0.0.1"
 	defaultWorkspaceAgentListenPort   = "47831"
 	defaultWorkspaceAntRuntimeBaseURL = "http://127.0.0.1:19877"
-	defaultWorkspaceBootstrapUsername = "admin"
-	defaultWorkspaceBootstrapPassword = "Admin@123"
+	defaultWorkspaceServerOrigin      = "http://127.0.0.1:4174"
 	workspaceBootstrapTimeout         = 8 * time.Second
 )
 
@@ -33,20 +33,25 @@ type workspaceServerConnectionConfig struct {
 	ServerPort   int    `json:"serverPort"`
 }
 
-type workspaceLoginEnvelope struct {
+type workspaceAuthIdentity struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
+
+type workspaceMeEnvelope struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		AccessToken string `json:"accessToken"`
-		UserSummary struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"displayName"`
-		} `json:"userSummary"`
-		User struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"displayName"`
-		} `json:"user"`
+		ID          string                `json:"id"`
+		DisplayName string                `json:"displayName"`
+		UserSummary workspaceAuthIdentity `json:"userSummary"`
+		User        workspaceAuthIdentity `json:"user"`
 	} `json:"data"`
+}
+
+type workspaceBootstrapUser struct {
+	UserID      string
+	DisplayName string
 }
 
 type workspaceBootstrapEnvelope struct {
@@ -68,15 +73,15 @@ type workspaceShopsEnvelope struct {
 func (a *App) ensureWorkspaceAgentBootstrapped() {
 	log := logger.New("WorkspaceAgent")
 
-	installRoot, ok := resolveWorkspaceInstallRoot(a.appRoot)
-	if !ok {
-		appendWorkspaceHostLog(resolveWorkspaceRuntimeDir(), "workspace install root unavailable: app_root=%s", a.appRoot)
-		log.Warn("workspace install root unavailable", logger.F("app_root", a.appRoot))
+	installRoot, err := resolveWorkspaceInstallRootWithConfig(a.appRoot, a.config)
+	if err != nil {
+		appendWorkspaceHostLog(resolveWorkspaceRuntimeDir(), "workspace install root unavailable: app_root=%s error=%v", a.appRoot, err)
+		log.Warn("workspace install root unavailable", logger.F("app_root", a.appRoot), logger.F("error", err.Error()))
 		return
 	}
 
-	runtimeDir := resolveWorkspaceRuntimeDir()
-	serverOrigin := resolveWorkspaceServerOrigin(runtimeDir)
+	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
+	serverOrigin := resolveWorkspaceServerOriginWithConfig(runtimeDir, a.config)
 	appendWorkspaceHostLog(runtimeDir, "bootstrap begin: app_root=%s install_root=%s runtime_dir=%s server_origin=%s", a.appRoot, installRoot, runtimeDir, serverOrigin)
 	if strings.TrimSpace(serverOrigin) == "" {
 		appendWorkspaceHostLog(runtimeDir, "workspace server origin unavailable")
@@ -106,7 +111,30 @@ func (a *App) ensureWorkspaceAgentBootstrapped() {
 		}
 	}
 
-	if err := bootstrapWorkspaceAgentSession(agentBaseURL, serverOrigin); err != nil {
+	authSession, err := a.LoadDesktopAuthSession()
+	if err != nil {
+		appendWorkspaceHostLog(runtimeDir, "load desktop auth session failed: %v", err)
+		log.Error("load desktop auth session failed", logger.F("error", err.Error()))
+		return
+	}
+	accessToken := ""
+	if authSession != nil {
+		accessToken = strings.TrimSpace(authSession.AccessToken)
+	}
+	if accessToken == "" {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent bootstrap skipped: persisted desktop access token unavailable")
+		log.Warn("workspace agent bootstrap skipped", logger.F("reason", "persisted desktop access token unavailable"))
+		return
+	}
+
+	bootstrapUser, err := fetchWorkspaceBootstrapUser(serverOrigin, accessToken)
+	if err != nil {
+		appendWorkspaceHostLog(runtimeDir, "fetch workspace bootstrap user failed: %v", err)
+		log.Error("fetch workspace bootstrap user failed", logger.F("error", err.Error()))
+		return
+	}
+
+	if err := bootstrapWorkspaceAgentSession(agentBaseURL, serverOrigin, accessToken, bootstrapUser); err != nil {
 		appendWorkspaceHostLog(runtimeDir, "workspace agent bootstrap failed: %v", err)
 		log.Error("workspace agent bootstrap failed", logger.F("error", err.Error()))
 		return
@@ -196,16 +224,62 @@ func stopWorkspaceAgentProcess(cmd *exec.Cmd) error {
 	return stopProcessCmdForShutdown(cmd)
 }
 
-func resolveWorkspaceInstallRoot(appRoot string) (string, bool) {
+func (a *App) resetWorkspaceAgentSessionRuntimeHook(reason string) error {
+	if a == nil {
+		return nil
+	}
+
+	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
+	if trimmedReason := strings.TrimSpace(reason); trimmedReason != "" {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent session/runtime hook reset: reason=%s", trimmedReason)
+	}
+
+	var resetErr error
+	if err := stopWorkspaceAgentProcess(a.workspaceAgentCmd); err != nil {
+		resetErr = err
+		appendWorkspaceHostLog(runtimeDir, "workspace agent session/runtime hook stop failed: %v", err)
+	}
+	a.workspaceAgentCmd = nil
+
+	if a.workspaceAgentLog != nil {
+		_ = a.workspaceAgentLog.Close()
+		a.workspaceAgentLog = nil
+	}
+
+	a.workspaceAgentURL = ""
+	if a.workspaceService != nil {
+		a.workspaceService.SetBaseURL(resolveWorkspaceAgentBaseURLWithConfig(a.config))
+	}
+
+	return resetErr
+}
+
+func resolveWorkspaceInstallRoot(appRoot string) (string, error) {
+	return resolveWorkspaceInstallRootWithConfig(appRoot, nil)
+}
+
+func resolveWorkspaceInstallRootWithConfig(appRoot string, cfg *config.Config) (string, error) {
+	if root, configured, err := resolveWorkspaceInstallRootFromEnv(); configured {
+		if err != nil {
+			return "", err
+		}
+		return root, nil
+	}
+	if root, configured, err := resolveWorkspaceInstallRootFromConfig(cfg); configured {
+		if err != nil {
+			return "", err
+		}
+		return root, nil
+	}
+
 	current := strings.TrimSpace(appRoot)
 	if current == "" {
-		return "", false
+		return "", fmt.Errorf("app root is empty")
 	}
 
 	for i := 0; i < 5; i++ {
-		agentEntry := filepath.Join(current, "apps", "agent", "src", "server", "index.mjs")
-		if _, err := os.Stat(agentEntry); err == nil {
-			return current, true
+		if workspaceInstallRootLooksValid(current) {
+			return current, nil
 		}
 		next := filepath.Dir(current)
 		if next == current {
@@ -213,11 +287,55 @@ func resolveWorkspaceInstallRoot(appRoot string) (string, bool) {
 		}
 		current = next
 	}
-	return "", false
+	return "", fmt.Errorf("workspace agent entry not found from app root: %s", strings.TrimSpace(appRoot))
+}
+
+func resolveWorkspaceInstallRootFromConfig(cfg *config.Config) (string, bool, error) {
+	if cfg == nil {
+		return "", false, nil
+	}
+	root := strings.TrimSpace(cfg.Workspace.InstallRoot)
+	if root == "" {
+		return "", false, nil
+	}
+	root = strings.TrimRight(root, string(os.PathSeparator))
+	if workspaceInstallRootLooksValid(root) {
+		return root, true, nil
+	}
+	return "", true, fmt.Errorf("workspace install root configured by config.workspace.install_root is invalid: %s", cfg.Workspace.InstallRoot)
+}
+
+func resolveWorkspaceInstallRootFromEnv() (string, bool, error) {
+	for _, key := range []string{"ANT_BROWSER_WORKSPACE_INSTALL_ROOT", "WORKSPACE_INSTALL_ROOT"} {
+		rawValue := strings.TrimSpace(os.Getenv(key))
+		if rawValue == "" {
+			continue
+		}
+		root := strings.TrimRight(rawValue, string(os.PathSeparator))
+		if workspaceInstallRootLooksValid(root) {
+			return root, true, nil
+		}
+		return "", true, fmt.Errorf("workspace install root configured by %s is invalid: %s", key, rawValue)
+	}
+	return "", false, nil
+}
+
+func workspaceInstallRootLooksValid(root string) bool {
+	if strings.TrimSpace(root) == "" {
+		return false
+	}
+	agentEntry := filepath.Join(root, "apps", "agent", "src", "server", "index.mjs")
+	_, err := os.Stat(agentEntry)
+	return err == nil
 }
 
 func resolveWorkspaceRuntimeDir() string {
+	return resolveWorkspaceRuntimeDirWithConfig(nil)
+}
+
+func resolveWorkspaceRuntimeDirWithConfig(cfg *config.Config) string {
 	for _, candidate := range []string{
+		configuredWorkspaceRuntimeDir(cfg),
 		strings.TrimSpace(os.Getenv("DESKTOP_RUNTIME_DIR")),
 		strings.TrimSpace(os.Getenv("AGENT_STATE_DIR")),
 	} {
@@ -238,6 +356,10 @@ func resolveWorkspaceRuntimeDir() string {
 }
 
 func resolveWorkspaceServerOrigin(runtimeDir string) string {
+	return resolveWorkspaceServerOriginWithConfig(runtimeDir, nil)
+}
+
+func resolveWorkspaceServerOriginWithConfig(runtimeDir string, cfg *config.Config) string {
 	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
 	data, err := os.ReadFile(configPath)
 	if err == nil {
@@ -252,8 +374,13 @@ func resolveWorkspaceServerOrigin(runtimeDir string) string {
 	if value := strings.TrimSpace(os.Getenv("DESKTOP_SERVER_BASE_URL")); value != "" {
 		return strings.TrimRight(value, "/")
 	}
+	if cfg != nil {
+		if value := strings.TrimSpace(cfg.Workspace.ServerOrigin); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
 
-	return ""
+	return defaultWorkspaceServerOrigin
 }
 
 func resolveWorkspaceLocalAgentBaseURL() string {
@@ -267,6 +394,13 @@ func resolveWorkspaceLocalAgentBaseURL() string {
 		}
 	}
 	return defaultWorkspaceAgentBaseURL
+}
+
+func configuredWorkspaceRuntimeDir(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.Workspace.RuntimeDir)
 }
 
 func reserveWorkspaceAgentPort() (string, string, error) {
@@ -358,23 +492,56 @@ func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, 
 	return result
 }
 
-func bootstrapWorkspaceAgentSession(agentBaseURL, serverOrigin string) error {
-	loginPayload, err := workspaceServerLogin(serverOrigin)
-	if err != nil {
-		return err
+func fetchWorkspaceBootstrapUser(serverOrigin, accessToken string) (workspaceBootstrapUser, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return workspaceBootstrapUser{}, fmt.Errorf("workspace bootstrap access token is required")
 	}
 
-	userID := strings.TrimSpace(loginPayload.Data.UserSummary.ID)
-	displayName := strings.TrimSpace(loginPayload.Data.UserSummary.DisplayName)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, strings.TrimRight(serverOrigin, "/")+"/api/auth/me", nil)
+	if err != nil {
+		return workspaceBootstrapUser{}, err
+	}
+	request.Header.Set("accept", "application/json")
+	request.Header.Set("authorization", "Bearer "+accessToken)
+
+	var me workspaceMeEnvelope
+	if err := doWorkspaceJSON(request, &me); err != nil {
+		return workspaceBootstrapUser{}, err
+	}
+
+	user := workspaceBootstrapUser{
+		UserID: strings.TrimSpace(firstNonEmptyWorkspaceString(
+			me.Data.UserSummary.ID,
+			me.Data.User.ID,
+			me.Data.ID,
+		)),
+		DisplayName: strings.TrimSpace(firstNonEmptyWorkspaceString(
+			me.Data.UserSummary.DisplayName,
+			me.Data.User.DisplayName,
+			me.Data.DisplayName,
+		)),
+	}
+	if user.UserID == "" {
+		return workspaceBootstrapUser{}, fmt.Errorf("workspace bootstrap user id is required")
+	}
+	return user, nil
+}
+
+func bootstrapWorkspaceAgentSession(agentBaseURL, serverOrigin, accessToken string, user workspaceBootstrapUser) error {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return fmt.Errorf("workspace bootstrap access token is required")
+	}
+
+	userID := strings.TrimSpace(user.UserID)
 	if userID == "" {
-		userID = strings.TrimSpace(loginPayload.Data.User.ID)
+		return fmt.Errorf("workspace bootstrap user id is required")
 	}
-	if displayName == "" {
-		displayName = strings.TrimSpace(loginPayload.Data.User.DisplayName)
-	}
+	displayName := strings.TrimSpace(user.DisplayName)
 
 	requestBody := map[string]any{
-		"accessToken": loginPayload.Data.AccessToken,
+		"accessToken": accessToken,
 		"user": map[string]string{
 			"userId":      userID,
 			"displayName": displayName,
@@ -395,19 +562,6 @@ func warmWorkspaceAuthorizedShops(agentBaseURL string) (int, error) {
 		return 0, err
 	}
 	return len(shops.Data.Items), nil
-}
-
-func workspaceServerLogin(serverOrigin string) (*workspaceLoginEnvelope, error) {
-	body := map[string]string{
-		"username": strings.TrimSpace(firstNonEmptyWorkspaceString(os.Getenv("ANT_WORKSPACE_BOOTSTRAP_USERNAME"), defaultWorkspaceBootstrapUsername)),
-		"password": firstNonEmptyWorkspaceString(os.Getenv("ANT_WORKSPACE_BOOTSTRAP_PASSWORD"), defaultWorkspaceBootstrapPassword),
-	}
-
-	var login workspaceLoginEnvelope
-	if err := postWorkspaceJSON(strings.TrimRight(serverOrigin, "/")+"/api/auth/login", body, &login); err != nil {
-		return nil, err
-	}
-	return &login, nil
 }
 
 func firstNonEmptyWorkspaceString(values ...string) string {

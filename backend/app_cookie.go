@@ -416,10 +416,17 @@ func cdpEvaluateString(debugPort int, expression string) (string, error) {
 }
 
 func (a *App) importWorkspaceSessionBundle(profileID string, bundle workspace.SessionBundle) error {
-	if len(bundle.Cookies) == 0 {
-		return nil
+	if len(bundle.Cookies) > 0 {
+		if err := a.browserImportCookies(profileID, bundle.Cookies); err != nil {
+			return err
+		}
 	}
-	return a.browserImportCookies(profileID, bundle.Cookies)
+	if len(bundle.Storages) > 0 {
+		if err := a.browserImportStorages(profileID, bundle.Storages); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func defaultString(value string, fallback string) string {
@@ -428,4 +435,58 @@ func defaultString(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (a *App) browserImportStorages(profileID string, storages []workspace.SessionStorageEntry) error {
+	debugPort, err := a.getDebugPort(profileID)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range storages {
+		origin := strings.TrimSpace(entry.Origin)
+		if origin == "" {
+			continue
+		}
+		expression, err := buildStorageInjectionExpression(origin, entry)
+		if err != nil {
+			return err
+		}
+		if _, err := cdpEvaluateString(debugPort, expression); err != nil {
+			return fmt.Errorf("注入 storage 失败（origin=%s）: %w", origin, err)
+		}
+	}
+	return nil
+}
+
+func buildStorageInjectionExpression(origin string, entry workspace.SessionStorageEntry) (string, error) {
+	originJSON, err := json.Marshal(origin)
+	if err != nil {
+		return "", err
+	}
+	localJSON, err := json.Marshal(entry.LocalStorage)
+	if err != nil {
+		return "", err
+	}
+	sessionJSON, err := json.Marshal(entry.SessionStorage)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(`(() => {
+  const targetOrigin = %s;
+  if (window.location.origin !== targetOrigin) {
+    window.location.href = targetOrigin;
+    return "origin_navigate_requested";
+  }
+  const localStoragePayload = %s || {};
+  const sessionStoragePayload = %s || {};
+  for (const [key, value] of Object.entries(localStoragePayload)) {
+    window.localStorage.setItem(key, String(value));
+  }
+  for (const [key, value] of Object.entries(sessionStoragePayload)) {
+    window.sessionStorage.setItem(key, String(value));
+  }
+  return "storage_injected";
+})()`, string(originJSON), string(localJSON), string(sessionJSON)), nil
 }

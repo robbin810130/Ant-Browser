@@ -34,6 +34,10 @@ export function BookmarkSave(arg1) {
   return window['go']['main']['App']['BookmarkSave'](arg1);
 }
 
+export function BootstrapDesktopAuthRuntime() {
+  return window['go']['main']['App']['BootstrapDesktopAuthRuntime']();
+}
+
 export function BrowserClearCookies(arg1) {
   return window['go']['main']['App']['BrowserClearCookies'](arg1);
 }
@@ -218,12 +222,32 @@ export function ClearAppLogs() {
   return window['go']['main']['App']['ClearAppLogs']();
 }
 
+export function ClearDesktopAuthSession() {
+  return window['go']['main']['App']['ClearDesktopAuthSession']();
+}
+
+export function ClearProfileSession(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ClearProfileSession'](arg1, arg2, arg3);
+}
+
 export function CreateGroup(arg1) {
   return window['go']['main']['App']['CreateGroup'](arg1);
 }
 
 export function DeleteGroup(arg1) {
   return window['go']['main']['App']['DeleteGroup'](arg1);
+}
+
+export function DesktopAuthStrongCleanup(arg1) {
+  return window['go']['main']['App']['DesktopAuthStrongCleanup'](arg1);
+}
+
+export function FetchDesktopAuthProfile(arg1) {
+  return window['go']['main']['App']['FetchDesktopAuthProfile'](arg1);
+}
+
+export function FetchDesktopSharedLoginBindSession(arg1, arg2) {
+  return window['go']['main']['App']['FetchDesktopSharedLoginBindSession'](arg1, arg2);
 }
 
 export function FetchRemoteAuthorProfile(arg1, arg2) {
@@ -278,8 +302,20 @@ export function GetRunningInstances() {
   return window['go']['main']['App']['GetRunningInstances']();
 }
 
+export function InjectManagedSessionBundle(arg1, arg2) {
+  return window['go']['main']['App']['InjectManagedSessionBundle'](arg1, arg2);
+}
+
 export function ListGroups() {
   return window['go']['main']['App']['ListGroups']();
+}
+
+export function LoadDesktopAuthSession() {
+  return window['go']['main']['App']['LoadDesktopAuthSession']();
+}
+
+export function LoginDesktopUser(arg1, arg2) {
+  return window['go']['main']['App']['LoginDesktopUser'](arg1, arg2);
 }
 
 export function MoveInstancesToGroup(arg1, arg2) {
@@ -296,6 +332,10 @@ export function OpenUserDataDir(arg1) {
 
 export function QuitAppOnly() {
   return window['go']['main']['App']['QuitAppOnly']();
+}
+
+export function ReclaimManagedProfile(arg1) {
+  return window['go']['main']['App']['ReclaimManagedProfile'](arg1);
 }
 
 export function RedeemCDKey(arg1) {
@@ -318,8 +358,20 @@ export function SaveBrowserSettings(arg1) {
   return window['go']['main']['App']['SaveBrowserSettings'](arg1);
 }
 
+export function SaveDesktopAuthSession(arg1, arg2) {
+  return window['go']['main']['App']['SaveDesktopAuthSession'](arg1, arg2);
+}
+
 export function SetLogLevel(arg1) {
   return window['go']['main']['App']['SetLogLevel'](arg1);
+}
+
+export function StartDesktopSharedLoginBind(arg1, arg2) {
+  return window['go']['main']['App']['StartDesktopSharedLoginBind'](arg1, arg2);
+}
+
+export function StartDesktopSharedLoginValidate(arg1, arg2) {
+  return window['go']['main']['App']['StartDesktopSharedLoginValidate'](arg1, arg2);
 }
 
 export function StartInstance(arg1) {
@@ -328,6 +380,10 @@ export function StartInstance(arg1) {
 
 export function StartInstanceWithParams(arg1, arg2) {
   return window['go']['main']['App']['StartInstanceWithParams'](arg1, arg2);
+}
+
+export function StopInstance(arg1) {
+  return window['go']['main']['App']['StopInstance'](arg1);
 }
 
 export function TestProxyConnectivity(arg1, arg2) {
@@ -344,6 +400,10 @@ export function TriggerGC() {
 
 export function UpdateGroup(arg1, arg2) {
   return window['go']['main']['App']['UpdateGroup'](arg1, arg2);
+}
+
+export function UpsertManagedProfile(arg1) {
+  return window['go']['main']['App']['UpsertManagedProfile'](arg1);
 }
 
 export function ValidateProxyConfig(arg1, arg2) {

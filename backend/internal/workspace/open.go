@@ -209,12 +209,12 @@ func SelectPreferredOpenSnapshotForLaunchContext(shopID string, launchContext Sh
 		}
 	}
 	for _, snapshot := range snapshots {
-		if ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot).Code == "ANT_BACKEND_LOGIN_REQUIRED" {
+		if candidate := ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot); candidate.Success {
 			return snapshot
 		}
 	}
 	for _, snapshot := range snapshots {
-		if candidate := ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot); candidate.Success {
+		if ClassifyOpenResultForLaunchContext(shopID, launchContext, snapshot).Code == "ANT_BACKEND_LOGIN_REQUIRED" {
 			return snapshot
 		}
 	}

@@ -72,6 +72,9 @@ browser: {}
 	if cfg.LaunchServer.Auth.Header != DefaultLaunchServerAPIKeyHeader {
 		t.Fatalf("LaunchServer.Auth.Header 未补齐: got=%q", cfg.LaunchServer.Auth.Header)
 	}
+	if cfg.Workspace.InstallRoot != "" || cfg.Workspace.AgentBaseURL != "" || cfg.Workspace.ServerOrigin != "" || cfg.Workspace.RuntimeDir != "" {
+		t.Fatalf("Workspace 默认配置应为空: got=%+v", cfg.Workspace)
+	}
 }
 
 func TestLoadPreservesExplicitConfig(t *testing.T) {
@@ -132,6 +135,11 @@ launch_server:
     enabled: true
     api_key: secret-key
     header: X-Custom-Ant-Key
+workspace:
+  install_root: /Applications/1688shop-desktop
+  agent_base_url: http://127.0.0.1:49000/
+  server_origin: http://127.0.0.1:4317/
+  runtime_dir: /tmp/1688shop-runtime
 `
 	if err := os.WriteFile(configPath, []byte(customConfig), 0o644); err != nil {
 		t.Fatalf("写入测试配置失败: %v", err)
@@ -174,6 +182,18 @@ launch_server:
 	}
 	if cfg.LaunchServer.Auth.Header != "X-Custom-Ant-Key" {
 		t.Fatalf("LaunchServer.Auth.Header 显式配置被覆盖: got=%q", cfg.LaunchServer.Auth.Header)
+	}
+	if cfg.Workspace.InstallRoot != "/Applications/1688shop-desktop" {
+		t.Fatalf("Workspace.InstallRoot 显式配置被覆盖: got=%q", cfg.Workspace.InstallRoot)
+	}
+	if cfg.Workspace.AgentBaseURL != "http://127.0.0.1:49000" {
+		t.Fatalf("Workspace.AgentBaseURL 显式配置应被规范化: got=%q", cfg.Workspace.AgentBaseURL)
+	}
+	if cfg.Workspace.ServerOrigin != "http://127.0.0.1:4317" {
+		t.Fatalf("Workspace.ServerOrigin 显式配置应被规范化: got=%q", cfg.Workspace.ServerOrigin)
+	}
+	if cfg.Workspace.RuntimeDir != "/tmp/1688shop-runtime" {
+		t.Fatalf("Workspace.RuntimeDir 显式配置被覆盖: got=%q", cfg.Workspace.RuntimeDir)
 	}
 }
 

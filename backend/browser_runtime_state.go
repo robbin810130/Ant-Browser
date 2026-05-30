@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	stdruntime "runtime"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -98,6 +100,18 @@ func (a *App) markProfileRunningLocked(profileId string, profile *BrowserProfile
 	}
 }
 
+func (a *App) markProfileRecoveredLocked(profile *BrowserProfile, debugPort int) {
+	if profile == nil {
+		return
+	}
+	profile.Running = true
+	profile.DebugPort = debugPort
+	profile.DebugReady = true
+	profile.Pid = 0
+	profile.RuntimeWarning = ""
+	profile.LastError = ""
+}
+
 func (a *App) markProfileDebugReadyLocked(profile *BrowserProfile, debugPort int) {
 	if profile == nil {
 		return
@@ -174,6 +188,109 @@ func (a *App) waitBrowserDebugReadyAsync(profileId string, debugPort int, timeou
 		logger.F("debug_port", debugPort),
 	)
 	a.emitBrowserInstanceUpdated(snapshot)
+}
+
+func (a *App) recoverBrowserProfileRuntime(profileID string) (*BrowserProfile, bool) {
+	if a == nil || a.browserMgr == nil {
+		return nil, false
+	}
+	log := logger.New("Browser")
+
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return nil, false
+	}
+
+	a.browserMgr.Mutex.Lock()
+	profile, exists := a.browserMgr.Profiles[profileID]
+	if !exists || profile == nil {
+		a.browserMgr.Mutex.Unlock()
+		return nil, false
+	}
+	if profile.Running && isBrowserProfileLive(profile, a.browserMgr.BrowserProcesses[profileID]) {
+		snapshot := copyBrowserProfileSnapshot(profile)
+		a.browserMgr.Mutex.Unlock()
+		if snapshot != nil && snapshot.DebugReady && a.launchServer != nil {
+			a.launchServer.SetActiveProfile(snapshot)
+		}
+		return snapshot, true
+	}
+	userDataDir := a.browserMgr.ResolveUserDataDir(profile)
+	a.browserMgr.Mutex.Unlock()
+
+	debugPort, err := readBrowserDebugPortFile(userDataDir)
+	if err != nil {
+		debugPort, err = findBrowserDebugPortFromRunningProcess(userDataDir)
+		if err != nil {
+			log.Info("运行态恢复未命中调试端口",
+				logger.F("profile_id", profileID),
+				logger.F("user_data_dir", userDataDir),
+				logger.F("reason", err.Error()),
+			)
+			return nil, false
+		}
+	}
+	if err := probeBrowserDebugPort(debugPort, browserDebugProbeTimeout); err != nil {
+		log.Warn("运行态恢复探活失败",
+			logger.F("profile_id", profileID),
+			logger.F("user_data_dir", userDataDir),
+			logger.F("debug_port", debugPort),
+			logger.F("error", err.Error()),
+		)
+		return nil, false
+	}
+
+	a.browserMgr.Mutex.Lock()
+	profile, exists = a.browserMgr.Profiles[profileID]
+	if !exists || profile == nil {
+		a.browserMgr.Mutex.Unlock()
+		return nil, false
+	}
+	if profile.Running && isBrowserProfileLive(profile, a.browserMgr.BrowserProcesses[profileID]) {
+		snapshot := copyBrowserProfileSnapshot(profile)
+		a.browserMgr.Mutex.Unlock()
+		if snapshot != nil && snapshot.DebugReady && a.launchServer != nil {
+			a.launchServer.SetActiveProfile(snapshot)
+		}
+		return snapshot, true
+	}
+	a.markProfileRecoveredLocked(profile, debugPort)
+	snapshot := copyBrowserProfileSnapshot(profile)
+	a.browserMgr.Mutex.Unlock()
+	log.Info("已认领运行中的浏览器实例",
+		logger.F("profile_id", profileID),
+		logger.F("user_data_dir", userDataDir),
+		logger.F("debug_port", debugPort),
+	)
+
+	if snapshot != nil && snapshot.DebugReady && a.launchServer != nil {
+		a.launchServer.SetActiveProfile(snapshot)
+	}
+	return snapshot, true
+}
+
+func (a *App) recoverRunningProfilesFromUserDataDirs() int {
+	if a == nil || a.browserMgr == nil {
+		return 0
+	}
+
+	a.browserMgr.InitData()
+	a.browserMgr.Mutex.Lock()
+	profileIDs := make([]string, 0, len(a.browserMgr.Profiles))
+	for profileID := range a.browserMgr.Profiles {
+		profileIDs = append(profileIDs, profileID)
+	}
+	a.browserMgr.Mutex.Unlock()
+
+	sort.Strings(profileIDs)
+
+	recovered := 0
+	for _, profileID := range profileIDs {
+		if _, ok := a.recoverBrowserProfileRuntime(profileID); ok {
+			recovered++
+		}
+	}
+	return recovered
 }
 
 func shouldKeepBrowserRunningPendingDebugReady(debugPort int, monitor *browserProcessMonitor) bool {

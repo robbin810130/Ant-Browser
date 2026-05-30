@@ -46,8 +46,17 @@ browser:
     - --no-first-run
   default_proxy: ""
   default_bookmarks: []
-  cores: []
+  cores:
+    - core_id: fingerprint-macos
+      core_name: Fingerprint Chromium (macOS)
+      core_path: chrome/fingerprint-macos
+      is_default: true
   proxies: []
   profiles: []
 launch_server:
   port: 19876
+workspace:
+  install_root: ""
+  agent_base_url: ""
+  server_origin: "http://127.0.0.1:4174"
+  runtime_dir: ""

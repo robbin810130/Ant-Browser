@@ -111,6 +111,26 @@ func TestPickOpenTargetForLaunchContextPrefersSuccessfulBackendTab(t *testing.T)
 	}
 }
 
+func TestSelectPreferredOpenSnapshotForLaunchContextPrefersSuccessfulBackendOverResidualLoginTab(t *testing.T) {
+	snapshot := workspace.SelectPreferredOpenSnapshotForLaunchContext("b2b-222082061706256a1a", workspace.ShopLaunchContext{
+		SuccessURLPatterns: []string{"https://work.1688.com/"},
+		LoginURLPatterns:   []string{"https://login.1688.com/", "https://login.taobao.com/"},
+	}, []workspace.OpenRuntimeSnapshot{
+		{
+			CurrentURL: "https://login.taobao.com/?redirect_url=https%3A%2F%2Flogin.1688.com%2Fmember%2Fjump.htm",
+			PageTitle:  "全球领先的采购批发平台,批发网",
+		},
+		{
+			CurrentURL: "https://work.1688.com/",
+			PageTitle:  "1688-卖家工作台",
+		},
+	})
+
+	if snapshot.CurrentURL != "https://work.1688.com/" {
+		t.Fatalf("expected successful backend snapshot to win, got %+v", snapshot)
+	}
+}
+
 func TestPickOpenTargetForLaunchContextReusesBlankTabForNavigation(t *testing.T) {
 	target, action, ok := workspace.PickOpenTargetForLaunchContext("b2b-222082061706256a1a", workspace.ShopLaunchContext{
 		SuccessURLPatterns: []string{"https://work.1688.com/"},

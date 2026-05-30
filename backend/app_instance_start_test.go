@@ -492,6 +492,41 @@ func TestSanitizeManagedLaunchArgsKeepsUnmanagedFlags(t *testing.T) {
 	}
 }
 
+func TestParseBrowserDebugPortFromProcessLine(t *testing.T) {
+	t.Parallel()
+
+	userDataDir := "/tmp/managed-profiles/alibaba__shop-1"
+	line := "14142 /Applications/Chromium.app/Contents/MacOS/Chromium --user-data-dir=/tmp/managed-profiles/alibaba__shop-1 --remote-debugging-port=64081 --new-window https://work.1688.com/"
+
+	port, ok := parseBrowserDebugPortFromProcessLine(line, userDataDir)
+	if !ok {
+		t.Fatal("期望从进程命令行解析出调试端口")
+	}
+	if port != 64081 {
+		t.Fatalf("期望调试端口为 64081，实际=%d", port)
+	}
+}
+
+func TestResolveBrowserDebugPortFallsBackToRunningProcessLookup(t *testing.T) {
+	t.Parallel()
+
+	originalLookup := runBrowserProcessLookup
+	runBrowserProcessLookup = func() ([]byte, error) {
+		return []byte("14142 /Applications/Chromium.app/Contents/MacOS/Chromium --user-data-dir=/tmp/managed-profiles/alibaba__shop-1 --remote-debugging-port=64081 --new-window https://work.1688.com/\n"), nil
+	}
+	defer func() {
+		runBrowserProcessLookup = originalLookup
+	}()
+
+	port, err := resolveBrowserDebugPort(0, "/tmp/managed-profiles/alibaba__shop-1", nil)
+	if err != nil {
+		t.Fatalf("期望从运行中进程解析调试端口，实际错误: %v", err)
+	}
+	if port != 64081 {
+		t.Fatalf("期望调试端口为 64081，实际=%d", port)
+	}
+}
+
 func mustListenLoopback(t *testing.T) net.Listener {
 	t.Helper()
 
