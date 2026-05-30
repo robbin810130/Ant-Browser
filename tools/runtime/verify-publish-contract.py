@@ -45,6 +45,8 @@ def main() -> None:
     windows_publish_path = repo_root / "bat" / "publish.ps1"
     mac_publish_path = repo_root / "publish" / "mac" / "publish-mac.sh"
     release_readme_path = repo_root / "tools" / "public-release" / "README.md"
+    windows_e2e_path = repo_root / "tools" / "app-update" / "windows-app-update-e2e.ps1"
+    windows_e2e_verifier_path = repo_root / "tools" / "app-update" / "verify-windows-e2e-script.py"
 
     manifest = load_json(manifest_path)
     sources = load_json(sources_path)
@@ -78,6 +80,15 @@ def main() -> None:
     assert_contains(windows_publish_text, "New-AppUpdateZip -StagingDir $stagingDir", "bat/publish.ps1")
     assert_contains(windows_publish_text, "New-AppUpdateManifest -ZipPath $appUpdateZip", "bat/publish.ps1")
     assert_contains(windows_publish_text, "tools/app-update/verify-app-update-package.py", "bat/publish.ps1")
+
+    windows_e2e_text = windows_e2e_path.read_text(encoding="utf-8-sig")
+    assert_contains(windows_e2e_text, "CurrentExePath: currentExe", "tools/app-update/windows-app-update-e2e.ps1")
+    assert_contains(windows_e2e_text, "DESKTOP_APP_UPDATE_MANIFEST_URL", "tools/app-update/windows-app-update-e2e.ps1")
+    assert_contains(windows_e2e_text, "localAppVersion", "tools/app-update/windows-app-update-e2e.ps1")
+    assert_contains(windows_e2e_text, "data\\app.db", "tools/app-update/windows-app-update-e2e.ps1")
+
+    windows_e2e_verifier_text = windows_e2e_verifier_path.read_text(encoding="utf-8")
+    assert_contains(windows_e2e_verifier_text, "Windows app-update e2e script contract verified", "tools/app-update/verify-windows-e2e-script.py")
 
     mac_publish_text = mac_publish_path.read_text(encoding="utf-8")
     assert_contains(mac_publish_text, 'cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"', "publish/mac/publish-mac.sh")

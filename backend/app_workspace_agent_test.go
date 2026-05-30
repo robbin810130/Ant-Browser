@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveWorkspaceInstallRootPrefersExplicitEnv(t *testing.T) {
@@ -197,6 +198,118 @@ func TestResolveWorkspaceServerOriginDetailsFallsBackToDefault(t *testing.T) {
 	}
 	if details.Source != "default" {
 		t.Fatalf("期望默认来源=default，实际=%s", details.Source)
+	}
+}
+
+func TestSaveDesktopServerConnectionPersistsRuntimeConfig(t *testing.T) {
+	runtimeDir := t.TempDir()
+	appRoot := t.TempDir()
+	app := NewApp(appRoot)
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			RuntimeDir: runtimeDir,
+		},
+	}
+	t.Setenv("DESKTOP_SERVER_BASE_URL", "http://127.0.0.1:4174")
+
+	connection, err := app.SaveDesktopServerConnection(" 192.168.210.169:4174/ ")
+	if err != nil {
+		t.Fatalf("SaveDesktopServerConnection 返回错误: %v", err)
+	}
+	if connection.ServerOrigin != "http://192.168.210.169:4174" {
+		t.Fatalf("期望规范化 server origin，实际=%s", connection.ServerOrigin)
+	}
+	if connection.Source != "runtime-config" {
+		t.Fatalf("期望配置来源为 runtime-config，实际=%s", connection.Source)
+	}
+
+	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("读取 server connection config 失败: %v", err)
+	}
+	var payload workspaceServerConnectionConfig
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("解析 server connection config 失败: %v", err)
+	}
+	if payload.ServerOrigin != "http://192.168.210.169:4174" {
+		t.Fatalf("期望落盘 server origin，实际=%s", payload.ServerOrigin)
+	}
+
+	mirrorPath := filepath.Join(appRoot, "runtime", "config", "server-connection.json")
+	mirrorData, err := os.ReadFile(mirrorPath)
+	if err != nil {
+		t.Fatalf("读取 install runtime server connection mirror 失败: %v", err)
+	}
+	var mirrorPayload workspaceServerConnectionConfig
+	if err := json.Unmarshal(mirrorData, &mirrorPayload); err != nil {
+		t.Fatalf("解析 install runtime server connection mirror 失败: %v", err)
+	}
+	if mirrorPayload.ServerOrigin != "http://192.168.210.169:4174" {
+		t.Fatalf("期望 mirror 落盘 server origin，实际=%s", mirrorPayload.ServerOrigin)
+	}
+}
+
+func TestGetDesktopServerConnectionPrefersNewestRuntimeConfigCandidate(t *testing.T) {
+	appRoot := t.TempDir()
+	runtimeDir := t.TempDir()
+	app := NewApp(appRoot)
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			RuntimeDir: runtimeDir,
+		},
+	}
+
+	stalePath := filepath.Join(runtimeDir, "config", "server-connection.json")
+	writeServerConnectionConfigFixture(t, stalePath, "http://192.168.131.123:4174")
+	staleTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stalePath, staleTime, staleTime); err != nil {
+		t.Fatalf("调整旧 server connection mtime 失败: %v", err)
+	}
+
+	freshPath := filepath.Join(appRoot, "runtime", "config", "server-connection.json")
+	writeServerConnectionConfigFixture(t, freshPath, "http://192.168.210.169:4174")
+
+	connection, err := app.GetDesktopServerConnection()
+	if err != nil {
+		t.Fatalf("GetDesktopServerConnection 返回错误: %v", err)
+	}
+	if connection.ServerOrigin != "http://192.168.210.169:4174" {
+		t.Fatalf("期望使用最新写入的 server origin，实际=%s", connection.ServerOrigin)
+	}
+	if filepath.Clean(connection.ConfigPath) != filepath.Clean(freshPath) {
+		t.Fatalf("期望使用 install runtime mirror configPath=%s，实际=%s", freshPath, connection.ConfigPath)
+	}
+}
+
+func TestSaveDesktopServerConnectionRejectsNonOriginURL(t *testing.T) {
+	app := NewApp(t.TempDir())
+	app.config = &config.Config{
+		Workspace: config.WorkspaceConfig{
+			RuntimeDir: t.TempDir(),
+		},
+	}
+
+	_, err := app.SaveDesktopServerConnection("http://192.168.210.169:4174/api/auth/login")
+	if err == nil {
+		t.Fatal("期望带 path 的 server origin 被拒绝")
+	}
+	if !strings.Contains(err.Error(), "服务端根地址") {
+		t.Fatalf("期望错误提示服务端根地址，实际=%v", err)
+	}
+}
+
+func writeServerConnectionConfigFixture(t *testing.T, path, serverOrigin string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("创建 server connection fixture 目录失败: %v", err)
+	}
+	payload, err := json.Marshal(workspaceServerConnectionConfig{ServerOrigin: serverOrigin})
+	if err != nil {
+		t.Fatalf("序列化 server connection fixture 失败: %v", err)
+	}
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatalf("写入 server connection fixture 失败: %v", err)
 	}
 }
 

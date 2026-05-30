@@ -4,9 +4,11 @@ import { Button, Card, Input, toast } from '../../../shared/components'
 import {
   bootstrapDesktopAuthRuntime,
   fetchDesktopAuthProfile,
+  getDesktopServerConnection,
   loginDesktopUser,
   runDesktopAuthStrongCleanup,
   saveDesktopAuthSession,
+  saveDesktopServerConnection,
 } from '../api'
 import { useAuthStore } from '../../../store/authStore'
 
@@ -90,8 +92,11 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [serverOrigin, setServerOrigin] = useState('')
+  const [serverOriginSource, setServerOriginSource] = useState('')
   const [rememberMe, setRememberMe] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [loadingServerOrigin, setLoadingServerOrigin] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
 
   const redirectTarget = useMemo(
@@ -105,12 +110,47 @@ export function LoginPage() {
     }
   }, [bootstrapReady, navigate, redirectTarget, status])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadServerOrigin() {
+      try {
+        const connection = await getDesktopServerConnection()
+        if (cancelled) return
+        setServerOrigin(connection.serverOrigin)
+        setServerOriginSource(connection.source)
+      } catch (error) {
+        if (cancelled) return
+        console.error('Load desktop server connection failed', error)
+        setServerOrigin('http://127.0.0.1:4174')
+        setServerOriginSource('default')
+      } finally {
+        if (!cancelled) {
+          setLoadingServerOrigin(false)
+        }
+      }
+    }
+
+    void loadServerOrigin()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const formData = new FormData(event.currentTarget)
     const normalizedUsername = String(formData.get('username') ?? username).trim()
     const normalizedPassword = String(formData.get('password') ?? password).trim()
+    const normalizedServerOrigin = String(formData.get('serverOrigin') ?? serverOrigin).trim()
+    if (!normalizedServerOrigin) {
+      const nextError = '请输入服务端地址'
+      setErrorMessage(nextError)
+      toast.error(nextError)
+      return
+    }
     if (!normalizedUsername || !normalizedPassword) {
       const nextError = '请输入用户名和密码'
       setErrorMessage(nextError)
@@ -124,6 +164,10 @@ export function LoginPage() {
 
     let persistedSessionSaved = false
     try {
+      const connection = await saveDesktopServerConnection(normalizedServerOrigin)
+      setServerOrigin(connection.serverOrigin)
+      setServerOriginSource(connection.source)
+
       const accessToken = await loginDesktopUser(normalizedUsername, normalizedPassword)
       if (!accessToken) {
         throw new Error('登录成功但未返回 accessToken')
@@ -200,6 +244,33 @@ export function LoginPage() {
               </div>
 
               <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="desktop-login-server-origin" className="text-sm font-medium text-slate-700">
+                    服务端地址
+                  </label>
+                  <Input
+                    id="desktop-login-server-origin"
+                    name="serverOrigin"
+                    value={serverOrigin}
+                    onChange={(event) => {
+                      setServerOrigin(event.target.value)
+                      if (errorMessage) {
+                        setErrorMessage('')
+                      }
+                    }}
+                    placeholder="http://服务器IP:4174"
+                    autoComplete="url"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    error={Boolean(errorMessage) && !serverOrigin.trim()}
+                    disabled={submitting || loadingServerOrigin}
+                  />
+                  <p className="text-xs text-slate-400">
+                    当前来源：{serverOriginSource || (loadingServerOrigin ? '读取中' : '未配置')}
+                  </p>
+                </div>
+
                 <div className="space-y-1.5">
                   <label htmlFor="desktop-login-username" className="text-sm font-medium text-slate-700">
                     用户名

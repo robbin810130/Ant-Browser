@@ -39,6 +39,12 @@ type workspaceServerOriginResolution struct {
 	ConfigPath string
 }
 
+type workspaceServerConfigCandidate struct {
+	ConfigPath string
+	Origin     string
+	ModifiedAt time.Time
+}
+
 type workspaceAuthIdentity struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
@@ -87,7 +93,7 @@ func (a *App) ensureWorkspaceAgentBootstrapped() error {
 	}
 
 	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
-	serverOrigin := resolveWorkspaceServerOriginWithConfig(runtimeDir, a.config)
+	serverOrigin := a.resolveWorkspaceServerOrigin(runtimeDir)
 	appendWorkspaceHostLog(runtimeDir, "bootstrap begin: app_root=%s install_root=%s runtime_dir=%s server_origin=%s", a.appRoot, installRoot, runtimeDir, serverOrigin)
 	if strings.TrimSpace(serverOrigin) == "" {
 		appendWorkspaceHostLog(runtimeDir, "workspace server origin unavailable")
@@ -371,18 +377,26 @@ func resolveWorkspaceServerOriginWithConfig(runtimeDir string, cfg *config.Confi
 }
 
 func resolveWorkspaceServerOriginDetails(runtimeDir string, cfg *config.Config) workspaceServerOriginResolution {
-	configPath := filepath.Join(runtimeDir, "config", "server-connection.json")
-	data, err := os.ReadFile(configPath)
-	if err == nil {
-		var config workspaceServerConnectionConfig
-		if jsonErr := json.Unmarshal(data, &config); jsonErr == nil {
-			if origin := strings.TrimSpace(config.ServerOrigin); origin != "" {
-				return workspaceServerOriginResolution{
-					Origin:     strings.TrimRight(origin, "/"),
-					Source:     "runtime-config",
-					ConfigPath: configPath,
-				}
-			}
+	return resolveWorkspaceServerOriginDetailsForApp("", runtimeDir, cfg)
+}
+
+func (a *App) resolveWorkspaceServerOrigin(runtimeDir string) string {
+	return a.resolveWorkspaceServerOriginDetails(runtimeDir).Origin
+}
+
+func (a *App) resolveWorkspaceServerOriginDetails(runtimeDir string) workspaceServerOriginResolution {
+	if a == nil {
+		return resolveWorkspaceServerOriginDetails(runtimeDir, nil)
+	}
+	return resolveWorkspaceServerOriginDetailsForApp(a.appRoot, runtimeDir, a.config)
+}
+
+func resolveWorkspaceServerOriginDetailsForApp(appRoot, runtimeDir string, cfg *config.Config) workspaceServerOriginResolution {
+	if candidate, ok := newestWorkspaceServerConfigCandidate(workspaceServerConfigCandidatePaths(appRoot, runtimeDir)); ok {
+		return workspaceServerOriginResolution{
+			Origin:     strings.TrimRight(candidate.Origin, "/"),
+			Source:     "runtime-config",
+			ConfigPath: candidate.ConfigPath,
 		}
 	}
 
@@ -405,6 +419,85 @@ func resolveWorkspaceServerOriginDetails(runtimeDir string, cfg *config.Config) 
 		Origin: defaultWorkspaceServerOrigin,
 		Source: "default",
 	}
+}
+
+func workspaceServerConfigCandidatePaths(appRoot, runtimeDir string) []string {
+	paths := []string{}
+	for _, dir := range []string{
+		strings.TrimSpace(runtimeDir),
+		workspaceInstallRuntimeDir(appRoot),
+	} {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		path := filepath.Join(dir, "config", "server-connection.json")
+		if !containsCleanPath(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func newestWorkspaceServerConfigCandidate(paths []string) (workspaceServerConfigCandidate, bool) {
+	var newest workspaceServerConfigCandidate
+	found := false
+	for _, path := range paths {
+		candidate, ok := readWorkspaceServerConfigCandidate(path)
+		if !ok {
+			continue
+		}
+		if !found || candidate.ModifiedAt.After(newest.ModifiedAt) {
+			newest = candidate
+			found = true
+		}
+	}
+	return newest, found
+}
+
+func readWorkspaceServerConfigCandidate(configPath string) (workspaceServerConfigCandidate, bool) {
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return workspaceServerConfigCandidate{}, false
+	}
+	info, err := os.Stat(configPath)
+	if err != nil || info.IsDir() {
+		return workspaceServerConfigCandidate{}, false
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return workspaceServerConfigCandidate{}, false
+	}
+	var config workspaceServerConnectionConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return workspaceServerConfigCandidate{}, false
+	}
+	origin := strings.TrimSpace(config.ServerOrigin)
+	if origin == "" {
+		return workspaceServerConfigCandidate{}, false
+	}
+	return workspaceServerConfigCandidate{
+		ConfigPath: configPath,
+		Origin:     origin,
+		ModifiedAt: info.ModTime(),
+	}, true
+}
+
+func workspaceInstallRuntimeDir(appRoot string) string {
+	appRoot = strings.TrimSpace(appRoot)
+	if appRoot == "" {
+		return ""
+	}
+	return filepath.Join(appRoot, "runtime")
+}
+
+func containsCleanPath(paths []string, target string) bool {
+	target = filepath.Clean(strings.TrimSpace(target))
+	for _, path := range paths {
+		if filepath.Clean(strings.TrimSpace(path)) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveWorkspaceLocalAgentBaseURL() string {
