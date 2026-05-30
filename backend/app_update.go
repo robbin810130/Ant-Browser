@@ -12,17 +12,22 @@ import (
 
 func (a *App) appUpdateLayout() appupdate.Layout {
 	layout := a.runtimeLayout()
-	return appupdate.NewLayout(layout.InstallRoot, appUpdateStateRootForOS(goruntime.GOOS, layout.InstallRoot, layout.StateRoot))
+	installRoot := appUpdateInstallRootForOS(goruntime.GOOS, layout.InstallRoot)
+	return appupdate.NewLayout(installRoot, appUpdateStateRootForOS(goruntime.GOOS, installRoot, layout.StateRoot))
 }
 
 func (a *App) appUpdateManager() appupdate.Manager {
 	layout := a.appUpdateLayout()
+	platform, err := appupdate.NewPlatformBackend(goruntime.GOOS, goruntime.GOARCH, appupdate.PlatformOptions{
+		ProcessID: os.Getpid(),
+	})
+	if err != nil {
+		platform = appupdate.UnsupportedBackend{Err: err}
+	}
 	return appupdate.Manager{
 		LocalAppVersion: a.appVersion(),
 		Layout:          layout,
-		Platform: appupdate.WindowsBackend{
-			ProcessID: os.Getpid(),
-		},
+		Platform:        platform,
 		ManifestProvider: appupdate.DefaultManifestProvider(func() appupdate.ManifestSourceResolution {
 			return appupdate.ResolveManifestSource(resolveWorkspaceRuntimeDirWithConfig(a.config), a.config)
 		}),
@@ -81,6 +86,26 @@ func appUpdateStateRootForOS(goos, installRoot, fallbackStateRoot string) string
 		}
 	}
 	return fallbackStateRoot
+}
+
+func appUpdateInstallRootForOS(goos, installRoot string) string {
+	installRoot = filepath.Clean(strings.TrimSpace(installRoot))
+	if !strings.EqualFold(strings.TrimSpace(goos), "darwin") {
+		return installRoot
+	}
+	if strings.HasSuffix(strings.ToLower(filepath.Base(installRoot)), ".app") {
+		return installRoot
+	}
+	for dir := installRoot; dir != "." && dir != string(filepath.Separator); dir = filepath.Dir(dir) {
+		if strings.HasSuffix(strings.ToLower(filepath.Base(dir)), ".app") {
+			return dir
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			break
+		}
+	}
+	return installRoot
 }
 
 func windowsAppUpdateStateRoot() string {

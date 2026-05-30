@@ -1,22 +1,3 @@
-export namespace authsession {
-
-	export class Session {
-	    accessToken: string;
-	    rememberMe: boolean;
-
-	    static createFrom(source: any = {}) {
-	        return new Session(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.accessToken = source["accessToken"];
-	        this.rememberMe = source["rememberMe"];
-	    }
-	}
-
-}
-
 export namespace appupdate {
 
 	export class State {
@@ -32,7 +13,7 @@ export namespace appupdate {
 	    notes: string;
 	    errorCode: string;
 	    errorMessage: string;
-	    details: {[key: string]: string};
+	    details: Record<string, string>;
 
 	    static createFrom(source: any = {}) {
 	        return new State(source);
@@ -58,6 +39,24 @@ export namespace appupdate {
 
 }
 
+export namespace authsession {
+
+	export class Session {
+	    accessToken: string;
+	    rememberMe: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Session(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accessToken = source["accessToken"];
+	        this.rememberMe = source["rememberMe"];
+	    }
+	}
+
+}
 export namespace backend {
 
 	export class CookieInfo {
@@ -927,6 +926,8 @@ export namespace release {
 	    severity: string;
 	    message: string;
 	    repairable: boolean;
+	    recommendedAction?: string;
+	    details?: Record<string, string>;
 
 	    static createFrom(source: any = {}) {
 	        return new FailureItem(source);
@@ -938,6 +939,8 @@ export namespace release {
 	        this.severity = source["severity"];
 	        this.message = source["message"];
 	        this.repairable = source["repairable"];
+	        this.recommendedAction = source["recommendedAction"];
+	        this.details = source["details"];
 	    }
 	}
 	export class CheckResult {
@@ -978,6 +981,8 @@ export namespace release {
 	    localAppVersion: string;
 	    remoteAppVersion: string;
 	    resourceVersion: string;
+	    manifestSource?: string;
+	    manifestUrl?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new UpdateState(source);
@@ -989,6 +994,8 @@ export namespace release {
 	        this.localAppVersion = source["localAppVersion"];
 	        this.remoteAppVersion = source["remoteAppVersion"];
 	        this.resourceVersion = source["resourceVersion"];
+	        this.manifestSource = source["manifestSource"];
+	        this.manifestUrl = source["manifestUrl"];
 	    }
 	}
 

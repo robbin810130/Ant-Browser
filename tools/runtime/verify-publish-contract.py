@@ -83,6 +83,11 @@ def main() -> None:
     assert_contains(mac_publish_text, 'cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"', "publish/mac/publish-mac.sh")
     assert_contains(mac_publish_text, 'cp "$XRAY_SRC" "$APP_PUBLISH_DIR/bin/$TARGET/xray"', "publish/mac/publish-mac.sh")
     assert_contains(mac_publish_text, 'cp "$SINGBOX_SRC" "$APP_PUBLISH_DIR/bin/$TARGET/sing-box"', "publish/mac/publish-mac.sh")
+    assert_contains(mac_publish_text, 'APP_UPDATE_ZIP_NAME="AntBrowser-${VERSION}-${TARGET}.zip"', "publish/mac/publish-mac.sh")
+    assert_contains(mac_publish_text, 'tools/app-update/verify-app-update-package.py', "publish/mac/publish-mac.sh")
+
+    mac_config_text = (repo_root / "publish" / "config.init.mac.yaml").read_text(encoding="utf-8")
+    assert_contains(mac_config_text, "app_update_manifest_url:", "publish/config.init.mac.yaml")
 
     readme_text = release_readme_path.read_text(encoding="utf-8")
     assert_contains(readme_text, "packaged builds must include `publish/runtime-manifest.json`", "tools/public-release/README.md")

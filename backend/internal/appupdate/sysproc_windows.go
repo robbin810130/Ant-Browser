@@ -11,3 +11,6 @@ import (
 func hideWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
+
+func detachProcessGroup(cmd *exec.Cmd) {
+}

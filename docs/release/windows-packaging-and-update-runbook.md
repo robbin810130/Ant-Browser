@@ -276,6 +276,121 @@ python3 tools/app-update/verify-app-update-package.py publish/output/app-update-
 3. 不启动 apply runner
 4. 安装目录没有变化
 
+## macOS Application Self-Update Regression
+
+### Scope
+
+macOS app-update uses the same app-update manifest and shared backend contract as Windows. The platform target must be `darwin-arm64` or `darwin-amd64`.
+
+This phase supports full package updates only. Delta patching and release channel rollout are out of scope.
+
+### Supported Install Location
+
+Supported:
+
+```text
+~/Applications/Ant Browser.app
+```
+
+Unsupported for automatic update:
+
+```text
+/Applications/Ant Browser.app
+/System/Applications/...
+```
+
+Unsupported installs must return `unsupported_install` and must not delete or replace any bundle files.
+
+### Required Payload Shape
+
+The macOS app-update zip must contain:
+
+```text
+Ant Browser.app/
+  Contents/
+    Info.plist
+    MacOS/
+      ant-chrome
+      publish/runtime-manifest.json
+      bin/xray
+      bin/sing-box
+```
+
+The payload must not contain `data/`, `User Data/`, `.db`, `.sqlite`, or `.sqlite3` files.
+
+### Package Verification
+
+Run:
+
+```bash
+VERSION="$(python3 -c 'import json; print(json.load(open("wails.json", encoding="utf-8"))["info"]["productVersion"])')"
+python3 tools/app-update/verify-app-update-package.py publish/output/app-update-stable.json "publish/output/AntBrowser-${VERSION}-darwin-arm64.zip" darwin-arm64
+```
+
+or:
+
+```bash
+VERSION="$(python3 -c 'import json; print(json.load(open("wails.json", encoding="utf-8"))["info"]["productVersion"])')"
+python3 tools/app-update/verify-app-update-package.py publish/output/app-update-stable.json "publish/output/AntBrowser-${VERSION}-darwin-amd64.zip" darwin-amd64
+```
+
+Expected:
+
+```text
+[OK] app update package verified
+```
+
+### Regression Matrix
+
+1. Local file manifest smoke test: PASS.
+2. HTTP manifest smoke test: PASS.
+3. Soft update from `~/Applications/Ant Browser.app`: covered by shared UI path and non-required prompt behavior; no separate manual pass in this phase.
+4. Required update from `~/Applications/Ant Browser.app`: PASS.
+5. Unsupported install at `/Applications/Ant Browser.app`: PASS by backend rejection regression.
+6. Checksum mismatch: PASS by macOS target regression.
+7. Invalid `.app` payload: PASS by payload contract and tampered-stage regression.
+8. Replace failure rollback: PASS by Darwin backend rollback regression.
+9. Post-check version mismatch rollback/manual-repair: PASS by Darwin post-check regression.
+10. Manual repair state after rollback failure: covered by existing manual-repair state path; destructive full manual pass deferred to formal distribution readiness if needed.
+
+### Real Manual Regression Evidence
+
+Latest real macOS manual regression:
+
+- Date: 2026-05-22
+- Report: `docs/reports/2026-05-22-macos-app-update-manual-regression.md`
+- Phase closeout: `docs/reports/2026-05-22-cross-platform-app-update-phase-closeout.md`
+- Baseline: `1.0.0`
+- Target: `1.1.0`
+- Install shape: user-writable `~/Applications/Ant Browser.app` style sandbox
+- Manifest source: runtime config with local `file://` manifest
+- UI action: clicked `更新并重启`
+- State progression: `verifying -> succeeded -> idle`
+- Relaunched UI version: `1.1.0`
+- Installed binary hash matched the `1.1.0` artifact
+- macOS Chromium Framework symlink preserved in user state:
+
+```text
+Resources -> Versions/Current/Resources
+```
+
+Notes:
+
+- `idle` after `succeeded` is expected after relaunch, because the new app rechecks the same manifest and finds no pending update.
+- This pass does not cover Developer ID signing, notarization, Gatekeeper quarantine, or public distribution hosting.
+
+### Release Readiness Checks
+
+Before distributing a macOS release candidate:
+
+1. Confirm the app bundle launches before packaging.
+2. Confirm the app-update verifier passes for the target.
+3. Confirm signing status for the release candidate.
+4. Confirm notarization status for the release candidate.
+5. Confirm Gatekeeper and quarantine behavior for the distributed artifact.
+
+Signing, notarization, and Gatekeeper checks are release readiness checks. They are not runtime backend gates in this phase.
+
 ## 小Q 的 Windows 安装包任务
 
 在 Windows 真机上，下一步只做这条线：

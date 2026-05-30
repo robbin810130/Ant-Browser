@@ -137,6 +137,71 @@ func TestEnsureWritableLayoutSeedsDarwinBundleStateRoot(t *testing.T) {
 	}
 }
 
+func TestEnsureWritableLayoutCopiesDarwinChromeSymlinks(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("symlink creation requires symlink support")
+	}
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	installRoot := filepath.Join(t.TempDir(), "Ant Browser.app", "Contents", "MacOS")
+	frameworkRoot := filepath.Join(installRoot, "chrome", "fingerprint-macos", "Chromium.app", "Contents", "Frameworks", "Chromium Framework.framework")
+	resourcesRoot := filepath.Join(frameworkRoot, "Versions", "142.0.0.0", "Resources")
+	if err := os.MkdirAll(resourcesRoot, 0755); err != nil {
+		t.Fatalf("创建 framework resources 失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(installRoot, "config.yaml"), []byte("name: mac\n"), 0644); err != nil {
+		t.Fatalf("写入 config.yaml 失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(resourcesRoot, "resource.txt"), []byte("ok\n"), 0644); err != nil {
+		t.Fatalf("写入 resource 失败: %v", err)
+	}
+	if err := os.Symlink("Versions/142.0.0.0/Resources", filepath.Join(frameworkRoot, "Resources")); err != nil {
+		t.Skipf("symlink creation unsupported: %v", err)
+	}
+
+	if err := ensureWritableLayoutForOS(installRoot, "darwin"); err != nil {
+		t.Fatalf("ensureWritableLayoutForOS 返回错误: %v", err)
+	}
+
+	stateRoot := filepath.Join(homeDir, "Library", "Application Support", appStateDirName)
+	copiedLink := filepath.Join(stateRoot, "chrome", "fingerprint-macos", "Chromium.app", "Contents", "Frameworks", "Chromium Framework.framework", "Resources")
+	target, err := os.Readlink(copiedLink)
+	if err != nil {
+		t.Fatalf("读取复制后的 symlink 失败: %v", err)
+	}
+	if target != "Versions/142.0.0.0/Resources" {
+		t.Fatalf("symlink target 不符合预期: got=%q", target)
+	}
+	assertFileContent(t, filepath.Join(filepath.Dir(copiedLink), target, "resource.txt"), "ok\n")
+}
+
+func TestEnsureWritableLayoutRejectsEscapingChromeSymlink(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("symlink creation requires symlink support")
+	}
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	installRoot := filepath.Join(t.TempDir(), "Ant Browser.app", "Contents", "MacOS")
+	chromeRoot := filepath.Join(installRoot, "chrome")
+	if err := os.MkdirAll(chromeRoot, 0755); err != nil {
+		t.Fatalf("创建 chrome 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(installRoot, "config.yaml"), []byte("name: mac\n"), 0644); err != nil {
+		t.Fatalf("写入 config.yaml 失败: %v", err)
+	}
+	if err := os.Symlink("../outside", filepath.Join(chromeRoot, "escape")); err != nil {
+		t.Skipf("symlink creation unsupported: %v", err)
+	}
+
+	if err := ensureWritableLayoutForOS(installRoot, "darwin"); err == nil {
+		t.Fatal("expected escaping symlink to be rejected")
+	}
+}
+
 func assertFileContent(t *testing.T, path, want string) {
 	t.Helper()
 	data, err := os.ReadFile(path)

@@ -2,12 +2,24 @@ package backend
 
 import (
 	"fmt"
+	goruntime "runtime"
 
 	"ant-chrome/backend/internal/appupdate"
 )
 
 func RunAppUpdateCLI(mode, planPath, appVersion string) error {
-	backend := appupdate.WindowsBackend{CurrentAppVersion: appVersion}
+	switch mode {
+	case "apply", "post-check":
+	default:
+		return fmt.Errorf("unsupported app update cli mode: %s", mode)
+	}
+
+	backend, err := appupdate.NewPlatformBackend(goruntime.GOOS, goruntime.GOARCH, appupdate.PlatformOptions{
+		CurrentAppVersion: appVersion,
+	})
+	if err != nil {
+		return err
+	}
 	switch mode {
 	case "apply":
 		return backend.RunApply(planPath)

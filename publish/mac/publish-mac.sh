@@ -100,9 +100,11 @@ require_cmd() {
 
 require_cmd python3
 require_cmd curl
+require_cmd codesign
 require_cmd ditto
 require_cmd hdiutil
 require_cmd wails
+require_cmd xattr
 
 echo "[0/4] Verifying publish contract..."
 python3 "$ROOT_DIR/tools/runtime/verify-publish-contract.py"
@@ -135,9 +137,11 @@ FINGERPRINT_CORE_TAG="142.0.7444.175"
 FINGERPRINT_CORE_ASSET="ungoogled-chromium_142.0.7444.175-1.1_macos.dmg"
 FINGERPRINT_CORE_URL="https://github.com/adryfish/fingerprint-chromium/releases/download/${FINGERPRINT_CORE_TAG}/${FINGERPRINT_CORE_ASSET}"
 ZIP_NAME="AntBrowser-${VERSION}-macos-${ARCH}.zip"
+APP_UPDATE_ZIP_NAME="AntBrowser-${VERSION}-${TARGET}.zip"
 APP_EXPORT="$OUTPUT_DIR/AntBrowser-${VERSION}-macos-${ARCH}.app"
 STAGE_DIR="$STAGING_ROOT/$TARGET"
 APP_STAGE="$STAGE_DIR/Ant Browser.app"
+APP_UPDATE_MANIFEST="$OUTPUT_DIR/app-update-stable.json"
 
 find_built_app_bundle() {
   python3 - "$APP_BIN_DIR" <<'PY'
@@ -179,6 +183,77 @@ for item in data.get("files", []):
         raise SystemExit(0)
 
 raise SystemExit(1)
+PY
+}
+
+write_app_update_manifest() {
+  local zip_path="$1"
+  python3 - "$APP_UPDATE_MANIFEST" "$zip_path" "$TARGET" "$VERSION" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+zip_path = Path(sys.argv[2])
+target = sys.argv[3]
+version = sys.argv[4]
+
+if manifest_path.exists():
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid existing app-update manifest: {exc}") from exc
+    if int(manifest.get("schemaVersion") or 0) != 1:
+        raise SystemExit("existing app-update manifest schemaVersion must be 1")
+else:
+    manifest = {
+        "schemaVersion": 1,
+        "channel": "stable",
+        "packages": [],
+    }
+
+manifest["schemaVersion"] = 1
+manifest["channel"] = manifest.get("channel") or "stable"
+manifest["version"] = version
+manifest["minimumRuntimeResourceVersion"] = version
+manifest["minimumAppVersion"] = version
+manifest["publishedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+manifest["notes"] = manifest.get("notes") or f"Ant Browser {version}"
+
+digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+package = {
+    "target": target,
+    "payloadType": "full",
+    "url": zip_path.name,
+    "sha256": digest,
+    "size": zip_path.stat().st_size,
+}
+
+packages = [
+    item
+    for item in (manifest.get("packages") or [])
+    if str(item.get("target") or "").strip().lower() != target.lower()
+]
+packages.append(package)
+packages.sort(key=lambda item: str(item.get("target") or ""))
+manifest["packages"] = packages
+
+manifest_path.parent.mkdir(parents=True, exist_ok=True)
+manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+(manifest_path.with_suffix(manifest_path.suffix + ".sha256")).write_text(
+    f"{manifest_hash}  {manifest_path.name}\n",
+    encoding="utf-8",
+)
+(zip_path.with_suffix(zip_path.suffix + ".sha256")).write_text(
+    f"{digest}  {zip_path.name}\n",
+    encoding="utf-8",
+)
 PY
 }
 
@@ -283,13 +358,29 @@ if [[ -f "$CHROME_README_SRC" ]]; then
   cp "$CHROME_README_SRC" "$APP_MACOS_DIR/chrome/README.md"
 fi
 
+echo "  - normalizing bundle metadata..."
+xattr -cr "$APP_STAGE"
+
+echo "  - signing assembled app bundle..."
+codesign --force --deep --sign - "$APP_STAGE"
+codesign --verify --deep --strict --verbose=2 "$APP_STAGE"
+
 ditto "$APP_STAGE" "$APP_EXPORT"
+codesign --verify --deep --strict --verbose=2 "$APP_EXPORT"
 rm -f "$OUTPUT_DIR/$ZIP_NAME"
 ditto -c -k --sequesterRsrc --keepParent "$APP_EXPORT" "$OUTPUT_DIR/$ZIP_NAME"
+
+APP_UPDATE_ZIP="$OUTPUT_DIR/$APP_UPDATE_ZIP_NAME"
+rm -f "$APP_UPDATE_ZIP"
+ditto -c -k --sequesterRsrc --keepParent "$APP_STAGE" "$APP_UPDATE_ZIP"
+write_app_update_manifest "$APP_UPDATE_ZIP"
+python3 "$ROOT_DIR/tools/app-update/verify-app-update-package.py" "$APP_UPDATE_MANIFEST" "$APP_UPDATE_ZIP" "$TARGET"
 
 echo "Artifacts generated:"
 echo "  - $APP_EXPORT"
 echo "  - $OUTPUT_DIR/$ZIP_NAME"
+echo "  - $APP_UPDATE_ZIP"
+echo "  - $APP_UPDATE_MANIFEST"
 
 if [[ "$KEEP_STAGING" -ne 1 ]]; then
   rm -rf "$APP_STAGE"
