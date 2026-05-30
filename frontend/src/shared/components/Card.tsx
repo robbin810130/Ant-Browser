@@ -6,6 +6,7 @@ interface CardProps {
   subtitle?: string
   children: ReactNode
   className?: string
+  bodyClassName?: string
   padding?: 'none' | 'sm' | 'md' | 'lg'
   actions?: ReactNode
   hover?: boolean
@@ -16,6 +17,7 @@ export function Card({
   subtitle, 
   children, 
   className,
+  bodyClassName,
   padding = 'md',
   actions,
   hover = false
@@ -54,7 +56,7 @@ export function Card({
           {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={paddings[padding]}>{children}</div>
+      <div className={clsx(paddings[padding], bodyClassName)}>{children}</div>
     </div>
   )
 }

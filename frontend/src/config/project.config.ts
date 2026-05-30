@@ -26,15 +26,17 @@ export interface NavSection {
 
 export const navigationConfig: NavSection[] = [
   {
-    title: '主菜单',
+    title: '业务运营',
     items: [
       { name: '控制台', path: '/', icon: 'LayoutDashboard' },
+      { name: '店铺资料', path: '/shops', icon: 'Store' },
+      { name: '店铺工作台', path: '/workbench', icon: 'Monitor' },
+      { name: '运营任务', path: '/operations', icon: 'ListChecks' },
     ]
   },
   {
     title: '指纹浏览器',
     items: [
-      { name: '实例列表', path: '/browser/list', icon: 'Monitor' },
       { name: '自动化接口（实验）', path: '/browser/automation', icon: 'Bot' },
       { name: '内核管理', path: '/browser/cores', icon: 'Cpu' },
       { name: '代理池配置', path: '/browser/proxy-pool', icon: 'Globe' },

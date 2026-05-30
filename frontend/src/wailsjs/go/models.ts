@@ -1030,6 +1030,88 @@ export namespace workspace {
 	        this.message = source["message"];
 	    }
 	}
+	export class OperationTaskQuery {
+	    Limit: number;
+	    Status: string;
+	    ShopID: string;
+	    TaskType: string;
+
+	    static createFrom(source: any = {}) {
+	        return new OperationTaskQuery(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Limit = source["Limit"];
+	        this.Status = source["Status"];
+	        this.ShopID = source["ShopID"];
+	        this.TaskType = source["TaskType"];
+	    }
+	}
+	export class OperationTaskRecord {
+	    taskId: string;
+	    shopId: string;
+	    shopName: string;
+	    taskType: string;
+	    title: string;
+	    status: string;
+	    blockedReason: string;
+	    failureMessage: string;
+	    updatedAt: string;
+	    runId: string;
+	    failureCode: string;
+
+	    static createFrom(source: any = {}) {
+	        return new OperationTaskRecord(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.taskId = source["taskId"];
+	        this.shopId = source["shopId"];
+	        this.shopName = source["shopName"];
+	        this.taskType = source["taskType"];
+	        this.title = source["title"];
+	        this.status = source["status"];
+	        this.blockedReason = source["blockedReason"];
+	        this.failureMessage = source["failureMessage"];
+	        this.updatedAt = source["updatedAt"];
+	        this.runId = source["runId"];
+	        this.failureCode = source["failureCode"];
+	    }
+	}
+	export class OperationTasksPayload {
+	    items: OperationTaskRecord[];
+	    total: number;
+
+	    static createFrom(source: any = {}) {
+	        return new OperationTasksPayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], OperationTaskRecord);
+	        this.total = source["total"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class RunEvent {
 	    eventId: string;
 	    stage: string;
@@ -1407,12 +1489,53 @@ export namespace workspace {
 	export class ShopProfileRecord {
 	    shopId: string;
 	    shopName: string;
+	    asmShopId: string;
+	    shopCode: string;
+	    shopAlias: string;
+	    fullShopName: string;
 	    platformCode: string;
+	    platformName: string;
+	    platformSubtype: string;
+	    shopStatusCode: number;
+	    shopStatus: string;
 	    asmStatus: string;
 	    authorizationStatus: string;
+	    authorizationStatusLabel: string;
 	    ownerName: string;
+	    operatorName: string;
+	    operatorUsername: string;
+	    businessManagerName: string;
+	    businessManagerUsername: string;
+	    department: string;
+	    subCompanyName: string;
+	    shopUrl: string;
+	    shopEmail: string;
+	    shopPhone: string;
+	    legalRepName: string;
+	    businessLicense: string;
+	    unifiedSocialCode: string;
+	    registeredAddress: string;
+	    categoryIds: string[];
+	    categoryNames: string[];
+	    brandName: string;
+	    brandIds: string[];
+	    advancedMember: number;
+	    advancedMemberName: string;
+	    trustPassExpireAt: string;
+	    jstShopCount: number;
+	    jstShopSummary: string;
+	    mabangShopCount: number;
+	    mabangShopSummary: string;
+	    erpShopCount: number;
+	    erpShopSummary: string;
+	    abnormalCount: number;
+	    abnormalSummary: string;
+	    tableSource: string;
+	    isPush: number;
 	    mainCategory: string;
 	    dataCompleteness: string;
+	    sourceCreatedAt: string;
+	    sourceUpdatedAt: string;
 	    lastSyncedAt: string;
 	    source: string;
 
@@ -1424,12 +1547,53 @@ export namespace workspace {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.shopId = source["shopId"];
 	        this.shopName = source["shopName"];
+	        this.asmShopId = source["asmShopId"];
+	        this.shopCode = source["shopCode"];
+	        this.shopAlias = source["shopAlias"];
+	        this.fullShopName = source["fullShopName"];
 	        this.platformCode = source["platformCode"];
+	        this.platformName = source["platformName"];
+	        this.platformSubtype = source["platformSubtype"];
+	        this.shopStatusCode = source["shopStatusCode"];
+	        this.shopStatus = source["shopStatus"];
 	        this.asmStatus = source["asmStatus"];
 	        this.authorizationStatus = source["authorizationStatus"];
+	        this.authorizationStatusLabel = source["authorizationStatusLabel"];
 	        this.ownerName = source["ownerName"];
+	        this.operatorName = source["operatorName"];
+	        this.operatorUsername = source["operatorUsername"];
+	        this.businessManagerName = source["businessManagerName"];
+	        this.businessManagerUsername = source["businessManagerUsername"];
+	        this.department = source["department"];
+	        this.subCompanyName = source["subCompanyName"];
+	        this.shopUrl = source["shopUrl"];
+	        this.shopEmail = source["shopEmail"];
+	        this.shopPhone = source["shopPhone"];
+	        this.legalRepName = source["legalRepName"];
+	        this.businessLicense = source["businessLicense"];
+	        this.unifiedSocialCode = source["unifiedSocialCode"];
+	        this.registeredAddress = source["registeredAddress"];
+	        this.categoryIds = source["categoryIds"];
+	        this.categoryNames = source["categoryNames"];
+	        this.brandName = source["brandName"];
+	        this.brandIds = source["brandIds"];
+	        this.advancedMember = source["advancedMember"];
+	        this.advancedMemberName = source["advancedMemberName"];
+	        this.trustPassExpireAt = source["trustPassExpireAt"];
+	        this.jstShopCount = source["jstShopCount"];
+	        this.jstShopSummary = source["jstShopSummary"];
+	        this.mabangShopCount = source["mabangShopCount"];
+	        this.mabangShopSummary = source["mabangShopSummary"];
+	        this.erpShopCount = source["erpShopCount"];
+	        this.erpShopSummary = source["erpShopSummary"];
+	        this.abnormalCount = source["abnormalCount"];
+	        this.abnormalSummary = source["abnormalSummary"];
+	        this.tableSource = source["tableSource"];
+	        this.isPush = source["isPush"];
 	        this.mainCategory = source["mainCategory"];
 	        this.dataCompleteness = source["dataCompleteness"];
+	        this.sourceCreatedAt = source["sourceCreatedAt"];
+	        this.sourceUpdatedAt = source["sourceUpdatedAt"];
 	        this.lastSyncedAt = source["lastSyncedAt"];
 	        this.source = source["source"];
 	    }

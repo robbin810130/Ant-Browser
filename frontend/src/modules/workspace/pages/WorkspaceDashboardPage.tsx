@@ -158,16 +158,16 @@ export function WorkspaceDashboardPage() {
           </div>
         </Card>
 
-        <Card title="业务摘要" subtitle="控制台只保留总览与入口，不提前塞实例业务。">
+        <Card title="业务摘要" subtitle="控制台只保留可操作授权实例与入口。">
           <div className="space-y-4">
             <div className="rounded-xl border border-[var(--color-border-muted)] bg-[var(--color-bg-subtle)] p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                 <Store className="h-4 w-4 text-[var(--color-text-secondary)]" />
-                店铺授权概况
+                授权实例概况
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-[var(--color-text-muted)]">已授权账号</span>
+                  <span className="text-[var(--color-text-muted)]">授权实例</span>
                   <span className="text-[var(--color-text-primary)]">{loading ? '-' : stats.totalAccounts}</span>
                 </div>
                 <div className="flex items-center justify-between">

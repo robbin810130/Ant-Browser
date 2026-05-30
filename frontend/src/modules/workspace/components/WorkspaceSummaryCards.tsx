@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Monitor, ShieldCheck } from 'lucide-react'
+import { Activity, AlertTriangle, MonitorUp, ShieldCheck } from 'lucide-react'
 import { StatCard } from '../../../shared/components'
 import type { WorkspaceDashboardStats } from '../types'
 
@@ -15,14 +15,9 @@ export function WorkspaceSummaryCards({ stats, loading = false }: WorkspaceSumma
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <StatCard
-        title="已授权账号"
+        title="授权实例"
         value={displayValue(loading, stats.totalAccounts)}
         icon={<ShieldCheck className="h-5 w-5 text-emerald-500" />}
-      />
-      <StatCard
-        title="设备运行态"
-        value={displayValue(loading, stats.runningInstanceCount)}
-        icon={<Monitor className="h-5 w-5 text-sky-500" />}
       />
       <StatCard
         title="Ready 店铺"
@@ -33,6 +28,11 @@ export function WorkspaceSummaryCards({ stats, loading = false }: WorkspaceSumma
         title="待人工处理"
         value={displayValue(loading, stats.manualAttentionCount)}
         icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+      />
+      <StatCard
+        title="运行实例"
+        value={displayValue(loading, stats.runningInstanceCount)}
+        icon={<MonitorUp className="h-5 w-5 text-sky-500" />}
       />
     </div>
   )

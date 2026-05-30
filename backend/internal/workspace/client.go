@@ -42,6 +42,10 @@ type shopsPayload struct {
 	Items []ShopRecord `json:"items"`
 }
 
+type shopProfilesPayload struct {
+	Items []ShopProfileRecord `json:"items"`
+}
+
 func NewWorkspaceClient(baseURL string, client *http.Client) *WorkspaceClient {
 	if client == nil {
 		client = &http.Client{}
@@ -91,6 +95,13 @@ func (c *WorkspaceClient) FetchAuthorizedShops(ctx context.Context) ([]ShopRecor
 }
 
 func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileRecord, error) {
+	var payload shopProfilesPayload
+	if err := c.getJSON(ctx, "/local/shop-profiles", &payload); err == nil {
+		return normalizeShopProfiles(payload.Items), nil
+	} else if !isWorkspaceEndpointNotFound(err) {
+		return nil, err
+	}
+
 	shops, err := c.FetchAuthorizedShops(ctx)
 	if err != nil {
 		return nil, err
@@ -98,16 +109,92 @@ func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileR
 	profiles := make([]ShopProfileRecord, 0, len(shops))
 	for _, shop := range shops {
 		profiles = append(profiles, ShopProfileRecord{
-			ShopID:              strings.TrimSpace(shop.ShopID),
-			ShopName:            strings.TrimSpace(shop.ShopName),
-			PlatformCode:        strings.TrimSpace(shop.PlatformCode),
-			ASMStatus:           "unavailable",
-			AuthorizationStatus: strings.TrimSpace(shop.SharedLoginStatus),
-			DataCompleteness:    "unknown",
-			Source:              "authorized_shop_projection",
+			ShopID:                   strings.TrimSpace(shop.ShopID),
+			ShopName:                 strings.TrimSpace(shop.ShopName),
+			PlatformCode:             strings.TrimSpace(shop.PlatformCode),
+			ASMStatus:                "unavailable",
+			AuthorizationStatus:      strings.TrimSpace(shop.SharedLoginStatus),
+			AuthorizationStatusLabel: strings.TrimSpace(shop.SharedLoginStatusLabel),
+			DataCompleteness:         "unknown",
+			Source:                   "authorized_shop_projection",
 		})
 	}
 	return profiles, nil
+}
+
+func normalizeShopProfiles(items []ShopProfileRecord) []ShopProfileRecord {
+	profiles := make([]ShopProfileRecord, 0, len(items))
+	for _, item := range items {
+		item.ShopID = strings.TrimSpace(item.ShopID)
+		item.ShopName = strings.TrimSpace(item.ShopName)
+		item.ASMShopID = strings.TrimSpace(item.ASMShopID)
+		item.ShopCode = strings.TrimSpace(item.ShopCode)
+		item.ShopAlias = strings.TrimSpace(item.ShopAlias)
+		item.FullShopName = strings.TrimSpace(item.FullShopName)
+		item.PlatformCode = strings.TrimSpace(item.PlatformCode)
+		item.PlatformName = strings.TrimSpace(item.PlatformName)
+		item.PlatformSubtype = strings.TrimSpace(item.PlatformSubtype)
+		item.ShopStatus = strings.TrimSpace(item.ShopStatus)
+		item.ASMStatus = strings.TrimSpace(item.ASMStatus)
+		item.AuthorizationStatus = strings.TrimSpace(item.AuthorizationStatus)
+		item.AuthorizationStatusLabel = strings.TrimSpace(item.AuthorizationStatusLabel)
+		item.OwnerName = strings.TrimSpace(item.OwnerName)
+		item.OperatorName = strings.TrimSpace(item.OperatorName)
+		item.OperatorUsername = strings.TrimSpace(item.OperatorUsername)
+		item.BusinessManagerName = strings.TrimSpace(item.BusinessManagerName)
+		item.BusinessManagerUsername = strings.TrimSpace(item.BusinessManagerUsername)
+		item.Department = strings.TrimSpace(item.Department)
+		item.SubCompanyName = strings.TrimSpace(item.SubCompanyName)
+		item.ShopURL = strings.TrimSpace(item.ShopURL)
+		item.ShopEmail = strings.TrimSpace(item.ShopEmail)
+		item.ShopPhone = strings.TrimSpace(item.ShopPhone)
+		item.LegalRepName = strings.TrimSpace(item.LegalRepName)
+		item.BusinessLicense = strings.TrimSpace(item.BusinessLicense)
+		item.UnifiedSocialCode = strings.TrimSpace(item.UnifiedSocialCode)
+		item.RegisteredAddress = strings.TrimSpace(item.RegisteredAddress)
+		item.CategoryIDs = trimStringSlice(item.CategoryIDs)
+		item.CategoryNames = trimStringSlice(item.CategoryNames)
+		item.BrandName = strings.TrimSpace(item.BrandName)
+		item.BrandIDs = trimStringSlice(item.BrandIDs)
+		item.AdvancedMemberName = strings.TrimSpace(item.AdvancedMemberName)
+		item.TrustPassExpireAt = strings.TrimSpace(item.TrustPassExpireAt)
+		item.JSTShopSummary = strings.TrimSpace(item.JSTShopSummary)
+		item.MabangShopSummary = strings.TrimSpace(item.MabangShopSummary)
+		item.ERPShopSummary = strings.TrimSpace(item.ERPShopSummary)
+		item.AbnormalSummary = strings.TrimSpace(item.AbnormalSummary)
+		item.TableSource = strings.TrimSpace(item.TableSource)
+		item.MainCategory = strings.TrimSpace(item.MainCategory)
+		item.DataCompleteness = strings.TrimSpace(item.DataCompleteness)
+		item.SourceCreatedAt = strings.TrimSpace(item.SourceCreatedAt)
+		item.SourceUpdatedAt = strings.TrimSpace(item.SourceUpdatedAt)
+		item.LastSyncedAt = strings.TrimSpace(item.LastSyncedAt)
+		item.Source = strings.TrimSpace(item.Source)
+		if item.ASMStatus == "" {
+			item.ASMStatus = "connected"
+		}
+		if item.DataCompleteness == "" {
+			item.DataCompleteness = "unknown"
+		}
+		if item.Source == "" {
+			item.Source = "asm_shop_profile"
+		}
+		profiles = append(profiles, item)
+	}
+	return profiles
+}
+
+func trimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			trimmed = append(trimmed, value)
+		}
+	}
+	return trimmed
 }
 
 func (c *WorkspaceClient) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {
@@ -227,6 +314,23 @@ func (s *WorkspaceService) FetchRunEvidence(ctx context.Context, query RunQuery)
 	return &index, nil
 }
 
+func (s *WorkspaceService) FetchOperationTasks(ctx context.Context, query OperationTaskQuery) (*OperationTasksPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	shops, err := s.FetchAuthorizedShops(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := s.FetchRuns(ctx, RunQuery{Limit: 200})
+	if err != nil {
+		return nil, err
+	}
+	evidence := BuildRunEvidenceIndex(runs.Items)
+	payload := BuildOperationTasks(shops, evidence, query)
+	return &payload, nil
+}
+
 func (s *WorkspaceService) FetchOpenShopContext(ctx context.Context, shopID string) (*ShopOpenContext, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
@@ -338,6 +442,10 @@ func (c *WorkspaceClient) requestJSON(ctx context.Context, method string, path s
 		return fmt.Errorf("decode workspace payload %s: %w", path, err)
 	}
 	return nil
+}
+
+func isWorkspaceEndpointNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "returned status 404")
 }
 
 func urlPathEscape(value string) string {

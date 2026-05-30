@@ -148,6 +148,113 @@ func TestWorkspaceClientFetchShopProfilesFallsBackToAuthorizedShops(t *testing.T
 	}
 }
 
+func TestWorkspaceClientFetchShopProfilesPrefersASMProfiles(t *testing.T) {
+	var hitAuthorizedShops bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shop-profiles":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{{
+						"shopId":                   " shop-asm-001 ",
+						"shopName":                 " 真实 ASM 店铺 ",
+						"asmShopId":                "1001",
+						"shopCode":                 "b2b-code-001",
+						"shopAlias":                "真实 ASM 店铺",
+						"fullShopName":             "阿里巴巴-真实 ASM 店铺",
+						"platformCode":             "1688",
+						"platformName":             "1688",
+						"platformSubtype":          "supplier",
+						"asmStatus":                "connected",
+						"authorizationStatus":      "valid",
+						"authorizationStatusLabel": "已授权",
+						"ownerName":                "运营一组",
+						"operatorName":             "ASM 运营",
+						"operatorUsername":         "asm_operator",
+						"businessManagerName":      "ASM 业务",
+						"businessManagerUsername":  "asm_manager",
+						"department":               "销售部",
+						"subCompanyName":           "华南分公司",
+						"shopUrl":                  "https://example.1688.com",
+						"shopEmail":                "shop@example.com",
+						"shopPhone":                "13800000000",
+						"legalRepName":             " 张法人 ",
+						"businessLicense":          "营业执照-001",
+						"unifiedSocialCode":        "91440000123456789X",
+						"registeredAddress":        "广东省深圳市",
+						"categoryIds":              []any{101, " 202 "},
+						"categoryNames":            []string{" 日用百货 "},
+						"brandName":                "真实品牌",
+						"brandIds":                 []any{303, " brand-1 "},
+						"advancedMember":           1,
+						"advancedMemberName":       "高级会员",
+						"trustPassExpireAt":        "2027-05-23T00:00:00+08:00",
+						"jstShopCount":             1,
+						"jstShopSummary":           " 聚水潭店铺 ",
+						"mabangShopCount":          1,
+						"mabangShopSummary":        "马帮店铺",
+						"erpShopCount":             1,
+						"erpShopSummary":           "ERP店铺",
+						"abnormalCount":            1,
+						"abnormalSummary":          "资质待复核",
+						"tableSource":              "shop_merged",
+						"isPush":                   1,
+						"mainCategory":             "日用百货",
+						"dataCompleteness":         "complete",
+						"sourceCreatedAt":          "2026-05-20T10:00:00+08:00",
+						"sourceUpdatedAt":          "2026-05-23T10:00:00+08:00",
+						"lastSyncedAt":             "2026-05-23T10:00:00+08:00",
+						"source":                   "asm",
+					}},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			hitAuthorizedShops = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := workspace.NewWorkspaceClient(server.URL, nil)
+	profiles, err := client.FetchShopProfiles(context.Background())
+	if err != nil {
+		t.Fatalf("fetch shop profiles: %v", err)
+	}
+	if hitAuthorizedShops {
+		t.Fatal("expected ASM shop profiles to avoid authorized shop fallback")
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	got := profiles[0]
+	if got.ShopID != "shop-asm-001" || got.ShopName != "真实 ASM 店铺" {
+		t.Fatalf("unexpected profile normalization: %#v", got)
+	}
+	if got.Source != "asm" || got.ASMStatus != "connected" || got.AuthorizationStatus != "valid" || got.AuthorizationStatusLabel != "已授权" {
+		t.Fatalf("expected real ASM profile fields, got %#v", got)
+	}
+	if got.ASMShopID != "1001" || got.FullShopName != "阿里巴巴-真实 ASM 店铺" || got.OperatorName != "ASM 运营" || got.BusinessManagerName != "ASM 业务" {
+		t.Fatalf("expected expanded ASM profile fields, got %#v", got)
+	}
+	if got.LegalRepName != "张法人" || got.BusinessLicense != "营业执照-001" || got.UnifiedSocialCode != "91440000123456789X" {
+		t.Fatalf("expected ASM qualification fields, got %#v", got)
+	}
+	if len(got.CategoryIDs) != 2 || got.CategoryIDs[0] != "101" || got.CategoryIDs[1] != "202" || len(got.CategoryNames) != 1 || got.CategoryNames[0] != "日用百货" {
+		t.Fatalf("expected normalized ASM category fields, got %#v", got)
+	}
+	if len(got.BrandIDs) != 2 || got.BrandIDs[0] != "303" || got.BrandIDs[1] != "brand-1" {
+		t.Fatalf("expected normalized ASM brand fields, got %#v", got)
+	}
+	if got.JSTShopCount != 1 || got.JSTShopSummary != "聚水潭店铺" || got.AbnormalSummary != "资质待复核" || got.TableSource != "shop_merged" {
+		t.Fatalf("expected ASM integration summary fields, got %#v", got)
+	}
+}
+
 func TestWorkspaceClientFetchRunsAndEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

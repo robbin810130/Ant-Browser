@@ -1,0 +1,60 @@
+export interface ShopProfile {
+  shopId: string
+  shopName: string
+  asmShopId: string
+  shopCode: string
+  shopAlias: string
+  fullShopName: string
+  platformCode: string
+  platformName: string
+  platformSubtype: string
+  shopStatusCode: number
+  shopStatus: string
+  asmStatus: string
+  authorizationStatus: string
+  authorizationStatusLabel: string
+  ownerName: string
+  operatorName: string
+  operatorUsername: string
+  businessManagerName: string
+  businessManagerUsername: string
+  department: string
+  subCompanyName: string
+  shopUrl: string
+  shopEmail: string
+  shopPhone: string
+  legalRepName: string
+  businessLicense: string
+  unifiedSocialCode: string
+  registeredAddress: string
+  categoryIds: string[]
+  categoryNames: string[]
+  brandName: string
+  brandIds: string[]
+  advancedMember: number
+  advancedMemberName: string
+  trustPassExpireAt: string
+  jstShopCount: number
+  jstShopSummary: string
+  mabangShopCount: number
+  mabangShopSummary: string
+  erpShopCount: number
+  erpShopSummary: string
+  abnormalCount: number
+  abnormalSummary: string
+  tableSource: string
+  isPush: number
+  mainCategory: string
+  dataCompleteness: string
+  sourceCreatedAt: string
+  sourceUpdatedAt: string
+  lastSyncedAt: string
+  source: string
+}
+
+export interface ShopProfileStats {
+  total: number
+  asmConnected: number
+  unavailable: number
+  incomplete: number
+}

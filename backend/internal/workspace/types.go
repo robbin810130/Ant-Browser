@@ -1,5 +1,12 @@
 package workspace
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 type WorkspaceSummary struct {
 	Status              string `json:"status"`
 	AgentStatus         string `json:"agentStatus"`
@@ -124,16 +131,129 @@ type OpenReportRequest struct {
 }
 
 type ShopProfileRecord struct {
-	ShopID              string `json:"shopId"`
-	ShopName            string `json:"shopName"`
-	PlatformCode        string `json:"platformCode"`
-	ASMStatus           string `json:"asmStatus"`
-	AuthorizationStatus string `json:"authorizationStatus"`
-	OwnerName           string `json:"ownerName"`
-	MainCategory        string `json:"mainCategory"`
-	DataCompleteness    string `json:"dataCompleteness"`
-	LastSyncedAt        string `json:"lastSyncedAt"`
-	Source              string `json:"source"`
+	ShopID                   string   `json:"shopId"`
+	ShopName                 string   `json:"shopName"`
+	ASMShopID                string   `json:"asmShopId"`
+	ShopCode                 string   `json:"shopCode"`
+	ShopAlias                string   `json:"shopAlias"`
+	FullShopName             string   `json:"fullShopName"`
+	PlatformCode             string   `json:"platformCode"`
+	PlatformName             string   `json:"platformName"`
+	PlatformSubtype          string   `json:"platformSubtype"`
+	ShopStatusCode           int      `json:"shopStatusCode"`
+	ShopStatus               string   `json:"shopStatus"`
+	ASMStatus                string   `json:"asmStatus"`
+	AuthorizationStatus      string   `json:"authorizationStatus"`
+	AuthorizationStatusLabel string   `json:"authorizationStatusLabel"`
+	OwnerName                string   `json:"ownerName"`
+	OperatorName             string   `json:"operatorName"`
+	OperatorUsername         string   `json:"operatorUsername"`
+	BusinessManagerName      string   `json:"businessManagerName"`
+	BusinessManagerUsername  string   `json:"businessManagerUsername"`
+	Department               string   `json:"department"`
+	SubCompanyName           string   `json:"subCompanyName"`
+	ShopURL                  string   `json:"shopUrl"`
+	ShopEmail                string   `json:"shopEmail"`
+	ShopPhone                string   `json:"shopPhone"`
+	LegalRepName             string   `json:"legalRepName"`
+	BusinessLicense          string   `json:"businessLicense"`
+	UnifiedSocialCode        string   `json:"unifiedSocialCode"`
+	RegisteredAddress        string   `json:"registeredAddress"`
+	CategoryIDs              []string `json:"categoryIds"`
+	CategoryNames            []string `json:"categoryNames"`
+	BrandName                string   `json:"brandName"`
+	BrandIDs                 []string `json:"brandIds"`
+	AdvancedMember           int      `json:"advancedMember"`
+	AdvancedMemberName       string   `json:"advancedMemberName"`
+	TrustPassExpireAt        string   `json:"trustPassExpireAt"`
+	JSTShopCount             int      `json:"jstShopCount"`
+	JSTShopSummary           string   `json:"jstShopSummary"`
+	MabangShopCount          int      `json:"mabangShopCount"`
+	MabangShopSummary        string   `json:"mabangShopSummary"`
+	ERPShopCount             int      `json:"erpShopCount"`
+	ERPShopSummary           string   `json:"erpShopSummary"`
+	AbnormalCount            int      `json:"abnormalCount"`
+	AbnormalSummary          string   `json:"abnormalSummary"`
+	TableSource              string   `json:"tableSource"`
+	IsPush                   int      `json:"isPush"`
+	MainCategory             string   `json:"mainCategory"`
+	DataCompleteness         string   `json:"dataCompleteness"`
+	SourceCreatedAt          string   `json:"sourceCreatedAt"`
+	SourceUpdatedAt          string   `json:"sourceUpdatedAt"`
+	LastSyncedAt             string   `json:"lastSyncedAt"`
+	Source                   string   `json:"source"`
+}
+
+func (record *ShopProfileRecord) UnmarshalJSON(data []byte) error {
+	type alias ShopProfileRecord
+	aux := struct {
+		CategoryIDs   json.RawMessage `json:"categoryIds"`
+		CategoryNames json.RawMessage `json:"categoryNames"`
+		BrandIDs      json.RawMessage `json:"brandIds"`
+		*alias
+	}{
+		alias: (*alias)(record),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	var err error
+	if len(aux.CategoryIDs) > 0 {
+		record.CategoryIDs, err = decodeFlexibleStringList(aux.CategoryIDs)
+		if err != nil {
+			return fmt.Errorf("categoryIds: %w", err)
+		}
+	}
+	if len(aux.CategoryNames) > 0 {
+		record.CategoryNames, err = decodeFlexibleStringList(aux.CategoryNames)
+		if err != nil {
+			return fmt.Errorf("categoryNames: %w", err)
+		}
+	}
+	if len(aux.BrandIDs) > 0 {
+		record.BrandIDs, err = decodeFlexibleStringList(aux.BrandIDs)
+		if err != nil {
+			return fmt.Errorf("brandIds: %w", err)
+		}
+	}
+	return nil
+}
+
+func decodeFlexibleStringList(data []byte) ([]string, error) {
+	if len(bytes.TrimSpace(data)) == 0 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, nil
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var values []any
+	if err := decoder.Decode(&values); err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		var text string
+		switch item := value.(type) {
+		case nil:
+			continue
+		case string:
+			text = item
+		case json.Number:
+			text = item.String()
+		default:
+			return nil, fmt.Errorf("unsupported item type %T", value)
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			result = append(result, text)
+		}
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
 }
 
 type RunQuery struct {
@@ -186,4 +306,30 @@ type RunEventsPayload struct {
 	RunID string     `json:"runId"`
 	Items []RunEvent `json:"items"`
 	Total int        `json:"total"`
+}
+
+type OperationTaskQuery struct {
+	Limit    int
+	Status   string
+	ShopID   string
+	TaskType string
+}
+
+type OperationTaskRecord struct {
+	TaskID         string `json:"taskId"`
+	ShopID         string `json:"shopId"`
+	ShopName       string `json:"shopName"`
+	TaskType       string `json:"taskType"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	BlockedReason  string `json:"blockedReason"`
+	FailureMessage string `json:"failureMessage"`
+	UpdatedAt      string `json:"updatedAt"`
+	RunID          string `json:"runId"`
+	FailureCode    string `json:"failureCode"`
+}
+
+type OperationTasksPayload struct {
+	Items []OperationTaskRecord `json:"items"`
+	Total int                   `json:"total"`
 }

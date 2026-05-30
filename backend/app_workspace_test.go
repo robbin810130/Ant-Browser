@@ -248,6 +248,59 @@ func TestWorkspaceShopProfilesReturnsFallbackProfiles(t *testing.T) {
 	}
 }
 
+func TestWorkspaceShopProfilesReturnsASMProfiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/local/shop-profiles" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"items": []map[string]any{{
+					"shopId":              "shop-asm-001",
+					"shopName":            "真实 ASM 店铺",
+					"platformCode":        "1688",
+					"asmStatus":           "connected",
+					"authorizationStatus": "valid",
+					"ownerName":           "运营一组",
+					"mainCategory":        "日用百货",
+					"dataCompleteness":    "complete",
+					"lastSyncedAt":        "2026-05-23T10:00:00+08:00",
+					"source":              "asm",
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	profiles, err := app.WorkspaceShopProfiles()
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfiles 返回错误: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("期望返回 1 个 ASM 店铺档案，实际=%d", len(profiles))
+	}
+	got := profiles[0]
+	if got.Source != "asm" || got.ASMStatus != "connected" || got.OwnerName != "运营一组" {
+		t.Fatalf("expected real ASM profile fields, got %#v", got)
+	}
+
+	profile, err := app.WorkspaceShopProfile("shop-asm-001")
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfile 返回错误: %v", err)
+	}
+	if profile.MainCategory != "日用百货" || profile.DataCompleteness != "complete" {
+		t.Fatalf("unexpected ASM profile detail: %#v", profile)
+	}
+}
+
 func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -341,6 +394,112 @@ func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {
 	}
 	if shopEvidence.LatestFailure == nil || shopEvidence.LatestFailure.RunID != "run-bind-001" {
 		t.Fatalf("expected latest failure evidence, got %#v", shopEvidence.LatestFailure)
+	}
+}
+
+func TestWorkspaceOperationTasksDeriveFromShopReadinessAndRuns(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"shopId":                 "shop-ready",
+							"shopName":               "义乌百货样板店",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "ready",
+							"sharedLoginStatusLabel": "可直接打开",
+						},
+						{
+							"shopId":                 "shop-manual",
+							"shopName":               "深圳数码配件店",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "awaiting_verification",
+							"sharedLoginStatusLabel": "待人工验证",
+						},
+						{
+							"shopId":                 "shop-expired",
+							"shopName":               "广州家居源头厂",
+							"platformCode":           "1688",
+							"sharedLoginStatus":      "expired",
+							"sharedLoginStatusLabel": "凭据过期",
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/local/runs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"runId":       "run-ready",
+							"taskId":      "task-ready",
+							"shopId":      "shop-ready",
+							"taskType":    "open",
+							"status":      "running",
+							"statusLabel": "运行中",
+							"startedAt":   "2026-05-23T09:20:00+08:00",
+						},
+						{
+							"runId":          "run-expired",
+							"taskId":         "task-expired",
+							"shopId":         "shop-expired",
+							"taskType":       "bind",
+							"status":         "failed",
+							"statusLabel":    "失败",
+							"startedAt":      "2026-05-23T09:10:00+08:00",
+							"finishedAt":     "2026-05-23T09:10:20+08:00",
+							"failureCode":    "AUTH_EXPIRED",
+							"failureMessage": "授权已失效",
+						},
+					},
+					"total": 2,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	tasks, err := app.WorkspaceOperationTasks(workspace.OperationTaskQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("WorkspaceOperationTasks 返回错误: %v", err)
+	}
+	if len(tasks.Items) != 3 || tasks.Total != 3 {
+		t.Fatalf("unexpected operation tasks payload: %#v", tasks)
+	}
+
+	byShop := map[string]workspace.OperationTaskRecord{}
+	for _, task := range tasks.Items {
+		byShop[task.ShopID] = task
+	}
+	if byShop["shop-ready"].Status != "running" || byShop["shop-ready"].TaskType != "shop_open" {
+		t.Fatalf("expected running open task, got %#v", byShop["shop-ready"])
+	}
+	if byShop["shop-manual"].Status != "blocked" || byShop["shop-manual"].BlockedReason == "" {
+		t.Fatalf("expected blocked manual task, got %#v", byShop["shop-manual"])
+	}
+	if byShop["shop-expired"].Status != "failed" || byShop["shop-expired"].FailureMessage != "授权已失效" {
+		t.Fatalf("expected failed credential task, got %#v", byShop["shop-expired"])
+	}
+
+	filtered, err := app.WorkspaceOperationTasks(workspace.OperationTaskQuery{Status: "blocked", ShopID: "shop-manual"})
+	if err != nil {
+		t.Fatalf("WorkspaceOperationTasks filtered 返回错误: %v", err)
+	}
+	if len(filtered.Items) != 1 || filtered.Items[0].ShopID != "shop-manual" {
+		t.Fatalf("unexpected filtered tasks: %#v", filtered)
 	}
 }
 
