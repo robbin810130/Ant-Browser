@@ -224,4 +224,3 @@ bat\publish.bat W
 
 - 前端是否跑的是旧 bundle
 - Wails 绑定是否重新生成
-
