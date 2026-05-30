@@ -33,6 +33,78 @@ func TestEnsureNewWindowLaunchArgAddsFlagOnce(t *testing.T) {
 	}
 }
 
+func TestMacAppBundleRoot(t *testing.T) {
+	t.Parallel()
+
+	got, ok := macAppBundleRoot("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+	if !ok {
+		t.Fatal("期望识别 macOS App Bundle 根目录")
+	}
+	if got != "/Applications/Google Chrome.app" {
+		t.Fatalf("unexpected app bundle root: %s", got)
+	}
+
+	if _, ok := macAppBundleRoot("/usr/bin/chromium"); ok {
+		t.Fatal("非 App Bundle 路径不应被识别为 macOS App Bundle")
+	}
+}
+
+func TestBuildBrowserLaunchCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd := buildBrowserLaunchCommand("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", []string{"--user-data-dir=/tmp/test", "--new-window"})
+	if goruntime.GOOS == "darwin" {
+		if filepath.Base(cmd.Path) != "open" {
+			t.Fatalf("darwin 应通过 open -na 启动，实际=%s", cmd.Path)
+		}
+		expectedArgs := []string{"open", "-na", "/Applications/Google Chrome.app", "--args", "--user-data-dir=/tmp/test", "--new-window"}
+		if !reflect.DeepEqual(cmd.Args, expectedArgs) {
+			t.Fatalf("unexpected darwin launch args: got=%v want=%v", cmd.Args, expectedArgs)
+		}
+		return
+	}
+
+	if cmd.Path != "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" {
+		t.Fatalf("non-darwin 应直接执行内核二进制，实际=%s", cmd.Path)
+	}
+}
+
+func TestMacAppBundleName(t *testing.T) {
+	t.Parallel()
+
+	got, ok := macAppBundleName("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+	if !ok {
+		t.Fatal("期望识别 macOS App Bundle 名称")
+	}
+	if got != "Google Chrome" {
+		t.Fatalf("unexpected app bundle name: %s", got)
+	}
+
+	if _, ok := macAppBundleName("/usr/bin/chromium"); ok {
+		t.Fatal("非 App Bundle 路径不应被识别为 macOS App 名称")
+	}
+}
+
+func TestBuildBrowserActivateCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd := buildBrowserActivateCommand("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+	if goruntime.GOOS == "darwin" {
+		if cmd == nil {
+			t.Fatal("darwin 期望生成 activate 命令")
+		}
+		expectedArgs := []string{"osascript", "-e", `tell application "Google Chrome" to activate`}
+		if !reflect.DeepEqual(cmd.Args, expectedArgs) {
+			t.Fatalf("unexpected darwin activate args: got=%v want=%v", cmd.Args, expectedArgs)
+		}
+		return
+	}
+
+	if cmd != nil {
+		t.Fatalf("non-darwin 不应生成 activate 命令: %v", cmd.Args)
+	}
+}
+
 func TestIsBrowserProfileLive(t *testing.T) {
 	t.Parallel()
 

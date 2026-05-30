@@ -45,6 +45,15 @@ func (a *App) stopRuntimeServices() {
 			a.launchServer = nil
 		}
 
+		if err := stopWorkspaceAgentProcess(a.workspaceAgentCmd); err != nil {
+			log.Error("workspace agent 关闭失败", logger.F("error", err))
+		}
+		a.workspaceAgentCmd = nil
+		if a.workspaceAgentLog != nil {
+			_ = a.workspaceAgentLog.Close()
+			a.workspaceAgentLog = nil
+		}
+
 		if err := killResidualRuntimeProcesses(a.appRoot); err != nil {
 			log.Error("退出前清理残留进程失败", logger.F("error", err.Error()))
 		}

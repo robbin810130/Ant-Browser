@@ -22,7 +22,7 @@ function lazyNamed<TModule extends Record<string, ComponentType<any>>>(
   })
 }
 
-const DashboardPage = lazyNamed(() => import('./modules/dashboard/DashboardPage'), 'DashboardPage')
+const WorkspaceDashboardPage = lazyNamed(() => import('./modules/workspace/pages/WorkspaceDashboardPage'), 'WorkspaceDashboardPage')
 const SettingsPage = lazyNamed(() => import('./modules/settings/SettingsPage'), 'SettingsPage')
 const ProfilePage = lazyNamed(() => import('./modules/profile/ProfilePage'), 'ProfilePage')
 const AdminKeygenPage = lazyNamed(() => import('./modules/profile/AdminKeygenPage'), 'AdminKeygenPage')
@@ -278,7 +278,7 @@ function App() {
         <Layout>
           <Suspense fallback={routeFallback}>
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
+              <Route path="/" element={<WorkspaceDashboardPage />} />
               <Route path="/charts" element={<ChartsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/profile" element={<ProfilePage />} />

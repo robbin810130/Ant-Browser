@@ -7,7 +7,9 @@ import (
 	"ant-chrome/backend/internal/database"
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/managedinstance"
 	"ant-chrome/backend/internal/proxy"
+	"ant-chrome/backend/internal/workspace"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,27 +35,32 @@ const (
 
 // App 应用结构体
 type App struct {
-	ctx            context.Context
-	config         *config.Config
-	db             *database.DB
-	interceptor    *logger.MethodInterceptor
-	browserMgr     *browser.Manager
-	xrayMgr        *proxy.XrayManager
-	clashMgr       *proxy.ClashManager
-	singboxMgr     *proxy.SingBoxManager
-	launchCodeSvc  *launchcode.LaunchCodeService
-	launchServer   *launchcode.LaunchServer
-	speedScheduler *browser.ProxySpeedScheduler
-	appRoot        string
-	version        string
+	ctx                    context.Context
+	config                 *config.Config
+	db                     *database.DB
+	interceptor            *logger.MethodInterceptor
+	browserMgr             *browser.Manager
+	xrayMgr                *proxy.XrayManager
+	clashMgr               *proxy.ClashManager
+	singboxMgr             *proxy.SingBoxManager
+	launchCodeSvc          *launchcode.LaunchCodeService
+	launchServer           *launchcode.LaunchServer
+	managedInstanceService *managedinstance.Service
+	speedScheduler         *browser.ProxySpeedScheduler
+	workspaceService       *workspace.WorkspaceService
+	appRoot                string
+	version                string
 
-	forceQuit        bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
-	quitMode         quitMode   // 退出模式：全量退出 / 仅退出应用
-	maintenanceMu    sync.Mutex // 维护类操作（初始化/导入/导出）互斥锁
-	bridgeMu         sync.Mutex
-	xrayBridgeRefs   map[string]string
-	stopServicesOnce sync.Once
-	finalizeOnce     sync.Once
+	forceQuit         bool       // 强制退出标志，用于跳过 OnBeforeClose 的拦截
+	quitMode          quitMode   // 退出模式：全量退出 / 仅退出应用
+	maintenanceMu     sync.Mutex // 维护类操作（初始化/导入/导出）互斥锁
+	bridgeMu          sync.Mutex
+	xrayBridgeRefs    map[string]string
+	workspaceAgentCmd *exec.Cmd
+	workspaceAgentLog *os.File
+	workspaceAgentURL string
+	stopServicesOnce  sync.Once
+	finalizeOnce      sync.Once
 }
 
 // NewApp 创建新的应用实例
@@ -63,9 +70,9 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		version = strings.TrimSpace(appVersion[0])
 	}
 	return &App{
-		appRoot:        strings.TrimSpace(appRoot),
-		version:        version,
-		xrayBridgeRefs: make(map[string]string),
+		appRoot:           strings.TrimSpace(appRoot),
+		version:           version,
+		xrayBridgeRefs:    make(map[string]string),
 	}
 }
 
@@ -163,6 +170,13 @@ func (a *App) startup(ctx context.Context) {
 	a.xrayMgr = proxy.NewXrayManager(cfg, a.appRoot)
 	a.clashMgr = proxy.NewClashManager(cfg, a.appRoot)
 	a.singboxMgr = proxy.NewSingBoxManager(cfg, a.appRoot)
+	if service, err := managedinstance.NewService(managedinstance.Dependencies{
+		BrowserMgr: a.browserMgr,
+	}); err == nil {
+		a.managedInstanceService = service
+	} else {
+		log.Error("初始化 managed instance 服务失败", logger.F("service", "managedinstance"), logger.F("error", err))
+	}
 
 	// 注入 DAO（必须在 InitData 之前）
 	conn := db.GetConn()
@@ -179,6 +193,8 @@ func (a *App) startup(ctx context.Context) {
 	a.autoDetectCores()
 	a.loadProxies()
 	a.reconcileProfileProxyBindings()
+	a.initWorkspaceService()
+	a.ensureWorkspaceAgentBootstrapped()
 
 	// 初始化 LaunchCode 服务
 	launchCodeDAO := launchcode.NewSQLiteLaunchCodeDAO(a.db.GetConn())
