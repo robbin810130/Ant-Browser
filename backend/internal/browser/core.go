@@ -75,7 +75,14 @@ func (m *Manager) ValidateCorePath(corePath string) CoreValidateResult {
 	}
 
 	baseDir := m.ResolveRelativePath(corePath)
+	return ValidateCoreDirectory(baseDir)
+}
 
+func ValidateCoreDirectory(baseDir string) CoreValidateResult {
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		return CoreValidateResult{Valid: false, Message: "路径不能为空"}
+	}
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
 		return CoreValidateResult{Valid: false, Message: fmt.Sprintf("目录不存在: %s", baseDir)}
 	}

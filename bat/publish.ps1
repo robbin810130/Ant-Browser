@@ -282,7 +282,15 @@ function Assert-RuntimeHashes {
 
     Write-Host "[Windows] 校验运行时哈希..."
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $entries = @($manifest.files | Where-Object { $_.targets -contains $Target })
+    $entries = @()
+    if ($manifest.PSObject.Properties.Name -contains "packages") {
+        $entries = @($manifest.packages | Where-Object {
+            $_.required -and (Get-TrimmedText ([string]$_.target)).ToLowerInvariant() -eq $Target.ToLowerInvariant()
+        })
+    }
+    if ($entries.Count -eq 0 -and ($manifest.PSObject.Properties.Name -contains "files")) {
+        $entries = @($manifest.files | Where-Object { $_.targets -contains $Target })
+    }
     if ($entries.Count -eq 0) {
         throw "运行时清单中不存在目标平台: $Target"
     }
@@ -319,6 +327,62 @@ function Assert-RuntimeHashes {
 
     Write-Host "✓ 运行时哈希校验通过: $Target"
     Write-Host ""
+}
+
+function Copy-RuntimePublishPayload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Target,
+        [Parameter(Mandatory = $true)]
+        [string]$StagingDir
+    )
+
+    $publishRoot = Join-Path $repoRoot "publish"
+    $manifestPath = Join-Path $publishRoot "runtime-manifest.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "缺少运行时清单: publish\runtime-manifest.json"
+    }
+
+    $stagingPublishDir = Join-Path $StagingDir "publish"
+    New-Item -ItemType Directory -Path $stagingPublishDir -Force | Out-Null
+    Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $stagingPublishDir "runtime-manifest.json") -Force
+
+    $sourcesPath = Join-Path $publishRoot "runtime-sources.json"
+    if (Test-Path -LiteralPath $sourcesPath -PathType Leaf) {
+        Copy-Item -LiteralPath $sourcesPath -Destination (Join-Path $stagingPublishDir "runtime-sources.json") -Force
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $packages = @()
+    if ($manifest.PSObject.Properties.Name -contains "packages") {
+        $packages = @($manifest.packages | Where-Object {
+            $_.required -and (Get-TrimmedText ([string]$_.target)).ToLowerInvariant() -eq $Target.ToLowerInvariant()
+        })
+    }
+    if ($packages.Count -eq 0) {
+        throw "运行时清单中不存在目标平台所需 packages: $Target"
+    }
+
+    foreach ($pkg in $packages) {
+        $relativePath = Get-TrimmedText ([string]$pkg.path)
+        if ($relativePath -eq "") {
+            throw "运行时 package 缺少 path: $($pkg.id)"
+        }
+
+        $sourcePath = Join-Path $publishRoot ($relativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "缺少运行时包文件: publish\$relativePath"
+        }
+
+        $destinationPath = Join-Path $stagingPublishDir ($relativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        $destinationDir = Split-Path -Path $destinationPath -Parent
+        if ($destinationDir) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    }
+
+    Write-Host "✓ 复制 publish\runtime-manifest.json 与目标运行时包"
 }
 
 function Test-PeExecutable {
@@ -466,6 +530,7 @@ function New-WindowsStaging {
     Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe）"
 
     Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
+    Copy-RuntimePublishPayload -Target "windows-amd64" -StagingDir $stagingDir
 
     New-Item -ItemType Directory -Path (Join-Path $stagingDir "data") -Force | Out-Null
     Write-Host "✓ 创建空 data 目录（不打包 app.db，首次启动自动初始化）"
@@ -623,6 +688,7 @@ try {
         }
     }
     Write-Host ""
+    Write-Host "提示：runtime/current.json 将在首次通过环境检查后写入用户状态目录"
     Write-Host "提示：用户安装后可将旧的 data\ 目录粘贴到安装目录覆盖初始数据"
     exit 0
 }

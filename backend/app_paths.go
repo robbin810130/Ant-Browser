@@ -1,17 +1,21 @@
 package backend
 
 import (
-	"ant-chrome/backend/internal/apppath"
+	"ant-chrome/backend/internal/release"
 )
+
+func (a *App) runtimeLayout() release.RuntimeLayout {
+	return RuntimeReleaseLayout(a.appRoot)
+}
 
 // appRootAbs 返回应用根目录的绝对路径，优先使用 App 注入的 appRoot。
 func (a *App) appRootAbs() string {
-	return apppath.InstallRoot(a.appRoot)
+	return a.runtimeLayout().InstallRoot
 }
 
 // appStateRootAbs 返回应用可写状态目录的绝对路径。
 func (a *App) appStateRootAbs() string {
-	return apppath.StateRoot(a.appRoot)
+	return a.runtimeLayout().StateRoot
 }
 
 // appDataDir 返回 data 根目录绝对路径。

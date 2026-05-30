@@ -1,6 +1,9 @@
 package backend
 
-import "ant-chrome/backend/internal/apppath"
+import (
+	"ant-chrome/backend/internal/apppath"
+	"ant-chrome/backend/internal/release"
+)
 
 // EnsureRuntimeLayout 为运行时准备已安装应用的用户可写目录。
 func EnsureRuntimeLayout(appRoot string) error {
@@ -20,4 +23,9 @@ func RuntimeStateRoot(appRoot string) string {
 // RuntimeUsesDetachedState 表示当前是否启用了“安装目录只读、状态目录独立”的模式。
 func RuntimeUsesDetachedState(appRoot string) bool {
 	return apppath.IsDetached(appRoot)
+}
+
+// RuntimeReleaseLayout 返回版本化 runtime 目录布局，供 release/checker/updater 共享。
+func RuntimeReleaseLayout(appRoot string) release.RuntimeLayout {
+	return release.NewRuntimeLayout(apppath.InstallRoot(appRoot), apppath.StateRoot(appRoot))
 }

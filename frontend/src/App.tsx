@@ -13,9 +13,11 @@ import {
   runDesktopAuthStrongCleanup,
 } from './modules/auth/api'
 import type { DesktopAuthStrongCleanupReason } from './modules/auth/api'
+import { EnvironmentGatePage } from './modules/runtime/pages/EnvironmentGatePage'
 import { useNotificationStore } from './store/notificationStore'
 import { useAuthStore } from './store/authStore'
 import { useBackupStore } from './store/backupStore'
+import { useRuntimeStore } from './store/runtimeStore'
 import { ForceQuit as ForceQuitApp, QuitAppOnly as QuitAppOnlyApp } from './wailsjs/go/main/App'
 import { Environment, Quit, WindowHide, WindowMinimise } from './wailsjs/runtime/runtime'
 
@@ -311,6 +313,9 @@ function App() {
   const setAuthenticating = useAuthStore((state) => state.setAuthenticating)
   const setAuthenticated = useAuthStore((state) => state.setAuthenticated)
   const setAnonymous = useAuthStore((state) => state.setAnonymous)
+  const runtimeBootstrapped = useRuntimeStore((state) => state.bootstrapped)
+  const environmentReady = useRuntimeStore((state) => state.environmentReady)
+  const bootstrapRuntime = useRuntimeStore((state) => state.bootstrap)
   const routeFallback = (
     <div className="flex min-h-[240px] items-center justify-center py-10">
       <Loading text="页面加载中..." />
@@ -318,6 +323,14 @@ function App() {
   )
 
   useEffect(() => {
+    void bootstrapRuntime()
+  }, [bootstrapRuntime])
+
+  useEffect(() => {
+    if (!runtimeBootstrapped || !environmentReady) {
+      return
+    }
+
     let cancelled = false
 
     const recoverDesktopSession = async () => {
@@ -368,7 +381,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [setAnonymous, setAuthenticated, setAuthenticating])
+  }, [environmentReady, runtimeBootstrapped, setAnonymous, setAuthenticated, setAuthenticating])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -410,6 +423,15 @@ function App() {
 
     void run()
   }, [setAnonymous])
+
+  if (!runtimeBootstrapped || !environmentReady) {
+    return (
+      <ThemeProvider>
+        <EnvironmentGatePage />
+        <ToastContainer />
+      </ThemeProvider>
+    )
+  }
 
   if (!authRecoveryComplete) {
     return (

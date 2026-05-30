@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, RotateCcw, Upload, Download } from 'lucide-react'
-import { Card, Button, FormItem, Input, Select, Switch, ThemeSwitcher, toast, Modal, Progress } from '../../shared/components'
+import { Save, RotateCcw, Upload, Download, HardDrive, RefreshCw, Wrench, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { Card, Button, FormItem, Input, Select, Switch, ThemeSwitcher, toast, Modal, Progress, Badge, Alert } from '../../shared/components'
 import { fetchSettings, saveSettings, resetSettings, initializeSystemData, exportSystemConfig, importSystemConfig } from './api'
 import type { AppSettings } from './types'
 import { defaultSettings } from './types'
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 import { useBackupStore } from '../../store/backupStore'
+import { useRuntimeStore } from '../../store/runtimeStore'
 
 interface BackupExportProgress {
   phase: string
@@ -38,6 +39,15 @@ export function SettingsPage() {
   const exportLogsRef = useRef<HTMLDivElement | null>(null)
   const setImportState = useBackupStore((s) => s.setImportState)
   const clearImportState = useBackupStore((s) => s.clearImportState)
+  const runtimeStatus = useRuntimeStore((s) => s.status)
+  const runtimeChecking = useRuntimeStore((s) => s.checking)
+  const runtimeRepairing = useRuntimeStore((s) => s.repairing)
+  const runtimeExporting = useRuntimeStore((s) => s.exporting)
+  const diagnosticsPath = useRuntimeStore((s) => s.diagnosticsPath)
+  const updateError = useRuntimeStore((s) => s.updateError)
+  const retryEnvironmentCheck = useRuntimeStore((s) => s.retryCheck)
+  const repairRuntimeNow = useRuntimeStore((s) => s.repairNow)
+  const exportRuntimeDiagnostics = useRuntimeStore((s) => s.exportDiagnostics)
 
   useEffect(() => {
     loadSettings()
@@ -301,6 +311,46 @@ export function SettingsPage() {
 
   const importRunning = actionLoading === 'import-reset' || actionLoading === 'import-merge'
 
+  const runtimeStatusMeta = (() => {
+    switch (runtimeStatus.state) {
+      case 'pass':
+        return { label: '已通过', variant: 'success' as const, description: '当前运行环境状态正常，可继续使用。' }
+      case 'repairable':
+        return { label: '可修复', variant: 'warning' as const, description: '检测到可自动修复的问题，建议立即处理。' }
+      case 'blocked':
+        return { label: '已阻塞', variant: 'error' as const, description: '当前环境有阻塞项，建议先导出诊断再排查。' }
+      default:
+        return { label: '检查中', variant: 'info' as const, description: '正在同步最新环境状态。' }
+    }
+  })()
+
+  const handleRuntimeRecheck = async () => {
+    try {
+      await retryEnvironmentCheck()
+      toast.success('环境检查已完成')
+    } catch (error: any) {
+      toast.error(error?.message || '环境检查失败')
+    }
+  }
+
+  const handleRuntimeRepair = async () => {
+    try {
+      await repairRuntimeNow()
+      toast.success('环境修复已执行')
+    } catch (error: any) {
+      toast.error(error?.message || '环境修复失败')
+    }
+  }
+
+  const handleExportRuntimeDiagnostics = async () => {
+    try {
+      const path = await exportRuntimeDiagnostics()
+      toast.success(path ? `诊断包已导出到 ${path}` : '诊断包已导出')
+    } catch (error: any) {
+      toast.error(error?.message || '导出诊断失败')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -456,6 +506,82 @@ export function SettingsPage() {
               ]}
             />
           </FormItem>
+        </div>
+      </Card>
+
+      <Card title="环境检查与修复" subtitle="重新检查运行时环境、执行自动修复，并导出脱敏诊断包">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-2xl border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-[var(--color-accent)]/10 p-2 text-[var(--color-accent)]">
+                {runtimeStatus.state === 'blocked' ? <AlertTriangle className="h-5 w-5" /> : <HardDrive className="h-5 w-5" />}
+              </div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={runtimeStatusMeta.variant} dot>
+                    {runtimeStatusMeta.label}
+                  </Badge>
+                  {runtimeChecking ? <Badge variant="info">检查中</Badge> : null}
+                  {runtimeRepairing ? <Badge variant="warning">修复中</Badge> : null}
+                  {runtimeExporting ? <Badge variant="info">导出中</Badge> : null}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">桌面运行环境</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">{runtimeStatusMeta.description}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={handleRuntimeRecheck} disabled={runtimeChecking || runtimeRepairing}>
+                <RefreshCw className="w-4 h-4" />
+                重新检查
+              </Button>
+              <Button size="sm" onClick={handleRuntimeRepair} disabled={runtimeChecking || runtimeRepairing || runtimeStatus.state === 'blocked'}>
+                <Wrench className="w-4 h-4" />
+                自动修复
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleExportRuntimeDiagnostics} loading={runtimeExporting}>
+                <Download className="w-4 h-4" />
+                导出诊断
+              </Button>
+            </div>
+          </div>
+
+          {updateError ? (
+            <Alert type="warning" title="更新状态提醒" message={updateError} />
+          ) : null}
+
+          {diagnosticsPath ? (
+            <Alert type="info" title="最近一次诊断导出" message={diagnosticsPath} />
+          ) : null}
+
+          <div className="grid gap-3">
+            {runtimeStatus.items.length > 0 ? runtimeStatus.items.map((item) => (
+              <div
+                key={`${item.code}-${item.message}`}
+                className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={item.severity === 'error' ? 'error' : item.severity === 'warning' ? 'warning' : 'info'}>
+                    {item.code || 'UNKNOWN'}
+                  </Badge>
+                  {item.repairable ? <Badge variant="success">可自动修复</Badge> : <Badge variant="default">需人工处理</Badge>}
+                </div>
+                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{item.message}</p>
+              </div>
+            )) : (
+              <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                  <ShieldCheck className="h-4 w-4 text-[var(--color-success)]" />
+                  当前没有额外环境异常项
+                </div>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  如果后续机器环境发生变化，可以随时从这里重新检查并导出诊断。
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </Card>
 

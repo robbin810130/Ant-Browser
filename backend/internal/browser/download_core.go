@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +39,88 @@ func (cw *coreDownloadWriter) Write(p []byte) (int, error) {
 	default:
 	}
 	return cw.writeFunc(p)
+}
+
+func buildDownloadClient(proxyConfig string, progress func(string, int, string)) (*http.Client, error) {
+	transport := &http.Transport{}
+	if proxyConfig == "__system__" {
+		if sysProxy, err := readSystemProxy(); err == nil && sysProxy != "" {
+			proxyURL, parseErr := url.Parse(sysProxy)
+			if parseErr == nil {
+				transport.Proxy = http.ProxyURL(proxyURL)
+				if progress != nil {
+					progress("downloading", 0, "已从系统注册表读取代理: "+sysProxy)
+				}
+			} else {
+				transport.Proxy = http.ProxyFromEnvironment
+			}
+		} else {
+			transport.Proxy = http.ProxyFromEnvironment
+			if progress != nil {
+				progress("downloading", 0, "系统注册表无代理配置，使用环境变量兜底")
+			}
+		}
+	} else if proxyConfig != "" && proxyConfig != "direct://" && proxyConfig != "__direct__" {
+		proxyURL, err := url.Parse(proxyConfig)
+		if err != nil {
+			return nil, fmt.Errorf("代理地址解析失败: %w", err)
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
+
+	return &http.Client{
+		Timeout:   0,
+		Transport: transport,
+	}, nil
+}
+
+func downloadCoreArchive(ctx context.Context, client *http.Client, chromeDir, targetURL string, progress func(string, int, string)) (string, string, error) {
+	archiveKind := detectArchiveKind(targetURL)
+	tempFile, err := os.CreateTemp(chromeDir, "download_*."+archiveKind)
+	if err != nil {
+		return "", "", err
+	}
+	tempFilePath := tempFile.Name()
+	defer tempFile.Close()
+
+	if progress != nil {
+		progress("downloading", 0, "开始分析下载链接(检测多线程支持)...")
+	}
+	if err := doConcurrentDownload(ctx, client, targetURL, tempFile, progress); err != nil {
+		_ = os.Remove(tempFilePath)
+		return "", "", err
+	}
+	if err := tempFile.Close(); err != nil {
+		_ = os.Remove(tempFilePath)
+		return "", "", err
+	}
+	return tempFilePath, archiveKind, nil
+}
+
+func extractCoreArchive(ctx context.Context, archiveKind, archivePath, targetDir string, progress func(string, int, string)) error {
+	var err error
+	switch archiveKind {
+	case "dmg":
+		err = extractDmgToTarget(ctx, archivePath, targetDir, func(p int, msg string) {
+			if progress != nil {
+				progress("extracting", p, msg)
+			}
+		})
+	default:
+		err = extractZipAndStripRoot(archivePath, targetDir, func(p int, msg string) {
+			if progress != nil {
+				progress("extracting", p, msg)
+			}
+		})
+	}
+	return err
+}
+
+func validateExtractedCore(m *Manager, corePath string) error {
+	if m.ValidateCorePath(corePath).Valid {
+		return nil
+	}
+	return fmt.Errorf("解压后未找到浏览器可执行文件（候选：%s），请检查压缩包内容", strings.Join(CoreExecutableCandidates(), ", "))
 }
 
 // DownloadAndExtractCore 执行异步下载解压并在过程中发送事件
@@ -77,83 +159,32 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		sendEvent("error", 0, "同名文件夹已存在: "+coreName)
 		return
 	}
-	// 2. 准备 HttpClient（优先从 Windows 注册表读取真实系统代理，而非仅靠环境变量）
-	transport := &http.Transport{}
-	if proxyConfig == "__system__" {
-		// http.ProxyFromEnvironment 只读环境变量，而 Clash 的全局代理写在 Windows 注册表里
-		// 必须直接读取注册表才能拿到正确的代理地址
-		if sysProxy, rErr := readSystemProxy(); rErr == nil && sysProxy != "" {
-			if proxyURL, pErr := url.Parse(sysProxy); pErr == nil {
-				transport.Proxy = http.ProxyURL(proxyURL)
-				sendEvent("downloading", 0, "已从系统注册表读取代理: "+sysProxy)
-			} else {
-				// 解析失败则回退到环境变量
-				transport.Proxy = http.ProxyFromEnvironment
-			}
-		} else {
-			// 没有系统代理配置或读取失败，尝试环境变量兜底
-			transport.Proxy = http.ProxyFromEnvironment
-			sendEvent("downloading", 0, "系统注册表无代理配置，使用环境变量兜底")
-		}
-	} else if proxyConfig != "" && proxyConfig != "direct://" && proxyConfig != "__direct__" {
-		if proxyURL, pErr := url.Parse(proxyConfig); pErr == nil {
-			transport.Proxy = http.ProxyURL(proxyURL)
-		} else {
-			sendEvent("error", 0, "代理地址解析失败: "+pErr.Error())
-			return
-		}
-	}
-
-	client := &http.Client{
-		Timeout:   0, // 取消全局超时，依靠 context 和分片连接维持
-		Transport: transport,
-	}
-
-	archiveKind := detectArchiveKind(targetUrl)
-	tempFile, err := os.CreateTemp(chromeDir, "download_*."+archiveKind)
+	client, err := buildDownloadClient(proxyConfig, sendEvent)
 	if err != nil {
-		sendEvent("error", 0, "创建临时文件失败: "+err.Error())
+		sendEvent("error", 0, err.Error())
 		return
 	}
-	tempFilePath := tempFile.Name()
-	defer func() {
-		tempFile.Close()
-		os.Remove(tempFilePath) // 清理临时文件
-	}()
-
-	sendEvent("downloading", 0, "开始分析下载链接(检测多线程支持)...")
-
-	err = doConcurrentDownload(ctx, client, targetUrl, tempFile, sendEvent)
+	tempFilePath, archiveKind, err := downloadCoreArchive(ctx, client, chromeDir, targetUrl, sendEvent)
 	if err != nil {
+		defer os.Remove(tempFilePath)
 		sendEvent("error", 0, "下载失败: "+err.Error())
 		return
 	}
+	defer os.Remove(tempFilePath)
 
-	tempFile.Close() // 解压前先关闭写句柄
 	sendEvent("extracting", 0, "下载完成，正在准备解压文件...")
 	log.Info("内核下载完成", logger.F("url", targetUrl), logger.F("temp", tempFilePath), logger.F("cost", time.Since(t).String()))
 
 	// 3. 执行解压，并剥离顶层文件夹
-	var extractErr error
-	switch archiveKind {
-	case "dmg":
-		extractErr = extractDmgToTarget(ctx, tempFilePath, targetDir, func(p int, msg string) {
-			sendEvent("extracting", p, msg)
-		})
-	default:
-		extractErr = extractZipAndStripRoot(tempFilePath, targetDir, func(p int, msg string) {
-			sendEvent("extracting", p, msg)
-		})
-	}
-	if extractErr != nil {
+	if err := extractCoreArchive(ctx, archiveKind, tempFilePath, targetDir, sendEvent); err != nil {
 		os.RemoveAll(targetDir) // 删除不完整的解压文件
-		sendEvent("error", 0, "解压失败: "+extractErr.Error())
+		sendEvent("error", 0, "解压失败: "+err.Error())
 		return
 	}
 
 	// 4. 将新内核配置入库
 	corePath := filepath.Join("chrome", coreName)
-	if m.ValidateCorePath(corePath).Valid {
+	if err := validateExtractedCore(m, corePath); err == nil {
 		newCore := CoreInput{
 			CoreId:    uuid.NewString(), // 使用固定的 UUID 或生成新的
 			CoreName:  coreName,
@@ -168,7 +199,7 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 		log.Info("内核下载配置入库成功", logger.F("core_name", coreName))
 	} else {
 		os.RemoveAll(targetDir) // 删除不正确的解压内容
-		sendEvent("error", 0, fmt.Sprintf("解压后未找到浏览器可执行文件（候选：%s），请检查压缩包内容！", strings.Join(CoreExecutableCandidates(), ", ")))
+		sendEvent("error", 0, err.Error())
 	}
 }
 

@@ -879,6 +879,80 @@ export namespace logger {
 
 }
 
+export namespace release {
+
+	export class FailureItem {
+	    code: string;
+	    severity: string;
+	    message: string;
+	    repairable: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new FailureItem(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.severity = source["severity"];
+	        this.message = source["message"];
+	        this.repairable = source["repairable"];
+	    }
+	}
+	export class CheckResult {
+	    state: string;
+	    items: FailureItem[];
+
+	    static createFrom(source: any = {}) {
+	        return new CheckResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.items = this.convertValues(source["items"], FailureItem);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class UpdateState {
+	    kind: string;
+	    localAppVersion: string;
+	    remoteAppVersion: string;
+	    resourceVersion: string;
+
+	    static createFrom(source: any = {}) {
+	        return new UpdateState(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.localAppVersion = source["localAppVersion"];
+	        this.remoteAppVersion = source["remoteAppVersion"];
+	        this.resourceVersion = source["resourceVersion"];
+	    }
+	}
+
+}
+
 export namespace workspace {
 
 	export class OpenShopResult {
