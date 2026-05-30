@@ -188,6 +188,162 @@ func TestWorkspaceAuthorizedShopsRecoversRunningProfilesBeforeProjection(t *test
 	}
 }
 
+func TestWorkspaceShopProfilesReturnsFallbackProfiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/local/shops" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"items": []map[string]any{{
+					"shopId":            "shop-001",
+					"shopName":          "壹级供应链",
+					"platformCode":      "alibaba",
+					"sharedLoginStatus": "ready",
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	profiles, err := app.WorkspaceShopProfiles()
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfiles 返回错误: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("期望返回 1 个店铺档案，实际=%d", len(profiles))
+	}
+	got := profiles[0]
+	if got.ShopID != "shop-001" || got.ShopName != "壹级供应链" || got.PlatformCode != "alibaba" {
+		t.Fatalf("unexpected profile: %#v", got)
+	}
+	if got.Source != "authorized_shop_projection" {
+		t.Fatalf("expected fallback source, got %s", got.Source)
+	}
+	if got.AuthorizationStatus != "ready" {
+		t.Fatalf("expected authorization status from authorized shop, got %s", got.AuthorizationStatus)
+	}
+
+	profile, err := app.WorkspaceShopProfile(" shop-001 ")
+	if err != nil {
+		t.Fatalf("WorkspaceShopProfile 返回错误: %v", err)
+	}
+	if profile.ShopID != "shop-001" {
+		t.Fatalf("unexpected profile detail: %#v", profile)
+	}
+
+	if _, err := app.WorkspaceShopProfile(" "); err == nil || err.Error() != "shop id is required" {
+		t.Fatalf("expected empty shop id error, got %v", err)
+	}
+	if _, err := app.WorkspaceShopProfile("shop-404"); err == nil || err.Error() != "shop profile not found: shop-404" {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestWorkspaceRunsAndEventsReturnLocalAgentEvidence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/runs":
+			if r.URL.Query().Get("limit") != "20" {
+				t.Fatalf("unexpected runs query: %s", r.URL.RawQuery)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"runId":      "run-open-001",
+							"taskId":     "task-open-001",
+							"shopId":     "shop-001",
+							"taskType":   "open",
+							"status":     "running",
+							"startedAt":  "2026-05-23T00:00:00Z",
+							"profileId":  "alibaba:shop-001",
+							"runtime":    map[string]any{"pid": 4321, "debugPort": 9333, "currentUrl": "https://work.1688.com/", "pageTitle": "1688工作台"},
+							"targetUrl":  "https://work.1688.com/",
+							"statusText": "running",
+						},
+						{
+							"runId":          "run-bind-001",
+							"taskId":         "task-bind-001",
+							"shopId":         "shop-001",
+							"taskType":       "bind",
+							"status":         "failed",
+							"startedAt":      "2026-05-23T00:01:00Z",
+							"failureCode":    "ANT_SESSION_RESTORE_FAILED",
+							"failureMessage": "restore failed",
+						},
+					},
+					"total": 2,
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/local/runs/run-open-001/events":
+			if r.URL.Query().Get("limit") != "50" {
+				t.Fatalf("unexpected events query: %s", r.URL.RawQuery)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"runId": "run-open-001",
+					"items": []map[string]any{{
+						"eventId":   "evt-001",
+						"stage":     "browser_opened",
+						"message":   "native browser opened",
+						"createdAt": "2026-05-23T00:00:02Z",
+					}},
+					"total": 1,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	app := &App{
+		workspaceService: workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+	}
+
+	runs, err := app.WorkspaceRuns(workspace.RunQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("WorkspaceRuns 返回错误: %v", err)
+	}
+	if runs.Total != 2 || len(runs.Items) != 2 {
+		t.Fatalf("unexpected runs payload: %#v", runs)
+	}
+
+	events, err := app.WorkspaceRunEvents("run-open-001", 50)
+	if err != nil {
+		t.Fatalf("WorkspaceRunEvents 返回错误: %v", err)
+	}
+	if events.RunID != "run-open-001" || len(events.Items) != 1 {
+		t.Fatalf("unexpected events payload: %#v", events)
+	}
+
+	evidence, err := app.WorkspaceRunEvidence(workspace.RunQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("WorkspaceRunEvidence 返回错误: %v", err)
+	}
+	shopEvidence := evidence.ByShop["shop-001"]
+	if shopEvidence.ActiveRun == nil || shopEvidence.ActiveRun.RunID != "run-open-001" {
+		t.Fatalf("expected active open run evidence, got %#v", shopEvidence.ActiveRun)
+	}
+	if shopEvidence.LatestFailure == nil || shopEvidence.LatestFailure.RunID != "run-bind-001" {
+		t.Fatalf("expected latest failure evidence, got %#v", shopEvidence.LatestFailure)
+	}
+}
+
 func TestResolveWorkspaceAgentBaseURLFallsBackToDefaultWhenUnset(t *testing.T) {
 	t.Setenv("ANT_BROWSER_WORKSPACE_AGENT_BASE_URL", "")
 	t.Setenv("AGENT_BASE_URL", "")

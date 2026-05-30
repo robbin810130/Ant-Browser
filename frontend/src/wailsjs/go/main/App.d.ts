@@ -239,4 +239,14 @@ export function WorkspaceAuthorizedShops():Promise<Array<workspace.ShopInstanceP
 
 export function WorkspaceOpenShop(arg1:string):Promise<workspace.OpenShopResult>;
 
+export function WorkspaceRunEvents(arg1:string,arg2:number):Promise<workspace.RunEventsPayload>;
+
+export function WorkspaceRunEvidence(arg1:workspace.RunQuery):Promise<workspace.RunEvidenceIndex>;
+
+export function WorkspaceRuns(arg1:workspace.RunQuery):Promise<workspace.RunsPayload>;
+
+export function WorkspaceShopProfile(arg1:string):Promise<workspace.ShopProfileRecord>;
+
+export function WorkspaceShopProfiles():Promise<Array<workspace.ShopProfileRecord>>;
+
 export function WorkspaceSummary():Promise<workspace.WorkspaceSummary>;

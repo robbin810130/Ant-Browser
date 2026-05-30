@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -89,6 +90,67 @@ func (c *WorkspaceClient) FetchAuthorizedShops(ctx context.Context) ([]ShopRecor
 	return payload.Items, nil
 }
 
+func (c *WorkspaceClient) FetchShopProfiles(ctx context.Context) ([]ShopProfileRecord, error) {
+	shops, err := c.FetchAuthorizedShops(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profiles := make([]ShopProfileRecord, 0, len(shops))
+	for _, shop := range shops {
+		profiles = append(profiles, ShopProfileRecord{
+			ShopID:              strings.TrimSpace(shop.ShopID),
+			ShopName:            strings.TrimSpace(shop.ShopName),
+			PlatformCode:        strings.TrimSpace(shop.PlatformCode),
+			ASMStatus:           "unavailable",
+			AuthorizationStatus: strings.TrimSpace(shop.SharedLoginStatus),
+			DataCompleteness:    "unknown",
+			Source:              "authorized_shop_projection",
+		})
+	}
+	return profiles, nil
+}
+
+func (c *WorkspaceClient) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {
+	params := make([]string, 0, 4)
+	if query.Limit > 0 {
+		params = append(params, "limit="+url.QueryEscape(fmt.Sprintf("%d", query.Limit)))
+	}
+	if strings.TrimSpace(query.Status) != "" {
+		params = append(params, "status="+url.QueryEscape(strings.TrimSpace(query.Status)))
+	}
+	if strings.TrimSpace(query.ShopID) != "" {
+		params = append(params, "shopId="+url.QueryEscape(strings.TrimSpace(query.ShopID)))
+	}
+	if strings.TrimSpace(query.FailureCode) != "" {
+		params = append(params, "failureCode="+url.QueryEscape(strings.TrimSpace(query.FailureCode)))
+	}
+	path := "/local/runs"
+	if len(params) > 0 {
+		path += "?" + strings.Join(params, "&")
+	}
+	var payload RunsPayload
+	if err := c.getJSON(ctx, path, &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+func (c *WorkspaceClient) FetchRunEvents(ctx context.Context, runID string, limit int) (*RunEventsPayload, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil, fmt.Errorf("run id is required")
+	}
+	path := fmt.Sprintf("/local/runs/%s/events", urlPathEscape(runID))
+	if limit > 0 {
+		path += "?limit=" + url.QueryEscape(fmt.Sprintf("%d", limit))
+	}
+	var payload RunEventsPayload
+	if err := c.getJSON(ctx, path, &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
 func (c *WorkspaceClient) FetchOpenShopContext(ctx context.Context, shopID string) (*ShopOpenContext, error) {
 	var payload ShopOpenContext
 	path := fmt.Sprintf("/local/shops/%s/open-context", urlPathEscape(strings.TrimSpace(shopID)))
@@ -133,6 +195,36 @@ func (s *WorkspaceService) FetchAuthorizedShops(ctx context.Context) ([]ShopInst
 	}
 
 	return projected, nil
+}
+
+func (s *WorkspaceService) FetchShopProfiles(ctx context.Context) ([]ShopProfileRecord, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchShopProfiles(ctx)
+}
+
+func (s *WorkspaceService) FetchRuns(ctx context.Context, query RunQuery) (*RunsPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchRuns(ctx, query)
+}
+
+func (s *WorkspaceService) FetchRunEvents(ctx context.Context, runID string, limit int) (*RunEventsPayload, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	return s.client.FetchRunEvents(ctx, runID, limit)
+}
+
+func (s *WorkspaceService) FetchRunEvidence(ctx context.Context, query RunQuery) (*RunEvidenceIndex, error) {
+	runs, err := s.FetchRuns(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	index := BuildRunEvidenceIndex(runs.Items)
+	return &index, nil
 }
 
 func (s *WorkspaceService) FetchOpenShopContext(ctx context.Context, shopID string) (*ShopOpenContext, error) {
