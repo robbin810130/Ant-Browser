@@ -880,17 +880,17 @@ export namespace logger {
 }
 
 export namespace release {
-	
+
 	export class FailureItem {
 	    code: string;
 	    severity: string;
 	    message: string;
 	    repairable: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new FailureItem(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.code = source["code"];
@@ -902,17 +902,17 @@ export namespace release {
 	export class CheckResult {
 	    state: string;
 	    items: FailureItem[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CheckResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.state = source["state"];
 	        this.items = this.convertValues(source["items"], FailureItem);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -931,17 +931,17 @@ export namespace release {
 		    return a;
 		}
 	}
-	
+
 	export class UpdateState {
 	    kind: string;
 	    localAppVersion: string;
 	    remoteAppVersion: string;
 	    resourceVersion: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UpdateState(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
