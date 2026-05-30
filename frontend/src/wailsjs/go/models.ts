@@ -40,15 +40,15 @@ export namespace appupdate {
 }
 
 export namespace authsession {
-	
+
 	export class Session {
 	    accessToken: string;
 	    rememberMe: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Session(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.accessToken = source["accessToken"];
@@ -1036,11 +1036,11 @@ export namespace workspace {
 	    message: string;
 	    details?: Record<string, any>;
 	    createdAt: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunEvent(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.eventId = source["eventId"];
@@ -1054,18 +1054,18 @@ export namespace workspace {
 	    runId: string;
 	    items: RunEvent[];
 	    total: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunEventsPayload(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
 	        this.items = this.convertValues(source["items"], RunEvent);
 	        this.total = source["total"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1090,11 +1090,11 @@ export namespace workspace {
 	    currentUrl: string;
 	    pageTitle: string;
 	    targetUrl: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunRuntime(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.pid = source["pid"];
@@ -1120,11 +1120,11 @@ export namespace workspace {
 	    challengeType: string;
 	    failureCode: string;
 	    failureMessage: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunRecord(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -1143,7 +1143,7 @@ export namespace workspace {
 	        this.failureCode = source["failureCode"];
 	        this.failureMessage = source["failureMessage"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1168,11 +1168,11 @@ export namespace workspace {
 	    latestValidation?: RunRecord;
 	    latestFailure?: RunRecord;
 	    activeRun?: RunRecord;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ShopRunEvidence(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.latestOpen = this.convertValues(source["latestOpen"], RunRecord);
@@ -1181,7 +1181,7 @@ export namespace workspace {
 	        this.latestFailure = this.convertValues(source["latestFailure"], RunRecord);
 	        this.activeRun = this.convertValues(source["activeRun"], RunRecord);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1202,16 +1202,16 @@ export namespace workspace {
 	}
 	export class RunEvidenceIndex {
 	    byShop: Record<string, ShopRunEvidence>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunEvidenceIndex(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.byShop = this.convertValues(source["byShop"], ShopRunEvidence, true);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1235,11 +1235,11 @@ export namespace workspace {
 	    Status: string;
 	    ShopID: string;
 	    FailureCode: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunQuery(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Limit = source["Limit"];
@@ -1248,22 +1248,22 @@ export namespace workspace {
 	        this.FailureCode = source["FailureCode"];
 	    }
 	}
-	
-	
+
+
 	export class RunsPayload {
 	    items: RunRecord[];
 	    total: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunsPayload(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.items = this.convertValues(source["items"], RunRecord);
 	        this.total = source["total"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1415,11 +1415,11 @@ export namespace workspace {
 	    dataCompleteness: string;
 	    lastSyncedAt: string;
 	    source: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ShopProfileRecord(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.shopId = source["shopId"];
@@ -1434,7 +1434,7 @@ export namespace workspace {
 	        this.source = source["source"];
 	    }
 	}
-	
+
 	export class WorkspaceSummary {
 	    status: string;
 	    agentStatus: string;
@@ -1463,4 +1463,3 @@ export namespace workspace {
 	}
 
 }
-
