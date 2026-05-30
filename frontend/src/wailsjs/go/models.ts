@@ -18,7 +18,7 @@ export namespace authsession {
 }
 
 export namespace appupdate {
-	
+
 	export class State {
 	    kind: string;
 	    status: string;
@@ -33,11 +33,11 @@ export namespace appupdate {
 	    errorCode: string;
 	    errorMessage: string;
 	    details: {[key: string]: string};
-	
+
 	    static createFrom(source: any = {}) {
 	        return new State(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
