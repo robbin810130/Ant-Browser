@@ -26,9 +26,57 @@ function resolveRedirectTarget(state: LoginLocationState | null | undefined): st
   return `${pathname}${state?.from?.search || ''}${state?.from?.hash || ''}`
 }
 
+function firstNonEmptyErrorString(values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
 function getErrorMessage(error: unknown): string {
-  const message = typeof error === 'object' && error && 'message' in error ? (error as { message?: unknown }).message : ''
-  return typeof message === 'string' && message.trim() ? message.trim() : '登录失败，请检查账号密码后重试'
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim()
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+
+  if (typeof error === 'object' && error) {
+    const candidate = error as {
+      message?: unknown
+      error?: unknown
+      cause?: unknown
+      err?: unknown
+      reason?: unknown
+    }
+
+    const directMessage = firstNonEmptyErrorString([
+      candidate.message,
+      candidate.error,
+      candidate.err,
+      candidate.reason,
+    ])
+    if (directMessage) {
+      return directMessage
+    }
+
+    const nestedMessage = firstNonEmptyErrorString([
+      typeof candidate.cause === 'object' && candidate.cause && 'message' in candidate.cause
+        ? (candidate.cause as { message?: unknown }).message
+        : '',
+      typeof candidate.error === 'object' && candidate.error && 'message' in candidate.error
+        ? (candidate.error as { message?: unknown }).message
+        : '',
+    ])
+    if (nestedMessage) {
+      return nestedMessage
+    }
+  }
+
+  return '登录失败，请检查账号密码后重试'
 }
 
 export function LoginPage() {

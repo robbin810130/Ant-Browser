@@ -154,6 +154,14 @@ func TestResolveWorkspaceServerOriginPrefersConfigOverEnv(t *testing.T) {
 	if got != "http://127.0.0.1:5123" {
 		t.Fatalf("期望优先读取配置文件中的 server origin，实际=%s", got)
 	}
+
+	details := resolveWorkspaceServerOriginDetails(runtimeDir, nil)
+	if details.Source != "runtime-config" {
+		t.Fatalf("期望来源为 runtime-config，实际=%s", details.Source)
+	}
+	if filepath.Clean(details.ConfigPath) != filepath.Clean(configPath) {
+		t.Fatalf("期望返回 configPath=%s，实际=%s", configPath, details.ConfigPath)
+	}
 }
 
 func TestResolveWorkspaceServerOriginFallsBackToAppConfigWhenRuntimeAndEnvUnset(t *testing.T) {
@@ -167,6 +175,28 @@ func TestResolveWorkspaceServerOriginFallsBackToAppConfigWhenRuntimeAndEnvUnset(
 	})
 	if got != "http://127.0.0.1:4317" {
 		t.Fatalf("期望读取 app config 中的 server origin，实际=%s", got)
+	}
+
+	details := resolveWorkspaceServerOriginDetails(runtimeDir, &config.Config{
+		Workspace: config.WorkspaceConfig{
+			ServerOrigin: "http://127.0.0.1:4317/",
+		},
+	})
+	if details.Source != "config.yaml" {
+		t.Fatalf("期望来源为 config.yaml，实际=%s", details.Source)
+	}
+}
+
+func TestResolveWorkspaceServerOriginDetailsFallsBackToDefault(t *testing.T) {
+	runtimeDir := t.TempDir()
+	t.Setenv("DESKTOP_SERVER_BASE_URL", "")
+
+	details := resolveWorkspaceServerOriginDetails(runtimeDir, nil)
+	if details.Origin != defaultWorkspaceServerOrigin {
+		t.Fatalf("期望默认 origin=%s，实际=%s", defaultWorkspaceServerOrigin, details.Origin)
+	}
+	if details.Source != "default" {
+		t.Fatalf("期望默认来源=default，实际=%s", details.Source)
 	}
 }
 
@@ -318,7 +348,9 @@ func TestEnsureWorkspaceAgentBootstrappedUsesPersistedDesktopAccessToken(t *test
 		t.Fatalf("保存 desktop auth session 失败: %v", err)
 	}
 
-	app.ensureWorkspaceAgentBootstrapped()
+	if err := app.ensureWorkspaceAgentBootstrapped(); err != nil {
+		t.Fatalf("ensureWorkspaceAgentBootstrapped 返回错误: %v", err)
+	}
 
 	if meAuthHeader != "Bearer persisted-token-xyz" {
 		t.Fatalf("期望 auth/me 使用 Bearer persisted-token-xyz，实际=%q", meAuthHeader)

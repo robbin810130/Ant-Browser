@@ -7,6 +7,8 @@ export interface EnvironmentFailureItem {
   severity: EnvironmentSeverity
   message: string
   repairable: boolean
+  recommendedAction: string
+  details: Record<string, string>
 }
 
 export interface EnvironmentStatus {
@@ -19,4 +21,6 @@ export interface ReleaseUpdateState {
   localAppVersion: string
   remoteAppVersion: string
   resourceVersion: string
+  manifestSource: string
+  manifestUrl: string
 }

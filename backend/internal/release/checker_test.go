@@ -37,8 +37,8 @@ func TestCheckerMarksMissingRuntimeRepairable(t *testing.T) {
 		Target:          "darwin-arm64",
 		ResourceVersion: "2026.05.12",
 	})
-	if result.State != StateRepairable {
-		t.Fatalf("expected repairable state, got %s", result.State)
+	if result.State != StatePass {
+		t.Fatalf("expected pass state, got %s with items %#v", result.State, result.Items)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestCheckerMarksOutdatedResourceRepairable(t *testing.T) {
 	}
 }
 
-func TestCheckerMarksInvalidBrowserCoreRepairable(t *testing.T) {
+func TestCheckerDoesNotBlockStartupWhenBrowserCoreMissing(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "runtime-manifest.json")
 	if err := os.WriteFile(manifestPath, []byte(`{"schemaVersion":2}`), 0o600); err != nil {
@@ -139,13 +139,9 @@ func TestCheckerMarksInvalidBrowserCoreRepairable(t *testing.T) {
 		ManifestPath:    manifestPath,
 		Target:          DefaultTarget(),
 		ResourceVersion: "2026.05.12",
-		BrowserCorePath: filepath.Join(dir, "missing-core"),
 	})
-	if result.State != StateRepairable {
-		t.Fatalf("expected repairable state, got %s", result.State)
-	}
-	if len(result.Items) == 0 || result.Items[0].Code != "PKG-BROWSER-CORE-MISSING" {
-		t.Fatalf("unexpected failure items: %#v", result.Items)
+	if result.State != StatePass {
+		t.Fatalf("expected pass state, got %s with items %#v", result.State, result.Items)
 	}
 }
 

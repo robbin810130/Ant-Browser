@@ -30,6 +30,11 @@ function normalizeFailureItem(input: any): EnvironmentFailureItem {
     severity: severity === 'info' || severity === 'warning' || severity === 'error' ? severity : 'error',
     message: String(input?.message || ''),
     repairable: Boolean(input?.repairable),
+    recommendedAction: String(input?.recommendedAction || ''),
+    details:
+      input?.details && typeof input.details === 'object'
+        ? Object.fromEntries(Object.entries(input.details).map(([key, value]) => [String(key), String(value ?? '').trim()]))
+        : {},
   }
 }
 
@@ -51,6 +56,8 @@ function normalizeReleaseUpdateState(input: any): ReleaseUpdateState {
     localAppVersion: String(input?.localAppVersion || ''),
     remoteAppVersion: String(input?.remoteAppVersion || ''),
     resourceVersion: String(input?.resourceVersion || ''),
+    manifestSource: String(input?.manifestSource || ''),
+    manifestUrl: String(input?.manifestUrl || ''),
   }
 }
 

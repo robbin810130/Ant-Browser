@@ -1,7 +1,6 @@
 import { HardDrive, ShieldCheck } from 'lucide-react'
 import { toast } from '../../../shared/components'
 import { EnvironmentStatusCard } from '../components/EnvironmentStatusCard'
-import { UpdatePromptModal } from '../components/UpdatePromptModal'
 import { useRuntimeStore } from '../../../store/runtimeStore'
 
 export function EnvironmentGatePage() {
@@ -10,6 +9,7 @@ export function EnvironmentGatePage() {
   const repairing = useRuntimeStore((state) => state.repairing)
   const exporting = useRuntimeStore((state) => state.exporting)
   const diagnosticsPath = useRuntimeStore((state) => state.diagnosticsPath)
+  const diagnosticsError = useRuntimeStore((state) => state.diagnosticsError)
   const updateState = useRuntimeStore((state) => state.updateState)
   const updatePromptOpen = useRuntimeStore((state) => state.updatePromptOpen)
   const updateError = useRuntimeStore((state) => state.updateError)
@@ -59,7 +59,7 @@ export function EnvironmentGatePage() {
             先把桌面运行环境站稳，再放你进入工作台。
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-            这里会统一检查运行时版本、当前指针、目录可写性和启动更新状态。环境未就绪时，不再让你带着半坏壳子继续用。
+            这里会统一检查运行时版本、当前指针、workspace host 连通性，以及启动更新状态。环境未就绪时，不再让你带着半坏壳子继续用。
           </p>
         </div>
 
@@ -70,6 +70,7 @@ export function EnvironmentGatePage() {
             repairing={repairing}
             exporting={exporting}
             diagnosticsPath={diagnosticsPath}
+            diagnosticsError={diagnosticsError}
             updateBlocking={updateBlocking}
             updateError={updateError}
             onRetry={() => void handleRetry()}
@@ -90,7 +91,7 @@ export function EnvironmentGatePage() {
               </div>
               <div className="mt-5 space-y-3 text-sm text-white/75">
                 <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  1. 检查本地运行时 manifest、active pointer 与目录状态。
+                  1. 检查本地运行时 manifest、active pointer 与 workspace host 连通性。
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   2. 遇到可修复问题先自动修，再跑完整复检。
@@ -111,8 +112,6 @@ export function EnvironmentGatePage() {
           </div>
         </div>
       </div>
-
-      <UpdatePromptModal />
     </div>
   )
 }

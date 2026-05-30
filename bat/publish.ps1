@@ -62,6 +62,13 @@ function Invoke-NativeCommand {
     }
 }
 
+function Assert-PublishContract {
+    Write-Host "[Windows] 校验发布契约..."
+    Invoke-NativeCommand -FilePath "python3" -Arguments @("tools/runtime/verify-publish-contract.py")
+    Write-Host "✓ 发布契约校验通过"
+    Write-Host ""
+}
+
 function Assert-RequiredSourceFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -491,6 +498,94 @@ function Copy-WindowsChromePayload {
     }
 }
 
+function Resolve-WorkspacePayloadRoot {
+    $candidates = @()
+    if ($env:ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT) {
+        $candidates += (Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT)
+    }
+    $desktopReposRoot = Split-Path -Parent $repoRoot
+    $candidates += (Join-Path $desktopReposRoot "1688shop-desktop")
+
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+        $agentEntry = Join-Path $candidate "apps\agent\src\server\index.mjs"
+        if (Test-Path -LiteralPath $agentEntry -PathType Leaf) {
+            return $candidate
+        }
+    }
+
+    throw "未找到 workspace agent payload 根目录。请准备 desktop-repos\\1688shop-desktop，或设置 ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT 指向包含 apps\\agent\\src\\server\\index.mjs 的目录。"
+}
+
+function Copy-WorkspaceAgentPayload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspacePayloadRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$StagingDir
+    )
+
+    $items = @(
+        "apps\agent\src",
+        "apps\agent\package.json",
+        "installer\windows\scripts\ant-runtime-bridge.mjs",
+        "installer\windows\scripts\ant-runtime-playwright-runtime.mjs"
+    )
+
+    foreach ($relativePath in $items) {
+        $sourcePath = Join-Path $WorkspacePayloadRoot $relativePath
+        if (-not (Test-Path -LiteralPath $sourcePath)) {
+            if ($relativePath -like "installer\windows\scripts\*") {
+                continue
+            }
+            throw "缺少 workspace agent payload: $sourcePath"
+        }
+
+        $destinationPath = Join-Path $StagingDir $relativePath
+        $destinationDir = Split-Path -Parent $destinationPath
+        if ($destinationDir) {
+            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
+    }
+
+    Write-Host "✓ 复制本地 workspace agent payload"
+}
+
+function Copy-BundledWorkspaceNodePayload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspacePayloadRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$StagingDir
+    )
+
+    $targetDir = Join-Path $StagingDir "runtime\node"
+    $targetExe = Join-Path $targetDir "node.exe"
+    $sourceDir = Join-Path $WorkspacePayloadRoot "runtime\node"
+
+    if (Test-Path -LiteralPath $sourceDir -PathType Container) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $targetDir) -Force | Out-Null
+        Copy-Item -LiteralPath $sourceDir -Destination $targetDir -Recurse -Force
+    }
+    else {
+        $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+        if (-not $nodeCmd) {
+            throw "缺少 bundled node runtime，且 PATH 中也找不到 node.exe。请先安装 Node.js 或准备 runtime\\node\\node.exe。"
+        }
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        Copy-Item -LiteralPath $nodeCmd.Source -Destination $targetExe -Force
+    }
+
+    if (-not (Test-Path -LiteralPath $targetExe -PathType Leaf)) {
+        throw "staging 中缺少 runtime\\node\\node.exe"
+    }
+
+    Write-Host "✓ 复制 bundled Node runtime"
+}
+
 function New-WindowsStaging {
     Write-Host "[Windows] 组装 staging 目录..."
 
@@ -499,6 +594,7 @@ function New-WindowsStaging {
     $binaryPath = Join-Path $repoRoot "build/bin/ant-chrome.exe"
     $binDir = Join-Path $repoRoot "bin"
     $chromeRoot = Join-Path $repoRoot "chrome"
+    $workspacePayloadRoot = Resolve-WorkspacePayloadRoot
 
     if (Test-Path -LiteralPath $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
@@ -530,6 +626,8 @@ function New-WindowsStaging {
     Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe）"
 
     Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
+    Copy-WorkspaceAgentPayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
+    Copy-BundledWorkspaceNodePayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
     Copy-RuntimePublishPayload -Target "windows-amd64" -StagingDir $stagingDir
 
     New-Item -ItemType Directory -Path (Join-Path $stagingDir "data") -Force | Out-Null
@@ -602,6 +700,7 @@ function Publish-Windows {
     Write-Host ""
 
     $makensisPath = Resolve-NsisPath
+    Assert-PublishContract
     Assert-RuntimeHashes -Target "windows-amd64"
     Build-WindowsBinary
 

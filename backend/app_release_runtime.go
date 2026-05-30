@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/release"
@@ -11,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -38,6 +40,16 @@ const (
 )
 
 var errNoRuntimeVersionsAvailable = errors.New("no runtime versions available to repair pointer")
+
+type releaseUpdateConfig struct {
+	ManifestURL string `json:"manifestUrl"`
+}
+
+type releaseUpdateManifestResolution struct {
+	URL        string
+	Source     string
+	ConfigPath string
+}
 
 func (a *App) GetDesktopEnvironmentStatus() (release.CheckResult, error) {
 	manager, err := a.releaseManager()
@@ -90,12 +102,17 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 	_ = ctx
 
 	layout := m.app.runtimeLayout()
+	pathResult := m.checkLocalPathStatus(layout)
+	if pathResult.State != release.StatePass {
+		return pathResult, nil
+	}
 	manifestPath := m.manifestPath()
 	if _, err := os.Stat(manifestPath); err != nil {
-		return release.Checker{}.Run(release.CheckInput{
+		result := release.Checker{}.Run(release.CheckInput{
 			ManifestPath: manifestPath,
 			Target:       release.DefaultTarget(),
-		}), nil
+		})
+		return mergeCheckResultItems(result, pathResult.Items), nil
 	}
 
 	manifest, err := release.LoadManifest(manifestPath)
@@ -103,24 +120,26 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		return release.CheckResult{
 			State: release.StateBlocked,
 			Items: []release.FailureItem{{
-				Code:       "ENV-MANIFEST-INVALID",
-				Severity:   "error",
-				Message:    "运行时 manifest 无法解析",
-				Repairable: false,
+				Code:              "ENV-MANIFEST-INVALID",
+				Severity:          "error",
+				Message:           "运行时 manifest 无法解析",
+				Repairable:        false,
+				RecommendedAction: "请确认安装包内容完整，并导出诊断包给支持团队检查 manifest 与运行时目录。",
 			}},
 		}, nil
 	}
 
 	target := release.DefaultTarget()
-	resourceVersion, version, pointerStatus := loadActiveRuntimeVersion(layout.ActivePointerPath())
+	resourceVersion, _, pointerStatus := loadActiveRuntimeVersion(layout.ActivePointerPath())
 	if pointerStatus == activeRuntimePointerMissing {
 		return release.CheckResult{
 			State: release.StateRepairable,
 			Items: []release.FailureItem{{
-				Code:       "ENV-RUNTIME-POINTER-MISSING",
-				Severity:   "error",
-				Message:    "当前运行时指针缺失，需要修复",
-				Repairable: true,
+				Code:              "ENV-RUNTIME-POINTER-MISSING",
+				Severity:          "error",
+				Message:           "当前运行时指针缺失，需要修复",
+				Repairable:        true,
+				RecommendedAction: "先尝试自动修复；若修复后仍失败，请导出诊断包并检查 runtime/current.json 是否可创建。",
 			}},
 		}, nil
 	}
@@ -128,24 +147,103 @@ func (m *releaseRuntimeManager) RunStartupCheck(ctx context.Context) (release.Ch
 		return release.CheckResult{
 			State: release.StateRepairable,
 			Items: []release.FailureItem{{
-				Code:       "ENV-RUNTIME-POINTER-INVALID",
-				Severity:   "error",
-				Message:    "当前运行时指针损坏，需要修复",
-				Repairable: true,
+				Code:              "ENV-RUNTIME-POINTER-INVALID",
+				Severity:          "error",
+				Message:           "当前运行时指针损坏，需要修复",
+				Repairable:        true,
+				RecommendedAction: "先尝试自动修复；若仍失败，请删除损坏的 current.json 后重新检查，或导出诊断包给支持团队。",
 			}},
 		}, nil
 	}
-	browserCorePath := ""
-	if versionDir, err := layout.VersionDir(version); err == nil {
-		browserCorePath = resolveBrowserCorePath(manifest, target, versionDir)
-	}
-
-	return release.Checker{Manifest: manifest}.Run(release.CheckInput{
+	result := release.Checker{Manifest: manifest}.Run(release.CheckInput{
 		ManifestPath:    manifestPath,
 		Target:          target,
 		ResourceVersion: resourceVersion,
-		BrowserCorePath: browserCorePath,
-	}), nil
+	})
+	if result.State != release.StatePass {
+		return mergeCheckResultItems(result, pathResult.Items), nil
+	}
+
+	if workspaceResult := m.checkWorkspaceHostStatus(); workspaceResult.State != release.StatePass {
+		return mergeCheckResultItems(workspaceResult, pathResult.Items), nil
+	}
+
+	return mergeCheckResultItems(result, pathResult.Items), nil
+}
+
+func (m *releaseRuntimeManager) checkLocalPathStatus(layout release.RuntimeLayout) release.CheckResult {
+	if result := ensureExistingDirectory(
+		layout.InstallRoot,
+		"ENV-INSTALL-ROOT-INVALID",
+		"应用安装目录无效，无法继续完成桌面环境初始化",
+		"请确认当前应用目录存在且完整；若是从压缩包运行，请先完整解压后再启动。",
+	); result.State != release.StatePass {
+		attachFailureDetails(result.Items, map[string]string{"installRoot": layout.InstallRoot})
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.StateRoot,
+		"ENV-STATE-ROOT-UNWRITABLE",
+		"应用状态目录不可写，无法保存运行时配置与登录态",
+		"请检查当前用户对状态目录的写权限，必要时改到可写目录后重新启动，并导出诊断包。",
+	); result.State != release.StatePass {
+		attachFailureDetails(result.Items, map[string]string{"stateRoot": layout.StateRoot})
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.RuntimeRoot(),
+		"ENV-RUNTIME-ROOT-UNWRITABLE",
+		"运行时目录不可写，无法生成 active pointer 或运行时版本目录",
+		"请检查 runtime 目录是否被文件占用、杀软拦截或权限限制，修复后重新检查。",
+	); result.State != release.StatePass {
+		attachFailureDetails(result.Items, map[string]string{"runtimeRoot": layout.RuntimeRoot()})
+		return result
+	}
+
+	if result := ensureWritableDirectory(
+		layout.DiagnosticsRoot(),
+		"ENV-DIAGNOSTICS-ROOT-UNWRITABLE",
+		"诊断目录不可写，环境失败时将无法导出诊断包",
+		"请检查 diagnostics 目录是否可创建和写入；若暂时无法修复，仍可继续登录，但需要手工收集日志给支持团队。",
+	); result.State != release.StatePass {
+		warning := release.CheckResult{
+			State: release.StatePass,
+			Items: []release.FailureItem{release.WarningItem(
+				"ENV-DIAGNOSTICS-ROOT-UNWRITABLE",
+				"诊断目录不可写，当前无法导出诊断包",
+				"请检查 diagnostics 目录是否可创建和写入；若暂时无法修复，仍可继续使用，但排障时需要手工收集日志。",
+			)},
+		}
+		attachFailureDetails(warning.Items, map[string]string{"diagnosticsRoot": layout.DiagnosticsRoot()})
+		return warning
+	}
+
+	if err := validateBundledWorkspaceAgentPayload(layout.InstallRoot); err != nil {
+		result := blockedFailure(
+			"ENV-WORKSPACE-AGENT-PAYLOAD-MISSING",
+			"安装包缺少本地 workspace agent 运行时，登录后无法拉起桌面工作区服务",
+			"请重新安装包含 apps/agent 与 runtime/node 的完整安装包；若是内部测试包，请重新执行 Windows 打包并确认 payload 已随包安装。",
+		)
+		attachFailureDetails(result.Items, map[string]string{
+			"installRoot":     layout.InstallRoot,
+			"workspaceAgent":  workspaceAgentEntryPath(layout.InstallRoot),
+			"bundledNodePath": bundledWorkspaceNodePath(layout.InstallRoot),
+			"validationError": err.Error(),
+		})
+		return result
+	}
+
+	return release.CheckResult{State: release.StatePass}
+}
+
+func mergeCheckResultItems(result release.CheckResult, extra []release.FailureItem) release.CheckResult {
+	if len(extra) == 0 {
+		return result
+	}
+	result.Items = append(result.Items, extra...)
+	return result
 }
 
 func (m *releaseRuntimeManager) RepairAndRecheck(ctx context.Context) (release.CheckResult, error) {
@@ -170,20 +268,7 @@ func (m *releaseRuntimeManager) ApplyRepairAction(ctx context.Context, action re
 }
 
 func (m *releaseRuntimeManager) CheckForUpdate(ctx context.Context) (release.UpdateState, error) {
-	manager, err := m.updateManager(ctx)
-	if err != nil {
-		return release.UpdateState{}, err
-	}
-
-	localResourceVersion := manager.CurrentResourceVersion()
-	if strings.TrimSpace(localResourceVersion) == "" {
-		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
-	}
-	return manager.ClassifyUpdate(localResourceVersion), nil
-}
-
-func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (release.UpdateState, error) {
-	manager, err := m.updateManager(ctx)
+	manager, resolution, err := m.updateManager(ctx)
 	if err != nil {
 		return release.UpdateState{}, err
 	}
@@ -193,6 +278,24 @@ func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (relea
 		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
 	}
 	state := manager.ClassifyUpdate(localResourceVersion)
+	state.ManifestSource = strings.TrimSpace(resolution.Source)
+	state.ManifestURL = strings.TrimSpace(resolution.URL)
+	return state, nil
+}
+
+func (m *releaseRuntimeManager) ApplyConfirmedUpdate(ctx context.Context) (release.UpdateState, error) {
+	manager, resolution, err := m.updateManager(ctx)
+	if err != nil {
+		return release.UpdateState{}, err
+	}
+
+	localResourceVersion := manager.CurrentResourceVersion()
+	if strings.TrimSpace(localResourceVersion) == "" {
+		localResourceVersion = strings.TrimSpace(manager.LocalManifest.MinimumResourceVersion)
+	}
+	state := manager.ClassifyUpdate(localResourceVersion)
+	state.ManifestSource = strings.TrimSpace(resolution.Source)
+	state.ManifestURL = strings.TrimSpace(resolution.URL)
 	if state.Kind == "none" {
 		return state, nil
 	}
@@ -252,6 +355,9 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		})
 	}
 
+	workspaceServerOriginDetails := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	updateManifestResolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+
 	return release.WriteDiagnosticBundle(layout.DiagnosticsRoot(), release.DiagnosticBundle{
 		Platform:         fmt.Sprintf("%s-%s", goruntime.GOOS, goruntime.GOARCH),
 		AppVersion:       strings.TrimSpace(manifest.AppVersion),
@@ -261,16 +367,163 @@ func (m *releaseRuntimeManager) ExportDiagnostics(ctx context.Context) (string, 
 		ErrorCodes:       errorCodes,
 		Summary:          diagnosticSummary(result),
 		Paths: map[string]string{
-			"installRoot":     layout.InstallRoot,
-			"stateRoot":       layout.StateRoot,
-			"manifestPath":    m.manifestPath(),
-			"runtimeRoot":     layout.RuntimeRoot(),
-			"activePointer":   layout.ActivePointerPath(),
-			"diagnosticsRoot": layout.DiagnosticsRoot(),
+			"installRoot":                 layout.InstallRoot,
+			"stateRoot":                   layout.StateRoot,
+			"manifestPath":                m.manifestPath(),
+			"runtimeRoot":                 layout.RuntimeRoot(),
+			"activePointer":               layout.ActivePointerPath(),
+			"diagnosticsRoot":             layout.DiagnosticsRoot(),
+			"workspaceRuntimeDir":         resolveWorkspaceRuntimeDirWithConfig(m.app.config),
+			"workspaceServerOrigin":       workspaceServerOriginDetails.Origin,
+			"workspaceServerOriginSource": workspaceServerOriginDetails.Source,
+			"workspaceServerConfigPath":   workspaceServerOriginDetails.ConfigPath,
+			"updateManifestURL":           updateManifestResolution.URL,
+			"updateManifestSource":        updateManifestResolution.Source,
+			"updateManifestConfigPath":    updateManifestResolution.ConfigPath,
 		},
 		Events: events,
 		Logs:   logs,
 	})
+}
+
+func (m *releaseRuntimeManager) checkWorkspaceHostStatus() release.CheckResult {
+	resolution := resolveWorkspaceServerOriginDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
+	serverOrigin := strings.TrimRight(strings.TrimSpace(resolution.Origin), "/")
+	if serverOrigin == "" {
+		return release.CheckResult{
+			State: release.StateBlocked,
+			Items: []release.FailureItem{{
+				Code:              workspaceHostFailureCode(resolution),
+				Severity:          "error",
+				Message:           "workspace host 地址为空，无法继续登录",
+				Repairable:        false,
+				RecommendedAction: workspaceServerOriginAction(resolution),
+				Details:           workspaceServerOriginDetailsMap(resolution),
+			}},
+		}
+	}
+
+	for _, path := range []string{"/api/client/health", "/api/health"} {
+		if err := getWorkspaceJSON(serverOrigin+path, nil); err == nil {
+			return release.CheckResult{State: release.StatePass}
+		}
+	}
+
+	return release.CheckResult{
+		State: release.StateBlocked,
+		Items: []release.FailureItem{{
+			Code:              workspaceHostFailureCode(resolution),
+			Severity:          "error",
+			Message:           fmt.Sprintf("workspace host 不可达，请确认服务端已启动并检查连接配置 (%s)", serverOrigin),
+			Repairable:        false,
+			RecommendedAction: workspaceServerOriginAction(resolution),
+			Details:           workspaceServerOriginDetailsMap(resolution),
+		}},
+	}
+}
+
+func workspaceHostFailureCode(resolution workspaceServerOriginResolution) string {
+	switch resolution.Source {
+	case "runtime-config":
+		return "ENV-WORKSPACE-HOST-RUNTIME-CONFIG-UNREACHABLE"
+	case "env:DESKTOP_SERVER_BASE_URL":
+		return "ENV-WORKSPACE-HOST-ENV-UNREACHABLE"
+	case "config.yaml":
+		return "ENV-WORKSPACE-HOST-APP-CONFIG-UNREACHABLE"
+	default:
+		return "ENV-WORKSPACE-HOST-DEFAULT-UNREACHABLE"
+	}
+}
+
+func workspaceServerOriginAction(resolution workspaceServerOriginResolution) string {
+	origin := strings.TrimSpace(resolution.Origin)
+	switch resolution.Source {
+	case "runtime-config":
+		return fmt.Sprintf("当前 workspace host 来自 server-connection.json：%s。请检查该文件中的地址是否正确，并确认对应服务已启动。", strings.TrimSpace(resolution.ConfigPath))
+	case "env:DESKTOP_SERVER_BASE_URL":
+		return fmt.Sprintf("当前 workspace host 来自环境变量 DESKTOP_SERVER_BASE_URL (%s)。请检查该变量值是否正确，并确认对应服务已启动。", origin)
+	case "config.yaml":
+		return fmt.Sprintf("当前 workspace host 来自 config.yaml 的 workspace.server_origin (%s)。请检查配置值是否正确，并确认对应服务已启动。", origin)
+	default:
+		return fmt.Sprintf("当前 workspace host 使用默认地址 (%s)。请确认本机 workspace server 已启动；若仍失败，请导出诊断包。", origin)
+	}
+}
+
+func workspaceServerOriginDetailsMap(resolution workspaceServerOriginResolution) map[string]string {
+	details := map[string]string{
+		"workspaceHost": strings.TrimSpace(resolution.Origin),
+		"source":        strings.TrimSpace(resolution.Source),
+	}
+	if configPath := strings.TrimSpace(resolution.ConfigPath); configPath != "" {
+		details["configPath"] = configPath
+	}
+	return details
+}
+
+func attachFailureDetails(items []release.FailureItem, details map[string]string) {
+	if len(items) == 0 || len(details) == 0 {
+		return
+	}
+	for i := range items {
+		if items[i].Details == nil {
+			items[i].Details = map[string]string{}
+		}
+		for key, value := range details {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			items[i].Details[key] = value
+		}
+	}
+}
+
+func ensureExistingDirectory(path, code, message, action string) release.CheckResult {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return blockedFailure(code, message, action)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return blockedFailure(code, message, action)
+	}
+
+	return release.CheckResult{State: release.StatePass}
+}
+
+func ensureWritableDirectory(path, code, message, action string) release.CheckResult {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return blockedFailure(code, message, action)
+	}
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return blockedFailure(code, message, action)
+	}
+
+	file, err := os.CreateTemp(path, ".write-check-*")
+	if err != nil {
+		return blockedFailure(code, message, action)
+	}
+	name := file.Name()
+	_ = file.Close()
+	_ = os.Remove(name)
+
+	return release.CheckResult{State: release.StatePass}
+}
+
+func blockedFailure(code, message, action string) release.CheckResult {
+	return release.CheckResult{
+		State: release.StateBlocked,
+		Items: []release.FailureItem{{
+			Code:              code,
+			Severity:          "error",
+			Message:           message,
+			Repairable:        false,
+			RecommendedAction: action,
+		}},
+	}
 }
 
 func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, version string, status activeRuntimePointerStatus) {
@@ -295,18 +548,27 @@ func loadActiveRuntimeVersion(pointerPath string) (resourceVersion string, versi
 	return resourceVersion, version, activeRuntimePointerOK
 }
 
-func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Manager, error) {
+func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Manager, releaseUpdateManifestResolution, error) {
 	_ = ctx
 	localManifest, err := release.LoadManifest(m.manifestPath())
 	if err != nil {
-		return release.Manager{}, err
+		return release.Manager{}, releaseUpdateManifestResolution{}, err
 	}
 
 	remoteManifest := localManifest
+	resolution := resolveReleaseUpdateManifestDetails(resolveWorkspaceRuntimeDirWithConfig(m.app.config), m.app.config)
 	if m.remoteManifestProvider != nil {
 		remoteManifest, err = m.remoteManifestProvider(ctx)
 		if err != nil {
-			return release.Manager{}, err
+			return release.Manager{}, releaseUpdateManifestResolution{}, err
+		}
+		if strings.TrimSpace(resolution.Source) == "" {
+			resolution.Source = "override"
+		}
+	} else if strings.TrimSpace(resolution.URL) != "" {
+		remoteManifest, err = loadReleaseManifestFromSource(ctx, resolution.URL)
+		if err != nil {
+			return release.Manager{}, resolution, fmt.Errorf("load update manifest from %s (%s): %w", strings.TrimSpace(resolution.Source), strings.TrimSpace(resolution.URL), err)
 		}
 	}
 
@@ -314,20 +576,7 @@ func (m *releaseRuntimeManager) updateManager(ctx context.Context) (release.Mana
 		LocalManifest:  localManifest,
 		RemoteManifest: remoteManifest,
 		Layout:         m.app.runtimeLayout(),
-	}, nil
-}
-
-func resolveBrowserCorePath(manifest release.Manifest, target, versionDir string) string {
-	packages, err := manifest.RequiredPackages(target)
-	if err != nil {
-		return ""
-	}
-	for _, pkg := range packages {
-		if strings.EqualFold(strings.TrimSpace(pkg.Kind), "browser-core") {
-			return release.ResolvePackagePath(versionDir, pkg)
-		}
-	}
-	return ""
+	}, resolution, nil
 }
 
 func diagnosticResultFromState(state release.CheckState) string {
@@ -566,6 +815,81 @@ func resolveRuntimePackageSource(layout release.RuntimeLayout, pkg release.Runti
 		}
 	}
 	return "", fmt.Errorf("runtime package source missing for %s", pkg.ID)
+}
+
+func resolveReleaseUpdateManifestDetails(runtimeDir string, cfg *config.Config) releaseUpdateManifestResolution {
+	configPath := filepath.Join(runtimeDir, "config", "release-update.json")
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		var fileConfig releaseUpdateConfig
+		if jsonErr := json.Unmarshal(data, &fileConfig); jsonErr == nil {
+			if url := strings.TrimSpace(fileConfig.ManifestURL); url != "" {
+				return releaseUpdateManifestResolution{
+					URL:        url,
+					Source:     "runtime-config",
+					ConfigPath: configPath,
+				}
+			}
+		}
+	}
+
+	if value := strings.TrimSpace(os.Getenv("DESKTOP_UPDATE_MANIFEST_URL")); value != "" {
+		return releaseUpdateManifestResolution{
+			URL:    value,
+			Source: "env:DESKTOP_UPDATE_MANIFEST_URL",
+		}
+	}
+
+	if cfg != nil {
+		if value := strings.TrimSpace(cfg.Release.UpdateManifestURL); value != "" {
+			return releaseUpdateManifestResolution{
+				URL:    value,
+				Source: "config.yaml",
+			}
+		}
+	}
+
+	return releaseUpdateManifestResolution{}
+}
+
+func loadReleaseManifestFromSource(ctx context.Context, source string) (release.Manifest, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return release.Manifest{}, fmt.Errorf("update manifest source is required")
+	}
+
+	if strings.HasPrefix(strings.ToLower(source), "http://") || strings.HasPrefix(strings.ToLower(source), "https://") {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		request.Header.Set("accept", "application/json")
+		client := &http.Client{Timeout: 8 * time.Second}
+		response, err := client.Do(request)
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+			return release.Manifest{}, fmt.Errorf("update manifest request failed: %s (%d): %s", source, response.StatusCode, strings.TrimSpace(string(body)))
+		}
+		body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if err != nil {
+			return release.Manifest{}, err
+		}
+		var manifest release.Manifest
+		if err := json.Unmarshal(body, &manifest); err != nil {
+			return release.Manifest{}, fmt.Errorf("parse update manifest failed: %w", err)
+		}
+		if manifest.SchemaVersion != 2 {
+			return release.Manifest{}, fmt.Errorf("unsupported manifest schema: %d", manifest.SchemaVersion)
+		}
+		return manifest, nil
+	}
+
+	path := strings.TrimPrefix(source, "file://")
+	return release.LoadManifest(path)
 }
 
 func verifySHA256(path, expected string) error {

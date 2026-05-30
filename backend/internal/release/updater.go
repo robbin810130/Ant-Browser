@@ -14,6 +14,8 @@ type UpdateState struct {
 	LocalAppVersion  string `json:"localAppVersion"`
 	RemoteAppVersion string `json:"remoteAppVersion"`
 	ResourceVersion  string `json:"resourceVersion"`
+	ManifestSource   string `json:"manifestSource,omitempty"`
+	ManifestURL      string `json:"manifestUrl,omitempty"`
 }
 
 type Manager struct {

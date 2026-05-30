@@ -51,3 +51,5 @@ browser:
   profiles: []
 launch_server:
   port: 19876
+release:
+  update_manifest_url: ""

@@ -60,3 +60,5 @@ workspace:
   agent_base_url: ""
   server_origin: "http://127.0.0.1:4174"
   runtime_dir: ""
+release:
+  update_manifest_url: ""
