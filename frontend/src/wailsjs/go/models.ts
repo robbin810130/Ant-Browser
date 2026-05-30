@@ -1035,11 +1035,11 @@ export namespace workspace {
 	    Status: string;
 	    ShopID: string;
 	    TaskType: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new OperationTaskQuery(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Limit = source["Limit"];
@@ -1060,11 +1060,11 @@ export namespace workspace {
 	    updatedAt: string;
 	    runId: string;
 	    failureCode: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new OperationTaskRecord(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.taskId = source["taskId"];
@@ -1083,17 +1083,17 @@ export namespace workspace {
 	export class OperationTasksPayload {
 	    items: OperationTaskRecord[];
 	    total: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new OperationTasksPayload(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.items = this.convertValues(source["items"], OperationTaskRecord);
 	        this.total = source["total"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
