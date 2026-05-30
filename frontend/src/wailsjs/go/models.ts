@@ -1,13 +1,13 @@
 export namespace authsession {
-	
+
 	export class Session {
 	    accessToken: string;
 	    rememberMe: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Session(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.accessToken = source["accessToken"];
@@ -18,7 +18,7 @@ export namespace authsession {
 }
 
 export namespace backend {
-	
+
 	export class CookieInfo {
 	    name: string;
 	    value: string;
@@ -28,11 +28,11 @@ export namespace backend {
 	    httpOnly: boolean;
 	    secure: boolean;
 	    sameSite: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CookieInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -48,11 +48,11 @@ export namespace backend {
 	export class DesktopAuthRole {
 	    code: string;
 	    name: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopAuthRole(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.code = source["code"];
@@ -63,11 +63,11 @@ export namespace backend {
 	    id: string;
 	    displayName: string;
 	    username: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopAuthUser(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -79,18 +79,18 @@ export namespace backend {
 	    user: DesktopAuthUser;
 	    roles: DesktopAuthRole[];
 	    dataScope: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopAuthProfile(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.user = this.convertValues(source["user"], DesktopAuthUser);
 	        this.roles = this.convertValues(source["roles"], DesktopAuthRole);
 	        this.dataScope = source["dataScope"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -109,19 +109,19 @@ export namespace backend {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class DesktopSharedLoginDetail {
 	    shopId: string;
 	    shopName: string;
 	    platformCode: string;
 	    sharedLoginStatus: string;
 	    sharedLoginStatusLabel: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopSharedLoginDetail(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.shopId = source["shopId"];
@@ -147,11 +147,11 @@ export namespace backend {
 	    completedAt: string;
 	    updatedAt: string;
 	    challengeType: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopSharedLoginBindSession(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bindSessionId = source["bindSessionId"];
@@ -174,17 +174,17 @@ export namespace backend {
 	export class DesktopSharedLoginActionResult {
 	    bindSession: DesktopSharedLoginBindSession;
 	    detail: DesktopSharedLoginDetail;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopSharedLoginActionResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bindSession = this.convertValues(source["bindSession"], DesktopSharedLoginBindSession);
 	        this.detail = this.convertValues(source["detail"], DesktopSharedLoginDetail);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -203,17 +203,17 @@ export namespace backend {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class LicenseStatus {
 	    maxLimit: number;
 	    usedCount: number;
 	    usedKeys: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LicenseStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.maxLimit = source["maxLimit"];
@@ -236,11 +236,11 @@ export namespace backend {
 	    asOrganization: string;
 	    rawData: Record<string, any>;
 	    updatedAt: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProxyIPHealthResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.proxyId = source["proxyId"];
@@ -264,11 +264,11 @@ export namespace backend {
 	    ok: boolean;
 	    latencyMs: number;
 	    error: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProxyTestResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.proxyId = source["proxyId"];
@@ -280,11 +280,11 @@ export namespace backend {
 	export class ProxyValidationResult {
 	    supported: boolean;
 	    errorMsg: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProxyValidationResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.supported = source["supported"];
@@ -298,11 +298,11 @@ export namespace backend {
 	    sizeMB: number;
 	    createdAt: string;
 	    filePath?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SnapshotInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.snapshotId = source["snapshotId"];
@@ -317,7 +317,7 @@ export namespace backend {
 }
 
 export namespace backup {
-	
+
 	export class ManifestEntry {
 	    id: string;
 	    category: string;
@@ -325,11 +325,11 @@ export namespace backup {
 	    required: boolean;
 	    archivePath: string;
 	    description?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ManifestEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -343,11 +343,11 @@ export namespace backup {
 	export class ManifestAppInfo {
 	    name: string;
 	    version: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ManifestAppInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -360,11 +360,11 @@ export namespace backup {
 	    createdAt: string;
 	    app: ManifestAppInfo;
 	    entries: ManifestEntry[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Manifest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
@@ -373,7 +373,7 @@ export namespace backup {
 	        this.app = this.convertValues(source["app"], ManifestAppInfo);
 	        this.entries = this.convertValues(source["entries"], ManifestEntry);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -392,8 +392,8 @@ export namespace backup {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class ScopeEntry {
 	    id: string;
 	    category: string;
@@ -403,11 +403,11 @@ export namespace backup {
 	    archivePath: string;
 	    exists: boolean;
 	    description?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ScopeEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -425,11 +425,11 @@ export namespace backup {
 	    manifestVersion: number;
 	    appRoot: string;
 	    entries: ScopeEntry[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Scope(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
@@ -437,7 +437,7 @@ export namespace backup {
 	        this.appRoot = source["appRoot"];
 	        this.entries = this.convertValues(source["entries"], ScopeEntry);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -460,16 +460,16 @@ export namespace backup {
 }
 
 export namespace browser {
-	
+
 	export class CoreExtendedInfo {
 	    coreId: string;
 	    chromeVersion: string;
 	    instanceCount: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CoreExtendedInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.coreId = source["coreId"];
@@ -482,11 +482,11 @@ export namespace browser {
 	    coreName: string;
 	    corePath: string;
 	    isDefault: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CoreInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.coreId = source["coreId"];
@@ -498,11 +498,11 @@ export namespace browser {
 	export class CoreValidateResult {
 	    valid: boolean;
 	    message: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CoreValidateResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.valid = source["valid"];
@@ -516,11 +516,11 @@ export namespace browser {
 	    sortOrder: number;
 	    createdAt: string;
 	    updatedAt: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Group(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.groupId = source["groupId"];
@@ -535,11 +535,11 @@ export namespace browser {
 	    groupName: string;
 	    parentId: string;
 	    sortOrder: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new GroupInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.groupName = source["groupName"];
@@ -555,11 +555,11 @@ export namespace browser {
 	    createdAt: string;
 	    updatedAt: string;
 	    instanceCount: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new GroupWithCount(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.groupId = source["groupId"];
@@ -598,11 +598,11 @@ export namespace browser {
 	    updatedAt: string;
 	    lastStartAt: string;
 	    lastStopAt: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Profile(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.profileId = source["profileId"];
@@ -644,11 +644,11 @@ export namespace browser {
 	    tags: string[];
 	    keywords: string[];
 	    groupId: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProfileInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.profileName = source["profileName"];
@@ -670,11 +670,11 @@ export namespace browser {
 	    defaultProxy: string;
 	    startReadyTimeoutMs: number;
 	    startStableWindowMs: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.userDataRoot = source["userDataRoot"];
@@ -690,11 +690,11 @@ export namespace browser {
 	    title: string;
 	    url: string;
 	    active: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Tab(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.tabId = source["tabId"];
@@ -707,15 +707,15 @@ export namespace browser {
 }
 
 export namespace config {
-	
+
 	export class BrowserBookmark {
 	    name: string;
 	    url: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrowserBookmark(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -727,11 +727,11 @@ export namespace config {
 	    coreName: string;
 	    corePath: string;
 	    isDefault: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrowserCore(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.coreId = source["coreId"];
@@ -757,11 +757,11 @@ export namespace config {
 	    lastTestOk: boolean;
 	    lastTestedAt: string;
 	    lastIPHealthJson?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrowserProxy(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.proxyId = source["proxyId"];
@@ -786,16 +786,16 @@ export namespace config {
 }
 
 export namespace launchcode {
-	
+
 	export class LaunchRequestParams {
 	    launchArgs: string[];
 	    startUrls: string[];
 	    skipDefaultStartUrls: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LaunchRequestParams(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.launchArgs = source["launchArgs"];
@@ -810,11 +810,11 @@ export namespace launchcode {
 	    profileName: string;
 	    managedMode: boolean;
 	    userDataDir: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ManagedProfileUpsertInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.profileId = source["profileId"];
@@ -828,11 +828,11 @@ export namespace launchcode {
 	export class ManagedProfileUpsertResult {
 	    ProfileID: string;
 	    Updated: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ManagedProfileUpsertResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.ProfileID = source["ProfileID"];
@@ -843,18 +843,18 @@ export namespace launchcode {
 }
 
 export namespace logger {
-	
+
 	export class MemoryLogEntry {
 	    time: string;
 	    level: string;
 	    component: string;
 	    message: string;
 	    fields?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MemoryLogEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.time = source["time"];
@@ -865,22 +865,22 @@ export namespace logger {
 	    }
 	}
 	export class MethodInterceptor {
-	
-	
+
+
 	    static createFrom(source: any = {}) {
 	        return new MethodInterceptor(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	
+
 	    }
 	}
 
 }
 
 export namespace workspace {
-	
+
 	export class OpenShopResult {
 	    shopId: string;
 	    profileId: string;
@@ -890,11 +890,11 @@ export namespace workspace {
 	    success: boolean;
 	    code: string;
 	    message: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new OpenShopResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.shopId = source["shopId"];
@@ -912,11 +912,11 @@ export namespace workspace {
 	    scope: string;
 	    localStorage: Record<string, string>;
 	    sessionStorage: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SessionStorageEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.origin = source["origin"];
@@ -935,11 +935,11 @@ export namespace workspace {
 	    secure: boolean;
 	    sameSite: string;
 	    url: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SessionCookie(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -961,11 +961,11 @@ export namespace workspace {
 	    userAgent: string;
 	    cookies: SessionCookie[];
 	    storages: SessionStorageEntry[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SessionBundle(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.platformCode = source["platformCode"];
@@ -976,7 +976,7 @@ export namespace workspace {
 	        this.cookies = this.convertValues(source["cookies"], SessionCookie);
 	        this.storages = this.convertValues(source["storages"], SessionStorageEntry);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -995,8 +995,8 @@ export namespace workspace {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class ShopInstanceProjection {
 	    shopId: string;
 	    shopName: string;
@@ -1009,11 +1009,11 @@ export namespace workspace {
 	    profileExists: boolean;
 	    reclaimPending: boolean;
 	    coreReady: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ShopInstanceProjection(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.shopId = source["shopId"];
@@ -1038,11 +1038,11 @@ export namespace workspace {
 	    activeRunCount: number;
 	    deviceId: string;
 	    deviceStatus: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.status = source["status"];
