@@ -2,22 +2,31 @@ import { HardDrive, ShieldCheck } from 'lucide-react'
 import { toast } from '../../../shared/components'
 import { EnvironmentStatusCard } from '../components/EnvironmentStatusCard'
 import { useRuntimeStore } from '../../../store/runtimeStore'
+import { useAppUpdateStore } from '../../../store/appUpdateStore'
 
 export function EnvironmentGatePage() {
   const status = useRuntimeStore((state) => state.status)
   const checking = useRuntimeStore((state) => state.checking)
   const repairing = useRuntimeStore((state) => state.repairing)
   const exporting = useRuntimeStore((state) => state.exporting)
+  const runtimeAppVersion = useRuntimeStore((state) => state.appVersion)
   const diagnosticsPath = useRuntimeStore((state) => state.diagnosticsPath)
   const diagnosticsError = useRuntimeStore((state) => state.diagnosticsError)
   const updateState = useRuntimeStore((state) => state.updateState)
   const updatePromptOpen = useRuntimeStore((state) => state.updatePromptOpen)
   const updateError = useRuntimeStore((state) => state.updateError)
+  const appUpdateState = useAppUpdateStore((state) => state.state)
+  const appUpdatePromptOpen = useAppUpdateStore((state) => state.promptOpen)
+  const appUpdateError = useAppUpdateStore((state) => state.error)
   const retryCheck = useRuntimeStore((state) => state.retryCheck)
   const repairNow = useRuntimeStore((state) => state.repairNow)
   const exportDiagnostics = useRuntimeStore((state) => state.exportDiagnostics)
 
-  const updateBlocking = updatePromptOpen && updateState?.kind === 'required'
+  const updateBlocking =
+    (updatePromptOpen && updateState?.kind === 'required') ||
+    (appUpdatePromptOpen && (appUpdateState.kind === 'required' || appUpdateState.kind === 'unsupported_install'))
+  const combinedUpdateError = updateError || appUpdateError || appUpdateState.errorMessage
+  const visibleAppVersion = (runtimeAppVersion || appUpdateState.localAppVersion || '').trim()
 
   const handleExport = async () => {
     try {
@@ -51,9 +60,16 @@ export function EnvironmentGatePage() {
 
       <div className="relative mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl flex-col justify-center gap-8">
         <div className="max-w-3xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
-            <ShieldCheck className="h-4 w-4" />
-            Environment Bootstrap Gate
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+              <ShieldCheck className="h-4 w-4" />
+              Environment Bootstrap Gate
+            </div>
+            {visibleAppVersion && (
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-950/90 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
+                客户端 v{visibleAppVersion}
+              </div>
+            )}
           </div>
           <h1 className="text-4xl font-semibold tracking-tight text-slate-900 md:text-5xl">
             先把桌面运行环境站稳，再放你进入工作台。
@@ -72,7 +88,7 @@ export function EnvironmentGatePage() {
             diagnosticsPath={diagnosticsPath}
             diagnosticsError={diagnosticsError}
             updateBlocking={updateBlocking}
-            updateError={updateError}
+            updateError={combinedUpdateError}
             onRetry={() => void handleRetry()}
             onRepair={() => void handleRepair()}
             onExport={() => void handleExport()}

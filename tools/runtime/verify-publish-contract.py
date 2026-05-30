@@ -65,6 +65,9 @@ def main() -> None:
     assert_contains(installer_text, 'File /r "${STAGINGDIR}\\apps\\*"', "publish/installer.nsi")
     assert_contains(installer_text, 'File /r "${STAGINGDIR}\\runtime\\*"', "publish/installer.nsi")
     assert_contains(installer_text, 'CreateDirectory "$INSTDIR\\data"', "publish/installer.nsi")
+    assert_contains(installer_text, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"', "publish/installer.nsi")
+    assert_contains(installer_text, "RequestExecutionLevel user", "publish/installer.nsi")
+    assert_contains(installer_text, 'InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"', "publish/installer.nsi")
 
     windows_publish_text = windows_publish_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_publish_text, 'Copy-RuntimePublishPayload -Target "windows-amd64"', "bat/publish.ps1")
@@ -72,6 +75,9 @@ def main() -> None:
     assert_contains(windows_publish_text, 'Copy-WorkspaceAgentPayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir', "bat/publish.ps1")
     assert_contains(windows_publish_text, 'Copy-BundledWorkspaceNodePayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir', "bat/publish.ps1")
     assert_contains(windows_publish_text, 'runtime/current.json 将在首次通过环境检查后写入用户状态目录', "bat/publish.ps1")
+    assert_contains(windows_publish_text, "New-AppUpdateZip -StagingDir $stagingDir", "bat/publish.ps1")
+    assert_contains(windows_publish_text, "New-AppUpdateManifest -ZipPath $appUpdateZip", "bat/publish.ps1")
+    assert_contains(windows_publish_text, "tools/app-update/verify-app-update-package.py", "bat/publish.ps1")
 
     mac_publish_text = mac_publish_path.read_text(encoding="utf-8")
     assert_contains(mac_publish_text, 'cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"', "publish/mac/publish-mac.sh")

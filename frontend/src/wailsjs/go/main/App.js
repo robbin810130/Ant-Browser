@@ -6,6 +6,10 @@ export function ApplyDesktopReleaseUpdate() {
   return window['go']['main']['App']['ApplyDesktopReleaseUpdate']();
 }
 
+export function ApplyDesktopAppUpdate() {
+  return window['go']['main']['App']['ApplyDesktopAppUpdate']();
+}
+
 export function BackupExportPackage() {
   return window['go']['main']['App']['BackupExportPackage']();
 }
@@ -226,12 +230,20 @@ export function CheckDesktopReleaseUpdate() {
   return window['go']['main']['App']['CheckDesktopReleaseUpdate']();
 }
 
+export function CheckDesktopAppUpdate() {
+  return window['go']['main']['App']['CheckDesktopAppUpdate']();
+}
+
 export function ClearAppLogs() {
   return window['go']['main']['App']['ClearAppLogs']();
 }
 
 export function ClearDesktopAuthSession() {
   return window['go']['main']['App']['ClearDesktopAuthSession']();
+}
+
+export function ClearDesktopAppUpdateFailure() {
+  return window['go']['main']['App']['ClearDesktopAppUpdateFailure']();
 }
 
 export function ClearProfileSession(arg1, arg2, arg3) {
@@ -248,6 +260,10 @@ export function DeleteGroup(arg1) {
 
 export function DesktopAuthStrongCleanup(arg1) {
   return window['go']['main']['App']['DesktopAuthStrongCleanup'](arg1);
+}
+
+export function DownloadDesktopAppUpdate() {
+  return window['go']['main']['App']['DownloadDesktopAppUpdate']();
 }
 
 export function ExportDesktopEnvironmentDiagnostics() {
@@ -292,6 +308,10 @@ export function GetDashboardStats() {
 
 export function GetDesktopEnvironmentStatus() {
   return window['go']['main']['App']['GetDesktopEnvironmentStatus']();
+}
+
+export function GetDesktopAppUpdateState() {
+  return window['go']['main']['App']['GetDesktopAppUpdateState']();
 }
 
 export function GetInterceptor() {

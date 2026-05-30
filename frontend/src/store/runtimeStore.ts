@@ -3,6 +3,7 @@ import {
   applyDesktopReleaseUpdate,
   checkDesktopReleaseUpdate,
   exportDesktopEnvironmentDiagnostics,
+  getAppConfig,
   getDesktopEnvironmentStatus,
   repairDesktopEnvironment,
 } from '../modules/runtime/api'
@@ -21,6 +22,8 @@ interface RuntimeStoreState {
   repairing: boolean
   updating: boolean
   exporting: boolean
+  appName: string
+  appVersion: string
   updateState: ReleaseUpdateState | null
   updatePromptOpen: boolean
   updateError: string
@@ -56,6 +59,16 @@ async function evaluateRuntime(set: (partial: Partial<RuntimeStoreState>) => voi
     updateError: '',
     diagnosticsError: '',
   })
+
+  try {
+    const appConfig = await getAppConfig()
+    set({
+      appName: appConfig.name,
+      appVersion: appConfig.version,
+    })
+  } catch {
+    // Version visibility is diagnostic only and must not block environment checks.
+  }
 
   const status = repair ? await repairDesktopEnvironment() : await getDesktopEnvironmentStatus()
   if (status.state !== 'pass') {
@@ -108,6 +121,8 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
   repairing: false,
   updating: false,
   exporting: false,
+  appName: '',
+  appVersion: '',
   updateState: null,
   updatePromptOpen: false,
   updateError: '',
