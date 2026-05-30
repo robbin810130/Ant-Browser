@@ -379,6 +379,33 @@ Notes:
 - `idle` after `succeeded` is expected after relaunch, because the new app rechecks the same manifest and finds no pending update.
 - This pass does not cover Developer ID signing, notarization, Gatekeeper quarantine, or public distribution hosting.
 
+### Internal macOS Deployment Readiness
+
+For the current internal-only rollout, the goal is to make a small number of trusted Macs install, update, roll back, and verify versions reliably. Formal distribution checks are not required for this rollout.
+
+Detailed internal deployment runbook:
+
+```text
+docs/release/macos-internal-deployment-runbook.md
+```
+
+Internal rollout checklist:
+
+1. Install to a user-writable location, preferably:
+
+```text
+~/Applications/Ant Browser.app
+```
+
+2. Keep `/Applications/Ant Browser.app` unsupported for automatic updates.
+3. Point `DESKTOP_APP_UPDATE_MANIFEST_URL` or runtime config at the internal manifest.
+4. Run one update from the internal manifest and payload.
+5. Confirm the UI client version after relaunch.
+6. Confirm `Contents/Info.plist` reports the expected version.
+7. Confirm the installed `Contents/MacOS/ant-chrome` hash matches the intended artifact.
+8. Confirm failed updates leave a readable `state.json` under the user state root.
+9. Keep cleanup commands for old build artifacts and `/private/tmp` smoke/regression sandboxes.
+
 ### Release Readiness Checks
 
 Before distributing a macOS release candidate:
