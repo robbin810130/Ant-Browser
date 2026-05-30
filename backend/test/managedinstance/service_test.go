@@ -1,6 +1,7 @@
 package managedinstance_test
 
 import (
+	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/managedinstance"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -121,6 +123,89 @@ func TestOpenManagedShopRequestCarriesWorkspaceBusinessContext(t *testing.T) {
 	}
 	if got["preferVisible"] != req.PreferVisible {
 		t.Fatalf("expected preferVisible %v, got %#v", req.PreferVisible, got["preferVisible"])
+	}
+}
+
+func TestOpenManagedShopAllowsDetachedStateRootFingerprintCoreOnDarwin(t *testing.T) {
+	if goruntime.GOOS != "darwin" {
+		t.Skip("detached macOS app bundle state-root core policy is darwin-specific")
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	appRoot := filepath.Join(home, "Applications", "Ant Browser.app", "Contents", "MacOS")
+	if err := os.MkdirAll(appRoot, 0o755); err != nil {
+		t.Fatalf("create app root: %v", err)
+	}
+
+	corePath := "chrome/fingerprint-macos"
+	coreExe := filepath.Join(apppath.StateRoot(appRoot), filepath.FromSlash(corePath), filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(coreExe), 0o755); err != nil {
+		t.Fatalf("create state-root core dir: %v", err)
+	}
+	if err := os.WriteFile(coreExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write state-root core executable: %v", err)
+	}
+
+	cfg := testBrowserConfig()
+	cfg.Browser.Cores = []config.BrowserCore{{
+		CoreId:    "fingerprint-macos",
+		CoreName:  "Fingerprint Chromium",
+		CorePath:  corePath,
+		IsDefault: true,
+	}}
+	mgr := browser.NewManager(cfg, appRoot)
+	mgr.Profiles["alibaba:b2b-2220886712247ef48d"] = &browser.Profile{
+		ProfileId: "alibaba:b2b-2220886712247ef48d",
+		CoreId:    "fingerprint-macos",
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new managed instance service: %v", err)
+	}
+
+	var started bool
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			started = true
+			return &browser.Profile{
+				ProfileId:  profileID,
+				DebugReady: true,
+				DebugPort:  9222,
+				Pid:        1234,
+			}, nil
+		},
+		ImportCookies: func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets: func(profileID string) ([]workspace.OpenRuntimeTarget, error) {
+			return []workspace.OpenRuntimeTarget{{
+				TargetID:   "target-1",
+				CurrentURL: "https://work.1688.com/",
+				PageTitle:  "1688 商家工作台",
+			}}, nil
+		},
+		ActivateTarget:     func(profileID string, targetID string) error { return nil },
+		NavigateTarget:     func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:       func(profileID string, targetURL string) (string, error) { return "target-1", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error { return nil },
+		CloseTarget:        func(profileID string, targetID string) error { return nil },
+	})
+
+	result, err := service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:       "b2b-2220886712247ef48d",
+		ProfileID:    "alibaba:b2b-2220886712247ef48d",
+		TargetURL:    "https://work.1688.com/",
+		ManagedMode:  true,
+		SessionReady: true,
+	})
+	if err != nil {
+		t.Fatalf("open managed shop: %v", err)
+	}
+	if !started {
+		t.Fatal("expected state-root fingerprint core to pass policy and start managed profile")
+	}
+	if result == nil || !result.Success {
+		t.Fatalf("expected successful open result, got %#v", result)
 	}
 }
 

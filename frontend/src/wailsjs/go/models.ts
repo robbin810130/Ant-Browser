@@ -38,7 +38,6 @@ export namespace appupdate {
 	}
 
 }
-
 export namespace authsession {
 
 	export class Session {
@@ -1466,6 +1465,9 @@ export namespace workspace {
 	    profileExists: boolean;
 	    reclaimPending: boolean;
 	    coreReady: boolean;
+	    lastOpenFailureCode?: string;
+	    lastOpenFailureMessage?: string;
+	    lastOpenFailedAt?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ShopInstanceProjection(source);
@@ -1484,6 +1486,9 @@ export namespace workspace {
 	        this.profileExists = source["profileExists"];
 	        this.reclaimPending = source["reclaimPending"];
 	        this.coreReady = source["coreReady"];
+	        this.lastOpenFailureCode = source["lastOpenFailureCode"];
+	        this.lastOpenFailureMessage = source["lastOpenFailureMessage"];
+	        this.lastOpenFailedAt = source["lastOpenFailedAt"];
 	    }
 	}
 	export class ShopProfileRecord {

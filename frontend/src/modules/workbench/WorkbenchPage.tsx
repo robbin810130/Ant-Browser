@@ -5,23 +5,35 @@ import { Alert, Button, Card, toast } from '../../shared/components'
 import { useAuthStore } from '../../store/authStore'
 import { buildRunEvidenceIndex, fetchWorkspaceRuns, type RunRecord, type ShopRunEvidence } from '../runEvidence'
 import {
+  closeWorkspaceShop,
+  fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
   openWorkspaceShop,
   startWorkspaceSharedLoginBind,
   startWorkspaceSharedLoginValidate,
 } from '../workspace/api'
+import { SharedLoginSessionModal } from '../workspace/components/SharedLoginSessionModal'
+import {
+  isTerminalSharedLoginStatus,
+  resolveSharedLoginActionError,
+  sharedLoginActionSuccessMessage,
+  type SharedLoginAction,
+  type SharedLoginDialogState,
+} from '../workspace/sharedLoginSession'
 import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
 import { recoveryActionFor } from './recovery'
+import { queueForWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
-type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'bind' | 'validate'> }
+type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> }
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
+  close: '',
   bind: '',
   validate: '',
   retry: '重试动作会在后续批量执行任务接入，当前请先查看运行证据。',
@@ -42,17 +54,44 @@ function emptyEvidence(): ShopRunEvidence {
 }
 
 function queueFor(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): WorkbenchQueueKey {
-  if (shop.reclaimPending) return 'reclaim'
-  if (evidence.activeRun || shop.instanceRunning) return 'running'
-  if (evidence.latestFailure?.failureCode || evidence.latestFailure?.failureMessage) return 'failed'
-  if (shop.sharedLoginStatus === 'awaiting_verification') return 'manual'
-  if (shop.sharedLoginStatus !== 'ready') return 'credential'
-  return 'ready'
+  const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
+  return queueForWorkbenchState({
+    reclaimPending: shop.reclaimPending,
+    instanceRunning: shop.instanceRunning,
+    activeRun: Boolean(evidence.activeRun),
+    sharedLoginStatus: shop.sharedLoginStatus,
+    failureCode,
+  })
+}
+
+function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
+  if (evidence.latestFailure || !shop.lastOpenFailureCode) return evidence
+  return {
+    ...evidence,
+    latestFailure: {
+      runId: `desktop-open:${shop.shopId}:${shop.lastOpenFailedAt || shop.lastOpenFailureCode}`,
+      taskId: '',
+      shopId: shop.shopId,
+      taskType: 'open',
+      status: 'failed',
+      statusLabel: '打开失败',
+      startedAt: shop.lastOpenFailedAt,
+      finishedAt: shop.lastOpenFailedAt,
+      profileId: shop.profileId,
+      runtime: null,
+      bindSessionId: '',
+      manualActionRequired: false,
+      challengeType: '',
+      failureCode: shop.lastOpenFailureCode,
+      failureMessage: shop.lastOpenFailureMessage,
+    },
+  }
 }
 
 function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorizedShop) {
   const name = shop.shopName || shop.shopId
   if (action === 'open') return `已打开 ${name}`
+  if (action === 'close') return `已关闭 ${name}`
   if (action === 'bind') return `${name} 更新凭据已发起`
   if (action === 'validate') return `${name} 本机验证已发起`
   return '动作已发起'
@@ -60,6 +99,7 @@ function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorize
 
 function actionFallbackError(action: WorkbenchActionKey) {
   if (action === 'open') return '打开店铺后台失败'
+  if (action === 'close') return '关闭店铺后台失败'
   if (action === 'bind') return '发起更新凭据失败'
   if (action === 'validate') return '发起本机验证失败'
   return '动作执行失败'
@@ -75,6 +115,7 @@ export function WorkbenchPage() {
   const [activeQueue, setActiveQueue] = useState<ActiveQueue>('all')
   const [selectedRow, setSelectedRow] = useState<WorkbenchRow | null>(null)
   const [runningAction, setRunningAction] = useState<RunningWorkbenchAction | null>(null)
+  const [sharedLoginDialog, setSharedLoginDialog] = useState<SharedLoginDialogState | null>(null)
   const runningActionRef = useRef<RunningWorkbenchAction | null>(null)
 
   async function load(silent = false) {
@@ -109,14 +150,15 @@ export function WorkbenchPage() {
 
     return shops
       .map((shop) => {
-        const evidence = index.byShop[shop.shopId] || emptyEvidence()
-        const failureCode = evidence.latestFailure?.failureCode || ''
+        const evidence = evidenceWithShopOpenFailure(shop, index.byShop[shop.shopId] || emptyEvidence())
+        const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
         const recovery = recoveryActionFor({
           reclaimPending: shop.reclaimPending,
           profileExists: shop.profileExists,
           coreReady: shop.coreReady,
           sharedLoginStatus: shop.sharedLoginStatus,
           failureCode,
+          instanceRunning: shop.instanceRunning,
         })
 
         return {
@@ -164,7 +206,7 @@ export function WorkbenchPage() {
       return
     }
 
-    if (action !== 'open' && action !== 'bind' && action !== 'validate') {
+    if (action !== 'open' && action !== 'close' && action !== 'bind' && action !== 'validate') {
       toast.info(unsupportedActionMessage[action])
       return
     }
@@ -180,20 +222,31 @@ export function WorkbenchPage() {
     try {
       if (action === 'open') {
         const result = await openWorkspaceShop(row.shop.shopId)
+        await load(true)
         if (!result.success) {
           toast.error(result.message || '打开店铺后台失败')
           return
         }
+        toast.success(actionSuccessLabel(action, row.shop))
+      } else if (action === 'close') {
+        const closed = await closeWorkspaceShop(row.shop.profileId)
+        await load(true)
+        if (!closed) {
+          toast.error('当前店铺后台未在运行')
+          return
+        }
+        toast.success(actionSuccessLabel(action, row.shop))
       } else if (action === 'bind') {
-        await startWorkspaceSharedLoginBind(accessToken.trim(), row.shop.shopId)
+        await startSharedLoginAction('bind', row.shop)
       } else {
-        await startWorkspaceSharedLoginValidate(accessToken.trim(), row.shop.shopId)
+        await startSharedLoginAction('validate', row.shop)
       }
-      toast.success(actionSuccessLabel(action, row.shop))
-      await load(true)
     } catch (error: any) {
       console.error('run workbench recommended action failed', error)
-      toast.error(String(error?.message || actionFallbackError(action)))
+      if (action === 'bind' || action === 'validate') {
+        setSharedLoginDialog(null)
+      }
+      toast.error(action === 'bind' || action === 'validate' ? resolveSharedLoginActionError(action, error) : String(error?.message || actionFallbackError(action)))
     } finally {
       if (
         runningActionRef.current?.shopId === nextRunningAction.shopId
@@ -206,6 +259,116 @@ export function WorkbenchPage() {
       }
     }
   }
+
+  async function handleSharedLoginTerminal(
+    action: SharedLoginAction,
+    shopName: string,
+    status: string,
+    message: string,
+  ) {
+    await load(true)
+    if (status === 'completed' || status === 'succeeded') {
+      toast.success(sharedLoginActionSuccessMessage(action, shopName))
+      return
+    }
+    if (status === 'expired') {
+      toast.error('授权处理已过期，请重新发起')
+      return
+    }
+    toast.error(message || '授权处理失败，请重试')
+  }
+
+  async function startSharedLoginAction(action: SharedLoginAction, shop: WorkspaceAuthorizedShop) {
+    const token = accessToken.trim()
+    const shopName = shop.shopName || shop.shopId
+    setSharedLoginDialog({
+      action,
+      shopId: shop.shopId,
+      shopName,
+      session: null,
+      starting: true,
+      terminalHandled: false,
+      errorMessage: '',
+    })
+
+    const result = action === 'bind'
+      ? await startWorkspaceSharedLoginBind(token, shop.shopId)
+      : await startWorkspaceSharedLoginValidate(token, shop.shopId)
+    const nextShopName = result.detail.shopName || shopName
+    const terminal = isTerminalSharedLoginStatus(result.bindSession.status)
+    setSharedLoginDialog({
+      action,
+      shopId: shop.shopId,
+      shopName: nextShopName,
+      session: result.bindSession,
+      starting: false,
+      terminalHandled: terminal,
+      errorMessage: '',
+    })
+    if (terminal) {
+      await handleSharedLoginTerminal(action, nextShopName, result.bindSession.status, result.bindSession.message)
+    }
+  }
+
+  useEffect(() => {
+    if (!sharedLoginDialog || sharedLoginDialog.starting || !sharedLoginDialog.session) {
+      return
+    }
+
+    const token = accessToken.trim()
+    const bindSessionId = sharedLoginDialog.session.bindSessionId.trim()
+    if (!token || !bindSessionId || isTerminalSharedLoginStatus(sharedLoginDialog.session.status)) {
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const nextSession = await fetchWorkspaceSharedLoginBindSession(token, bindSessionId)
+        if (cancelled) return
+
+        const terminal = isTerminalSharedLoginStatus(nextSession.status)
+        setSharedLoginDialog((current) => {
+          if (!current || current.session?.bindSessionId !== bindSessionId) return current
+          return {
+            ...current,
+            session: nextSession,
+            terminalHandled: current.terminalHandled || terminal,
+            errorMessage: '',
+          }
+        })
+
+        if (terminal && !sharedLoginDialog.terminalHandled) {
+          await handleSharedLoginTerminal(sharedLoginDialog.action, sharedLoginDialog.shopName, nextSession.status, nextSession.message)
+        }
+      } catch (error: any) {
+        if (cancelled) return
+        console.error('poll shared login session failed', error)
+        setSharedLoginDialog((current) => {
+          if (!current || current.session?.bindSessionId !== bindSessionId) return current
+          return {
+            ...current,
+            errorMessage: String(error?.message || '轮询共享登录状态失败，请稍后重试'),
+          }
+        })
+      }
+    }, 1500)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    accessToken,
+    sharedLoginDialog,
+    sharedLoginDialog?.action,
+    sharedLoginDialog?.shopName,
+    sharedLoginDialog?.starting,
+    sharedLoginDialog?.terminalHandled,
+    sharedLoginDialog?.session?.bindSessionId,
+    sharedLoginDialog?.session?.status,
+    sharedLoginDialog?.session?.updatedAt,
+  ])
 
   return (
     <div className="grid h-full grid-cols-1 gap-5 overflow-auto p-5 animate-fade-in lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -258,6 +421,10 @@ export function WorkbenchPage() {
         runningAction={runningAction}
         onClose={() => setSelectedRow(null)}
         onAction={(row) => void runRecommendedAction(row)}
+      />
+      <SharedLoginSessionModal
+        dialog={sharedLoginDialog}
+        onClose={() => setSharedLoginDialog(null)}
       />
     </div>
   )

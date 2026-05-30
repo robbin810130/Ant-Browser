@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ListChecks, RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
+import { Alert, Badge, Button, Card, StatCard, Table, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import { deriveOperationTaskCounts, fetchOperationTasks, operationTaskStatusLabel } from '../api'
 import type { OperationTask, OperationTaskStatus } from '../types'
@@ -93,6 +93,14 @@ export function OperationTaskCenterPage() {
           刷新
         </Button>
       </div>
+
+      {shopId ? (
+        <Alert
+          type="info"
+          title="店铺级运营任务入口已接线"
+          message="本轮只保留店铺资料和工作台到运营任务的承载位置，不新增任务 schema、执行器或批量任务流。"
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard title="总任务" value={loading ? '-' : counts.total} icon={<ListChecks className="h-5 w-5" />} />

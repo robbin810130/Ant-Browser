@@ -60,6 +60,9 @@ export const devAuthorizedShops: WorkspaceAuthorizedShop[] = [
     profileExists: true,
     reclaimPending: false,
     coreReady: true,
+    lastOpenFailureCode: '',
+    lastOpenFailureMessage: '',
+    lastOpenFailedAt: '',
   },
   {
     shopId: 'shop-manual',
@@ -73,6 +76,9 @@ export const devAuthorizedShops: WorkspaceAuthorizedShop[] = [
     profileExists: true,
     reclaimPending: false,
     coreReady: true,
+    lastOpenFailureCode: '',
+    lastOpenFailureMessage: '',
+    lastOpenFailedAt: '',
   },
   {
     shopId: 'shop-credential',
@@ -86,6 +92,9 @@ export const devAuthorizedShops: WorkspaceAuthorizedShop[] = [
     profileExists: true,
     reclaimPending: false,
     coreReady: true,
+    lastOpenFailureCode: '',
+    lastOpenFailureMessage: '',
+    lastOpenFailedAt: '',
   },
 ]
 
