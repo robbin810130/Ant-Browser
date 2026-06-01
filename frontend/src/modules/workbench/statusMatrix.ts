@@ -166,11 +166,11 @@ export function recoveryActionForState(input: {
   if (input.reclaimPending) return actions.none
   if (input.instanceRunning) return actions.close
   if (!input.profileExists) return actions.refresh
-  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.core_management
   if (credentialFailureCodes.has(input.failureCode || '')) return actions.bind
   if (targetMismatchFailureCodes.has(input.failureCode || '')) return actions.diagnostics
   const presentation = authorizationStatusPresentation(input.sharedLoginStatus)
   if (presentation.recommendedAction !== 'open') return actions[presentation.recommendedAction]
+  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.core_management
   if (input.failureCode) return actions.retry
   return actions.open
 }

@@ -137,6 +137,19 @@ describe('workbench authorization status matrix', () => {
     })
   })
 
+  it('keeps credential work ahead of core setup until shared login is ready', () => {
+    expect(deriveWorkbenchState({
+      sharedLoginStatus: 'not_configured',
+      profileExists: true,
+      coreReady: false,
+    })).toMatchObject({
+      queue: 'credential',
+      recommendedAction: 'bind',
+      primaryLabel: '去授权',
+      canExecute: true,
+    })
+  })
+
   it('routes core failures to core management', () => {
     expect(deriveWorkbenchState({
       sharedLoginStatus: 'ready',
