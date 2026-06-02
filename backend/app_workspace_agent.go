@@ -21,7 +21,7 @@ import (
 const (
 	defaultWorkspaceAgentListenHost   = "127.0.0.1"
 	defaultWorkspaceAgentListenPort   = "47831"
-	defaultWorkspaceAntRuntimeBaseURL = "http://127.0.0.1:19877"
+	defaultWorkspaceAntRuntimeBaseURL = "http://127.0.0.1:19876"
 	defaultWorkspaceServerOrigin      = "http://127.0.0.1:4174"
 	workspaceBootstrapTimeout         = 8 * time.Second
 )
