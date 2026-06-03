@@ -92,7 +92,7 @@ func cdpCall(debugPort int, method string, params map[string]any) (map[string]an
 		return nil, fmt.Errorf("WebSocket 连接失败: %w", err)
 	}
 	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	// 3. 发送 CDP 命令
 	msg := cdpMessage{Id: 1, Method: method, Params: params}
@@ -138,7 +138,7 @@ func cdpBrowserCallWithResult(debugPort int, method string, params map[string]an
 		return nil, fmt.Errorf("浏览器级 WebSocket 连接失败: %w", err)
 	}
 	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	msg := cdpMessage{Id: 1, Method: method, Params: params}
 	if err := conn.WriteJSON(msg); err != nil {
@@ -379,7 +379,7 @@ func cdpCallTarget(debugPort int, targetID string, method string, params map[str
 			return nil, fmt.Errorf("WebSocket 连接失败: %w", err)
 		}
 		defer conn.Close()
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 		msg := cdpMessage{Id: 1, Method: method, Params: params}
 		if err := conn.WriteJSON(msg); err != nil {
@@ -427,6 +427,186 @@ func (a *App) importWorkspaceSessionBundle(profileID string, bundle workspace.Se
 		}
 	}
 	return nil
+}
+
+func (a *App) CaptureManagedSessionBundle(profileID string, platformCode string, captureStartedAt string) (workspace.SessionBundle, error) {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return workspace.SessionBundle{}, fmt.Errorf("profile id is required")
+	}
+	if strings.TrimSpace(platformCode) == "" {
+		platformCode = "alibaba"
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	bundle := workspace.SessionBundle{
+		PlatformCode:     strings.TrimSpace(platformCode),
+		CapturedAt:       now,
+		CaptureStartedAt: strings.TrimSpace(captureStartedAt),
+	}
+	if bundle.CaptureStartedAt == "" {
+		bundle.CaptureStartedAt = now
+	}
+
+	snapshot, targetID, err := a.selectManagedSessionCaptureTarget(profileID)
+	if err != nil {
+		return workspace.SessionBundle{}, err
+	}
+	bundle.LastObservedURL = snapshot.CurrentURL
+
+	cookies, err := a.BrowserGetCookies(profileID)
+	if err != nil {
+		return workspace.SessionBundle{}, err
+	}
+	for _, cookie := range cookies {
+		if !isAlibabaCookieDomain(cookie.Domain) {
+			continue
+		}
+		bundle.Cookies = append(bundle.Cookies, workspace.SessionCookie{
+			Name:     cookie.Name,
+			Value:    cookie.Value,
+			Domain:   cookie.Domain,
+			Path:     defaultString(cookie.Path, "/"),
+			Expires:  cookie.Expires,
+			HttpOnly: cookie.HttpOnly,
+			Secure:   cookie.Secure,
+			SameSite: cookie.SameSite,
+		})
+	}
+
+	debugPort, err := a.getDebugPort(profileID)
+	if err != nil {
+		return workspace.SessionBundle{}, err
+	}
+	userAgent, err := cdpEvaluateStringTarget(debugPort, targetID, "window.navigator.userAgent")
+	if err == nil {
+		bundle.UserAgent = userAgent
+	}
+	storage, err := cdpEvaluateJSONTarget(debugPort, targetID, `(() => ({
+  origin: window.location.origin,
+  localStorage: Object.fromEntries(Object.entries(window.localStorage)),
+  sessionStorage: Object.fromEntries(Object.entries(window.sessionStorage))
+}))()`)
+	if err == nil {
+		origin, _ := storage["origin"].(string)
+		bundle.Storages = append(bundle.Storages, workspace.SessionStorageEntry{
+			Origin:         strings.TrimSpace(origin),
+			LocalStorage:   stringifyMap(storage["localStorage"]),
+			SessionStorage: stringifyMap(storage["sessionStorage"]),
+		})
+	}
+
+	return bundle, nil
+}
+
+func (a *App) selectManagedSessionCaptureTarget(profileID string) (workspace.OpenRuntimeSnapshot, string, error) {
+	targets, err := a.browserRuntimeTargets(profileID)
+	if err != nil {
+		return workspace.OpenRuntimeSnapshot{}, "", err
+	}
+	var best workspace.OpenRuntimeTarget
+	bestScore := -1
+	for _, target := range targets {
+		score := scoreManagedSessionCaptureTarget(target.CurrentURL)
+		if score > bestScore {
+			best = target
+			bestScore = score
+		}
+	}
+	if strings.TrimSpace(best.TargetID) == "" || bestScore <= 0 {
+		return workspace.OpenRuntimeSnapshot{}, "", fmt.Errorf("未找到可采集凭据的 1688 页面")
+	}
+	return workspace.OpenRuntimeSnapshot{
+		CurrentURL: strings.TrimSpace(best.CurrentURL),
+		PageTitle:  strings.TrimSpace(best.PageTitle),
+	}, strings.TrimSpace(best.TargetID), nil
+}
+
+func scoreManagedSessionCaptureTarget(rawURL string) int {
+	url := strings.ToLower(strings.TrimSpace(rawURL))
+	if url == "" || url == "about:blank" || strings.HasPrefix(url, "chrome://") {
+		return 0
+	}
+	if isAlibabaSuccessURL(url) {
+		return 100
+	}
+	if (strings.Contains(url, "1688.com") || strings.Contains(url, "alibaba.com")) && !isAlibabaLoginURL(url) {
+		return 80
+	}
+	if isAlibabaLoginURL(url) {
+		return 40
+	}
+	return 10
+}
+
+func isAlibabaSuccessURL(url string) bool {
+	url = strings.ToLower(strings.TrimSpace(url))
+	return (strings.Contains(url, "work.1688.com") ||
+		strings.Contains(url, "trade.1688.com") ||
+		strings.Contains(url, "air.1688.com") ||
+		strings.Contains(url, "seller.1688.com")) &&
+		!isAlibabaLoginURL(url)
+}
+
+func isAlibabaLoginURL(url string) bool {
+	url = strings.ToLower(strings.TrimSpace(url))
+	return strings.Contains(url, "login.1688.com") ||
+		strings.Contains(url, "login.taobao.com") ||
+		strings.Contains(url, "member/signin") ||
+		strings.Contains(url, "passport") ||
+		strings.Contains(url, "signin")
+}
+
+func isAlibabaCookieDomain(domain string) bool {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	return strings.HasSuffix(domain, "1688.com") || strings.HasSuffix(domain, "alibaba.com")
+}
+
+func cdpEvaluateStringTarget(debugPort int, targetID string, expression string) (string, error) {
+	result, err := cdpCallTarget(debugPort, targetID, "Runtime.evaluate", map[string]any{
+		"expression":    expression,
+		"returnByValue": true,
+	})
+	if err != nil {
+		return "", err
+	}
+	valueNode, ok := result["result"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("CDP Runtime.evaluate 返回结构无效")
+	}
+	value, _ := valueNode["value"].(string)
+	return strings.TrimSpace(value), nil
+}
+
+func cdpEvaluateJSONTarget(debugPort int, targetID string, expression string) (map[string]any, error) {
+	result, err := cdpCallTarget(debugPort, targetID, "Runtime.evaluate", map[string]any{
+		"expression":    expression,
+		"returnByValue": true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	valueNode, ok := result["result"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("CDP Runtime.evaluate 返回结构无效")
+	}
+	value, ok := valueNode["value"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("CDP Runtime.evaluate 未返回对象")
+	}
+	return value, nil
+}
+
+func stringifyMap(value any) map[string]string {
+	raw, ok := value.(map[string]any)
+	if !ok || len(raw) == 0 {
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(raw))
+	for key, item := range raw {
+		result[key] = fmt.Sprint(item)
+	}
+	return result
 }
 
 func defaultString(value string, fallback string) string {

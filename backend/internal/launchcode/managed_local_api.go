@@ -26,6 +26,10 @@ type managedRuntimeOperator interface {
 	InjectManagedSessionBundle(profileID string, bundle workspace.SessionBundle) error
 }
 
+type managedSessionBundleCapturer interface {
+	CaptureManagedSessionBundle(profileID string, platformCode string, captureStartedAt string) (workspace.SessionBundle, error)
+}
+
 type ManagedProfileUpsertResult struct {
 	ProfileID string
 	Updated   bool
@@ -53,6 +57,11 @@ type localClearSessionRequest struct {
 
 type localInjectSessionRequest struct {
 	SessionBundle workspace.SessionBundle `json:"sessionBundle"`
+}
+
+type localSessionBundleRequest struct {
+	PlatformCode     string `json:"platformCode"`
+	CaptureStartedAt string `json:"captureStartedAt"`
 }
 
 func (s *LaunchServer) handleLocalHealth(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +170,8 @@ func (s *LaunchServer) handleLocalProfileByID(w http.ResponseWriter, r *http.Req
 		s.handleLocalProfileClearSession(w, r, profileID)
 	case "inject-session-bundle":
 		s.handleLocalProfileInjectSessionBundle(w, r, profileID)
+	case "session-bundle":
+		s.handleLocalProfileSessionBundle(w, r, profileID)
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{
 			"ok":      false,
@@ -379,6 +390,49 @@ func (s *LaunchServer) handleLocalProfileInjectSessionBundle(w http.ResponseWrit
 	})
 }
 
+func (s *LaunchServer) handleLocalProfileSessionBundle(w http.ResponseWriter, r *http.Request, profileID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok":      false,
+			"message": "method not allowed",
+		})
+		return
+	}
+
+	controller, ok := s.starter.(managedSessionBundleCapturer)
+	if !ok {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok":      false,
+			"message": "managed mode is unavailable",
+		})
+		return
+	}
+
+	payload, err := decodeLocalSessionBundleRequest(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok":      false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	bundle, err := controller.CaptureManagedSessionBundle(profileID, payload.PlatformCode, payload.CaptureStartedAt)
+	if err != nil {
+		writeJSON(w, mapLaunchErrorStatus(err), map[string]interface{}{
+			"ok":      false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":            true,
+		"profileId":     profileID,
+		"sessionBundle": bundle,
+	})
+}
+
 func decodeLocalUpsertRequest(r *http.Request) (*localUpsertRequest, error) {
 	var req localUpsertRequest
 	if err := decodeLocalRequestBody(r, &req); err != nil {
@@ -433,6 +487,16 @@ func decodeLocalInjectSessionRequest(r *http.Request) (*localInjectSessionReques
 	if err := decodeLocalRequestBody(r, &req); err != nil {
 		return nil, err
 	}
+	return &req, nil
+}
+
+func decodeLocalSessionBundleRequest(r *http.Request) (*localSessionBundleRequest, error) {
+	var req localSessionBundleRequest
+	if err := decodeLocalRequestBody(r, &req); err != nil {
+		return nil, err
+	}
+	req.PlatformCode = strings.TrimSpace(req.PlatformCode)
+	req.CaptureStartedAt = strings.TrimSpace(req.CaptureStartedAt)
 	return &req, nil
 }
 
