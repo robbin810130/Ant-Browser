@@ -24,6 +24,7 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
+import { evidenceForWorkbenchRow } from './rowState'
 import { deriveWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
@@ -49,30 +50,6 @@ function emptyEvidence(): ShopRunEvidence {
     latestValidation: null,
     latestFailure: null,
     activeRun: null,
-  }
-}
-
-function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
-  if (evidence.latestFailure || !shop.lastOpenFailureCode) return evidence
-  return {
-    ...evidence,
-    latestFailure: {
-      runId: `desktop-open:${shop.shopId}:${shop.lastOpenFailedAt || shop.lastOpenFailureCode}`,
-      taskId: '',
-      shopId: shop.shopId,
-      taskType: 'open',
-      status: 'failed',
-      statusLabel: '打开失败',
-      startedAt: shop.lastOpenFailedAt,
-      finishedAt: shop.lastOpenFailedAt,
-      profileId: shop.profileId,
-      runtime: null,
-      bindSessionId: '',
-      manualActionRequired: false,
-      challengeType: '',
-      failureCode: shop.lastOpenFailureCode,
-      failureMessage: shop.lastOpenFailureMessage,
-    },
   }
 }
 
@@ -138,8 +115,8 @@ export function WorkbenchPage() {
 
     return shops
       .map((shop) => {
-        const evidence = evidenceWithShopOpenFailure(shop, index.byShop[shop.shopId] || emptyEvidence())
-        const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
+        const evidence = evidenceForWorkbenchRow(shop, index.byShop[shop.shopId] || emptyEvidence())
+        const failureCode = evidence.latestFailure?.failureCode || ''
         const failureMessage = evidence.latestFailure?.failureMessage || ''
         const workbenchState = deriveWorkbenchState({
           reclaimPending: shop.reclaimPending,
