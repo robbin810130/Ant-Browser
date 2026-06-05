@@ -61,3 +61,55 @@ func TestBrowserCoreScanRegistersDetectedCoreIntoSQLite(t *testing.T) {
 		t.Fatalf("期望 DAO 内核路径为 chrome/fingerprint-macos，实际=%s", listed[0].CorePath)
 	}
 }
+
+func TestEnsureDefaultCoresPromotesBundledCoreOverInvalidDefault(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	coreDir := filepath.Join(root, "chrome", "fingerprint")
+	coreExecutable := filepath.Join(coreDir, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(coreExecutable), 0755); err != nil {
+		t.Fatalf("创建内核目录失败: %v", err)
+	}
+	if err := os.WriteFile(coreExecutable, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("写入内核可执行文件失败: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Browser.Cores = []browser.Core{{
+		CoreId:    "broken-default",
+		CoreName:  "Broken",
+		CorePath:  "missing-core",
+		IsDefault: true,
+	}}
+
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+
+	app.ensureDefaultCores()
+
+	var fingerprintCore browser.Core
+	for _, core := range app.config.Browser.Cores {
+		if core.CorePath == filepath.Join("chrome", "fingerprint") {
+			fingerprintCore = core
+		}
+	}
+	if fingerprintCore.CoreId == "" {
+		t.Fatalf("期望注册随包指纹内核: %+v", app.config.Browser.Cores)
+	}
+	if !fingerprintCore.IsDefault {
+		t.Fatalf("期望随包指纹内核成为默认内核: %+v", app.config.Browser.Cores)
+	}
+}
+
+func TestSystemChromeExecutableDetectionForWindows(t *testing.T) {
+	t.Parallel()
+
+	if !isLikelySystemChromeExecutablePathForOS(`C:\Program Files\Google\Chrome\Application\chrome.exe`, "windows") {
+		t.Fatal("期望识别 Windows 系统 Chrome")
+	}
+	if isLikelySystemChromeExecutablePathForOS(`C:\Users\me\AppData\Local\Ant Browser\chrome\fingerprint\chrome.exe`, "windows") {
+		t.Fatal("随包指纹内核不应被识别为系统 Chrome")
+	}
+}

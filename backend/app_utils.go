@@ -69,6 +69,7 @@ func (a *App) ensureDefaultCores() {
 	if len(a.config.Browser.Cores) == 0 {
 		// 配置为空：直接用扫描结果，或兜底写一个占位
 		if len(detected) > 0 {
+			detected[0].IsDefault = true
 			a.config.Browser.Cores = detected
 		} else {
 			a.config.Browser.Cores = []browser.Core{}
@@ -97,10 +98,105 @@ func (a *App) ensureDefaultCores() {
 			changed = true
 		}
 	}
+	if a.promoteDetectedCoreForManagedProfiles(detected) {
+		changed = true
+	}
 	if changed {
 		if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
 			log.Error("新内核注册保存失败", logger.F("error", err))
 		}
+	}
+}
+
+func (a *App) promoteDetectedCoreForManagedProfiles(detected []browser.Core) bool {
+	preferred, ok := preferredDetectedCore(detected)
+	if !ok {
+		return false
+	}
+
+	defaultIndex := -1
+	preferredIndex := -1
+	for index, core := range a.config.Browser.Cores {
+		if core.IsDefault && defaultIndex < 0 {
+			defaultIndex = index
+		}
+		if sameCorePath(core.CorePath, preferred.CorePath) {
+			preferredIndex = index
+		}
+	}
+	if preferredIndex < 0 {
+		return false
+	}
+	if defaultIndex == preferredIndex {
+		return false
+	}
+
+	shouldPromote := defaultIndex < 0
+	if defaultIndex >= 0 {
+		defaultCore := a.config.Browser.Cores[defaultIndex]
+		exePath, ok := a.configuredCoreExecutable(defaultCore)
+		shouldPromote = !ok || isLikelySystemChromeExecutablePathForOS(exePath, goruntime.GOOS)
+	}
+	if !shouldPromote {
+		return false
+	}
+
+	for index := range a.config.Browser.Cores {
+		a.config.Browser.Cores[index].IsDefault = index == preferredIndex
+	}
+	logger.New("Browser").Info("已将托管店铺默认内核切换为随包指纹内核",
+		logger.F("core_id", a.config.Browser.Cores[preferredIndex].CoreId),
+		logger.F("path", a.config.Browser.Cores[preferredIndex].CorePath),
+	)
+	return true
+}
+
+func preferredDetectedCore(cores []browser.Core) (browser.Core, bool) {
+	if len(cores) == 0 {
+		return browser.Core{}, false
+	}
+	for _, core := range cores {
+		if strings.Contains(strings.ToLower(filepath.ToSlash(core.CorePath)), "fingerprint") {
+			return core, true
+		}
+	}
+	return cores[0], true
+}
+
+func sameCorePath(aPath string, bPath string) bool {
+	return strings.EqualFold(filepath.ToSlash(strings.TrimSpace(aPath)), filepath.ToSlash(strings.TrimSpace(bPath)))
+}
+
+func (a *App) configuredCoreExecutable(core browser.Core) (string, bool) {
+	corePath := strings.TrimSpace(core.CorePath)
+	if corePath == "" {
+		return "", false
+	}
+	exePath, _, ok := browser.FindCoreExecutable(a.resolveAppPath(corePath))
+	return exePath, ok
+}
+
+func isLikelySystemChromeExecutablePathForOS(exePath string, goos string) bool {
+	cleaned := strings.TrimSpace(exePath)
+	if cleaned == "" {
+		return false
+	}
+	lowerSlash := strings.ToLower(filepath.ToSlash(cleaned))
+	lowerBackslash := strings.ReplaceAll(lowerSlash, "/", `\`)
+
+	switch goos {
+	case "windows":
+		return strings.Contains(lowerBackslash, `\google\chrome\application\chrome.exe`) ||
+			strings.Contains(lowerBackslash, `\chromium\application\chrome.exe`)
+	case "darwin":
+		return strings.HasPrefix(lowerSlash, "/applications/google chrome.app/") ||
+			strings.HasPrefix(lowerSlash, "/applications/chromium.app/") ||
+			strings.HasPrefix(lowerSlash, "/system/applications/google chrome.app/")
+	default:
+		return strings.HasPrefix(lowerSlash, "/usr/bin/google-chrome") ||
+			strings.HasPrefix(lowerSlash, "/usr/bin/chromium") ||
+			strings.HasPrefix(lowerSlash, "/opt/google/chrome/") ||
+			strings.HasPrefix(lowerSlash, "/snap/chromium/")
 	}
 }
 

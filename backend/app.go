@@ -192,6 +192,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// 一次性迁移：若 SQLite 表为空则从旧文件导入
 	a.migrateToSQLite()
+	a.syncConfiguredCoresToDAO()
 
 	a.browserMgr.InitData()
 	a.autoDetectCores()
