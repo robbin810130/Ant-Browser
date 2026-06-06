@@ -82,6 +82,59 @@ func TestResolveManifestSourceUsesEnvBeforeConfig(t *testing.T) {
 	}
 }
 
+func TestResolveManifestSourceCanBeDisabledByEnv(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "1")
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "https://updates.example.com/env.json")
+
+	runtimeDir := t.TempDir()
+	configDir := filepath.Join(runtimeDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("创建 runtime config 目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "app-update.json"), []byte(`{"manifestUrl":"https://updates.example.com/runtime.json"}`), 0o644); err != nil {
+		t.Fatalf("写入 runtime config 失败: %v", err)
+	}
+
+	resolution := ResolveManifestSource(runtimeDir, &config.Config{
+		Release: config.ReleaseConfig{AppUpdateManifestURL: "https://updates.example.com/config.json"},
+	})
+
+	if resolution.URL != "" || resolution.Source != "" || resolution.ConfigPath != "" {
+		t.Fatalf("禁用更新后不应解析 manifest source: got=%+v", resolution)
+	}
+}
+
+func TestResolveManifestSourceIgnoresLoopbackEnvByDefault(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "http://127.0.0.1:8080/app-update-stable.json")
+
+	resolution := ResolveManifestSource(t.TempDir(), &config.Config{
+		Release: config.ReleaseConfig{AppUpdateManifestURL: "https://updates.example.com/config.json"},
+	})
+
+	if resolution.URL != "https://updates.example.com/config.json" {
+		t.Fatalf("loopback env source should be ignored in favor of config: got=%q", resolution.URL)
+	}
+	if resolution.Source != "config.yaml" {
+		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+}
+
+func TestResolveManifestSourceAllowsLoopbackEnvWhenExplicitlyEnabled(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "http://localhost:8080/app-update-stable.json")
+	t.Setenv("DESKTOP_APP_UPDATE_ALLOW_LOCAL_MANIFEST_URL", "true")
+
+	resolution := ResolveManifestSource(t.TempDir(), &config.Config{
+		Release: config.ReleaseConfig{AppUpdateManifestURL: "https://updates.example.com/config.json"},
+	})
+
+	if resolution.URL != "http://localhost:8080/app-update-stable.json" {
+		t.Fatalf("URL 不正确: got=%q", resolution.URL)
+	}
+	if resolution.Source != "env:DESKTOP_APP_UPDATE_MANIFEST_URL" {
+		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+}
+
 func TestResolveManifestSourceUsesConfig(t *testing.T) {
 	resolution := ResolveManifestSource(t.TempDir(), &config.Config{
 		Release: config.ReleaseConfig{AppUpdateManifestURL: " https://updates.example.com/config.json "},

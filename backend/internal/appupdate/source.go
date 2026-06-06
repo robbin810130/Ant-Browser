@@ -14,7 +14,11 @@ import (
 	"ant-chrome/backend/internal/config"
 )
 
-const envManifestURL = "DESKTOP_APP_UPDATE_MANIFEST_URL"
+const (
+	envManifestURL               = "DESKTOP_APP_UPDATE_MANIFEST_URL"
+	envUpdatesDisabled           = "DESKTOP_APP_UPDATE_DISABLED"
+	envAllowLocalhostManifestURL = "DESKTOP_APP_UPDATE_ALLOW_LOCAL_MANIFEST_URL"
+)
 
 type ManifestSourceResolution struct {
 	URL        string
@@ -35,6 +39,10 @@ const (
 )
 
 func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSourceResolution {
+	if truthyEnv(envUpdatesDisabled) {
+		return ManifestSourceResolution{}
+	}
+
 	if strings.TrimSpace(runtimeDir) != "" {
 		configPath := filepath.Join(strings.TrimSpace(runtimeDir), "config", "app-update.json")
 		if manifestURL := readRuntimeManifestURL(configPath); manifestURL != "" {
@@ -47,9 +55,11 @@ func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSource
 	}
 
 	if manifestURL := strings.TrimSpace(os.Getenv(envManifestURL)); manifestURL != "" {
-		return ManifestSourceResolution{
-			URL:    manifestURL,
-			Source: "env:" + envManifestURL,
+		if !isLoopbackHTTPManifestURL(manifestURL) || truthyEnv(envAllowLocalhostManifestURL) {
+			return ManifestSourceResolution{
+				URL:    manifestURL,
+				Source: "env:" + envManifestURL,
+			}
 		}
 	}
 
@@ -63,6 +73,29 @@ func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSource
 	}
 
 	return ManifestSourceResolution{}
+}
+
+func truthyEnv(name string) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLoopbackHTTPManifestURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func readRuntimeManifestURL(configPath string) string {
