@@ -26,6 +26,11 @@ function hasReadySharedLogin(shop: WorkspaceAuthorizedShop) {
   return normalizeAuthorizationStatus(shop.sharedLoginStatus) === 'ready'
 }
 
+function isRecoverableShopOpenFailure(shop: WorkspaceAuthorizedShop) {
+  if (!hasReadySharedLogin(shop) || !shop.coreReady) return false
+  return shop.lastOpenFailureCode === 'ANT_FINGERPRINT_CORE_REQUIRED'
+}
+
 export function shouldSuppressStaleFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence) {
   const failure = evidence.latestFailure
   if (!failure || evidence.activeRun || !hasReadySharedLogin(shop)) return false
@@ -46,7 +51,7 @@ export function evidenceForWorkbenchRow(shop: WorkspaceAuthorizedShop, evidence:
       }
     : evidence
 
-  const withShopOpenFailure = withoutStaleLocalFailure.latestFailure || !shop.lastOpenFailureCode
+  const withShopOpenFailure = withoutStaleLocalFailure.latestFailure || !shop.lastOpenFailureCode || isRecoverableShopOpenFailure(shop)
     ? withoutStaleLocalFailure
     : {
         ...withoutStaleLocalFailure,

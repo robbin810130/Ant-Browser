@@ -112,4 +112,16 @@ describe('workbench row state evidence', () => {
       lastOpenFailedAt: '2026-06-03T09:41:47.435Z',
     }), source).latestFailure).toBeNull()
   })
+
+  it('suppresses recoverable fingerprint-core open failures after the shop is ready', () => {
+    const source = evidence()
+
+    expect(evidenceForWorkbenchRow(shop({
+      coreReady: true,
+      sharedLoginStatus: 'ready',
+      lastOpenFailureCode: 'ANT_FINGERPRINT_CORE_REQUIRED',
+      lastOpenFailureMessage: 'managed shop requires a fingerprint core',
+      lastOpenFailedAt: '2026-06-06T01:25:42.415Z',
+    }), source).latestFailure).toBeNull()
+  })
 })

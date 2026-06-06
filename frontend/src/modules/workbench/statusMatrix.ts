@@ -170,8 +170,8 @@ export function recoveryActionForState(input: {
   if (targetMismatchFailureCodes.has(input.failureCode || '')) return actions.diagnostics
   const presentation = authorizationStatusPresentation(input.sharedLoginStatus)
   if (presentation.recommendedAction !== 'open') return actions[presentation.recommendedAction]
-  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.core_management
-  if (input.failureCode) return actions.retry
+  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.open
+  if (input.failureCode) return actions.open
   return actions.open
 }
 

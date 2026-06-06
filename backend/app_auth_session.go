@@ -171,11 +171,11 @@ func (a *App) ClearDesktopAuthSession() error {
 }
 
 func (a *App) StartDesktopSharedLoginBind(accessToken, shopID string) (*DesktopSharedLoginActionResult, error) {
-	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/bind")
+	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/bind-local")
 }
 
 func (a *App) StartDesktopSharedLoginValidate(accessToken, shopID string) (*DesktopSharedLoginActionResult, error) {
-	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/validate")
+	return a.startDesktopSharedLoginAction(accessToken, shopID, "/api/desktop/shops/%s/validate-local")
 }
 
 func (a *App) FetchDesktopSharedLoginBindSession(accessToken, bindSessionID string) (*DesktopSharedLoginBindSession, error) {

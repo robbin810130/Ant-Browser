@@ -164,7 +164,7 @@ export function ShopProfileDetailDrawer({ shopId, open, onClose }: ShopProfileDe
                   <Link to={workbenchUrl} title={action?.description}>
                     <Button size="sm" className="w-full">
                       <ExternalLink className="h-4 w-4" />
-                      {action?.label || '进入工作台'}
+                      进入工作台
                     </Button>
                   </Link>
                   <Link to={operationsUrl} title="店铺级运营任务入口，完整任务系统后续接入">

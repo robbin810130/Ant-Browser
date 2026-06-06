@@ -30,6 +30,7 @@ import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './type
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
 type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> }
+type RunnableWorkbenchAction = RunningWorkbenchAction['action']
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
@@ -70,9 +71,24 @@ function actionFallbackError(action: WorkbenchActionKey) {
   return '动作执行失败'
 }
 
+function resolveRunnableAction(row: WorkbenchRow): RunnableWorkbenchAction | null {
+  const action = row.recommendedAction
+  if (action === 'open' || action === 'close' || action === 'bind' || action === 'validate') return action
+
+  if (action === 'retry') {
+    const failedTaskType = row.evidence.latestFailure?.taskType
+    if (failedTaskType === 'open' || failedTaskType === 'bind' || failedTaskType === 'validate') {
+      return failedTaskType
+    }
+    return 'open'
+  }
+
+  return null
+}
+
 export function WorkbenchPage() {
   const accessToken = useAuthStore((state) => state.accessToken)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [shops, setShops] = useState<WorkspaceAuthorizedShop[]>([])
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,14 +185,14 @@ export function WorkbenchPage() {
   )
 
   async function runRecommendedAction(row: WorkbenchRow) {
-    const action = row.recommendedAction
+    const action = resolveRunnableAction(row)
     if (runningActionRef.current) {
       toast.info('已有推荐动作正在执行，请稍候')
       return
     }
 
-    if (action !== 'open' && action !== 'close' && action !== 'bind' && action !== 'validate') {
-      toast.info(unsupportedActionMessage[action])
+    if (!action) {
+      toast.info(unsupportedActionMessage[row.recommendedAction])
       return
     }
 
@@ -227,6 +243,15 @@ export function WorkbenchPage() {
         ))
       }
     }
+  }
+
+  function closeWorkbenchDrawer() {
+    setSelectedRow(null)
+    if (!requestedShopId) return
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('shopId')
+    setSearchParams(nextParams, { replace: true })
   }
 
   async function handleSharedLoginTerminal(
@@ -388,7 +413,7 @@ export function WorkbenchPage() {
         row={selectedRow}
         open={Boolean(selectedRow)}
         runningAction={runningAction}
-        onClose={() => setSelectedRow(null)}
+        onClose={closeWorkbenchDrawer}
         onAction={(row) => void runRecommendedAction(row)}
       />
       <SharedLoginSessionModal

@@ -150,7 +150,7 @@ describe('workbench authorization status matrix', () => {
     })
   })
 
-  it('routes core failures to core management', () => {
+  it('lets managed core failures retry opening instead of sending users to manual core setup', () => {
     expect(deriveWorkbenchState({
       sharedLoginStatus: 'ready',
       profileExists: true,
@@ -159,8 +159,8 @@ describe('workbench authorization status matrix', () => {
       failureMessage: '未找到指纹内核',
     })).toMatchObject({
       queue: 'failed',
-      recommendedAction: 'core_management',
-      primaryLabel: '配置指纹内核',
+      recommendedAction: 'open',
+      primaryLabel: '打开后台',
       failureCode: 'ANT_CORE_NOT_FOUND',
       failureLabel: '指纹内核不可用',
       evidenceText: 'open · 打开失败：未找到指纹内核',
