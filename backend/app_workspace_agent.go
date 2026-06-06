@@ -267,6 +267,37 @@ func (a *App) resetWorkspaceAgentSessionRuntimeHook(reason string) error {
 	return resetErr
 }
 
+func (a *App) ensureWorkspaceAgentReachableForRequest(reason string) {
+	if a == nil {
+		return
+	}
+	if strings.TrimSpace(a.workspaceAgentURL) == "" {
+		return
+	}
+
+	agentBaseURL := a.resolveWorkspaceAgentBaseURL()
+	if strings.TrimSpace(agentBaseURL) != "" && isHTTPReachable(agentBaseURL+"/health") {
+		return
+	}
+
+	runtimeDir := resolveWorkspaceRuntimeDirWithConfig(a.config)
+	appendWorkspaceHostLog(runtimeDir, "workspace agent unavailable before request: reason=%s url=%s", strings.TrimSpace(reason), agentBaseURL)
+	log := logger.New("WorkspaceAgent")
+	log.Warn("workspace agent unavailable before request",
+		logger.F("reason", strings.TrimSpace(reason)),
+		logger.F("url", agentBaseURL),
+	)
+
+	_ = a.resetWorkspaceAgentSessionRuntimeHook("workspace agent unreachable before " + strings.TrimSpace(reason))
+	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
+		appendWorkspaceHostLog(runtimeDir, "workspace agent request recovery failed: reason=%s error=%v", strings.TrimSpace(reason), err)
+		log.Warn("workspace agent request recovery failed",
+			logger.F("reason", strings.TrimSpace(reason)),
+			logger.F("error", err.Error()),
+		)
+	}
+}
+
 func resolveWorkspaceInstallRoot(appRoot string) (string, error) {
 	return resolveWorkspaceInstallRootWithConfig(appRoot, nil)
 }

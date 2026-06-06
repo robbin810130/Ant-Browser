@@ -24,6 +24,7 @@ func (a *App) WorkspaceSummary() (*workspace.WorkspaceSummary, error) {
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.ensureWorkspaceAgentReachableForRequest("workspace summary")
 	return a.workspaceService.FetchSummary(context.Background())
 }
 
@@ -31,6 +32,7 @@ func (a *App) WorkspaceAuthorizedShops() ([]workspace.ShopInstanceProjection, er
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.ensureWorkspaceAgentReachableForRequest("authorized shops")
 	a.recoverRunningProfilesFromUserDataDirs()
 	return a.workspaceService.FetchAuthorizedShops(context.Background())
 }
@@ -46,6 +48,7 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		return nil, fmt.Errorf("shop id is required")
 	}
 
+	a.ensureWorkspaceAgentReachableForRequest("open shop")
 	shops, err := a.workspaceService.FetchAuthorizedShops(context.Background())
 	if err != nil {
 		return nil, err
