@@ -315,6 +315,99 @@ func TestResolveManagedCoreUsesProfileCoreWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestOpenManagedShopMigratesSystemChromeProfileCoreToFingerprintCore(t *testing.T) {
+	appRoot := t.TempDir()
+	systemRoot := t.TempDir()
+	systemExe := filepath.Join(systemRoot, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(systemExe), 0o755); err != nil {
+		t.Fatalf("create system core directory: %v", err)
+	}
+	if err := os.WriteFile(systemExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write system core executable: %v", err)
+	}
+
+	fingerprintCorePath := "chrome/fingerprint-core"
+	fingerprintExe := filepath.Join(appRoot, fingerprintCorePath, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(fingerprintExe), 0o755); err != nil {
+		t.Fatalf("create fingerprint core directory: %v", err)
+	}
+	if err := os.WriteFile(fingerprintExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write fingerprint core executable: %v", err)
+	}
+
+	cfg := testBrowserConfig()
+	cfg.Browser.Cores = []config.BrowserCore{
+		{
+			CoreId:    "system-chrome",
+			CoreName:  "System Chrome",
+			CorePath:  systemRoot,
+			IsDefault: true,
+		},
+		{
+			CoreId:   "core-1688",
+			CoreName: "Fingerprint Chromium",
+			CorePath: fingerprintCorePath,
+		},
+	}
+	mgr := browser.NewManager(cfg, appRoot)
+	profileID := "1688:b2b-2220216067652a3709"
+	profile := &browser.Profile{
+		ProfileId:  profileID,
+		CoreId:     "system-chrome",
+		Running:    true,
+		DebugReady: true,
+	}
+	mgr.Profiles[profileID] = profile
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	service.SetOpenRuntime(managedinstance.NativeOpenRuntime{
+		EnsureManagedProfile: func(req managedinstance.OpenRequest) (*browser.Profile, error) {
+			return profile, nil
+		},
+		FindRunningProfile: func(profileID string) (*browser.Profile, bool) {
+			return &browser.Profile{ProfileId: profileID, CoreId: profile.CoreId, Running: true, DebugReady: true}, true
+		},
+		StartManagedProfile: func(profileID string, targetURL string, preferVisible bool) (*browser.Profile, error) {
+			return &browser.Profile{ProfileId: profileID, CoreId: profile.CoreId, Running: true, DebugReady: true}, nil
+		},
+		ImportCookies: func(profileID string, bundle workspace.SessionBundle) error { return nil },
+		ListTargets: func(profileID string) ([]workspace.OpenRuntimeTarget, error) {
+			return []workspace.OpenRuntimeTarget{{
+				TargetID:   "work-1",
+				CurrentURL: "https://work.1688.com/?tracelog=login_target_is_blank_1688",
+				PageTitle:  "1688-卖家工作台",
+			}}, nil
+		},
+		ActivateTarget:     func(profileID string, targetID string) error { return nil },
+		NavigateTarget:     func(profileID string, targetID string, targetURL string) error { return nil },
+		CreateTarget:       func(profileID string, targetURL string) (string, error) { return "", nil },
+		WaitForTargetReady: func(profileID string, targetID string, timeout time.Duration) error { return nil },
+		CloseTarget:        func(profileID string, targetID string) error { return nil },
+	})
+
+	result, err := service.OpenManagedShop(managedinstance.OpenRequest{
+		ShopID:      "b2b-2220216067652a3709",
+		ProfileID:   profileID,
+		ManagedMode: true,
+		LaunchContext: workspace.ShopLaunchContext{
+			SuccessURLPatterns: []string{"https://work.1688.com/"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("open managed shop: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success result, got %+v", result)
+	}
+	if profile.CoreId != "core-1688" {
+		t.Fatalf("expected profile core migrated to fingerprint core, got %s", profile.CoreId)
+	}
+}
+
 func TestOpenManagedShopReusesRunningProfileInServiceLayer(t *testing.T) {
 	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
 	profileID := "1688:b2b-222082061706256a1a"

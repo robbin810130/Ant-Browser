@@ -41,6 +41,13 @@ func (s *Service) ensureManagedProfileCore(profile *browser.Profile) error {
 	}
 
 	if s.isSystemChromeExecutablePath(corePath) {
+		if replacement, ok := s.findManagedFingerprintCore(profile.CoreId); ok {
+			profile.CoreId = replacement.CoreId
+			if err := s.persistProfile(profile); err != nil {
+				return fmt.Errorf("ANT_CORE_UNAVAILABLE: persist managed fingerprint core migration: %w", err)
+			}
+			return nil
+		}
 		return fmt.Errorf("ANT_FINGERPRINT_CORE_REQUIRED: managed shop requires a fingerprint core, got system chrome executable %s", corePath)
 	}
 
@@ -53,6 +60,43 @@ func (s *Service) ensureManagedProfileCore(profile *browser.Profile) error {
 
 	_ = corePath
 	return nil
+}
+
+func (s *Service) findManagedFingerprintCore(currentCoreID string) (browser.Core, bool) {
+	if s == nil || s.browserMgr == nil {
+		return browser.Core{}, false
+	}
+
+	cores := s.browserMgr.ListCores()
+	if defaultCore, ok := s.browserMgr.GetDefaultCore(); ok {
+		cores = append([]browser.Core{defaultCore}, cores...)
+	}
+
+	var fallback browser.Core
+	hasFallback := false
+	for _, core := range cores {
+		if strings.TrimSpace(core.CoreId) == "" || strings.EqualFold(strings.TrimSpace(core.CoreId), strings.TrimSpace(currentCoreID)) {
+			continue
+		}
+		exePath, err := s.browserMgr.ResolveCoreExecutable(core)
+		if err != nil || s.isSystemChromeExecutablePath(exePath) {
+			continue
+		}
+		if isLikelyFingerprintCore(core) {
+			return core, true
+		}
+		if !hasFallback {
+			fallback = core
+			hasFallback = true
+		}
+	}
+
+	return fallback, hasFallback
+}
+
+func isLikelyFingerprintCore(core browser.Core) bool {
+	text := strings.ToLower(filepath.ToSlash(strings.TrimSpace(core.CorePath) + " " + strings.TrimSpace(core.CoreName) + " " + strings.TrimSpace(core.CoreId)))
+	return strings.Contains(text, "fingerprint") || strings.Contains(text, "指纹")
 }
 
 func (s *Service) isSystemChromeExecutablePath(corePath string) bool {
