@@ -843,6 +843,69 @@ func TestReconcileAuthorizedShopsCreatesAndReusesManagedProfiles(t *testing.T) {
 	}
 }
 
+func TestReconcileAuthorizedShopsMigratesSystemChromeCoreToFingerprintCore(t *testing.T) {
+	appRoot := t.TempDir()
+	systemRoot := t.TempDir()
+	systemExe := filepath.Join(systemRoot, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(systemExe), 0o755); err != nil {
+		t.Fatalf("create system core directory: %v", err)
+	}
+	if err := os.WriteFile(systemExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write system core executable: %v", err)
+	}
+
+	fingerprintCorePath := "chrome/fingerprint-core"
+	fingerprintExe := filepath.Join(appRoot, fingerprintCorePath, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(fingerprintExe), 0o755); err != nil {
+		t.Fatalf("create fingerprint core directory: %v", err)
+	}
+	if err := os.WriteFile(fingerprintExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write fingerprint core executable: %v", err)
+	}
+
+	cfg := testBrowserConfig()
+	cfg.Browser.Cores = []config.BrowserCore{
+		{
+			CoreId:    "system-chrome",
+			CoreName:  "System Chrome",
+			CorePath:  systemRoot,
+			IsDefault: true,
+		},
+		{
+			CoreId:   "fingerprint-core",
+			CoreName: "Fingerprint Chromium",
+			CorePath: fingerprintCorePath,
+		},
+	}
+	mgr := browser.NewManager(cfg, appRoot)
+	profileID := "1688:shop-001"
+	mgr.Profiles[profileID] = &browser.Profile{
+		ProfileId:   profileID,
+		ProfileName: "旧店铺名",
+		UserDataDir: filepath.Join("managed-profiles", "1688__shop-001"),
+		CoreId:      "system-chrome",
+		Tags:        []string{"managed", "managed:desktop", "shop:shop-001"},
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := service.ReconcileAuthorizedShops([]workspace.ShopRecord{{
+		ShopID:       "shop-001",
+		ShopName:     "一级供应链",
+		PlatformCode: "1688",
+	}}); err != nil {
+		t.Fatalf("reconcile authorized shops: %v", err)
+	}
+
+	profile := requireProfile(t, mgr, profileID)
+	if profile.CoreId != "fingerprint-core" {
+		t.Fatalf("expected fingerprint core after reconcile, got %s", profile.CoreId)
+	}
+}
+
 func TestReconcileAuthorizedShopsReclaimsRevokedManagedProfiles(t *testing.T) {
 	mgr := newManagerWithCore(t, "core-1688", "fingerprint-core")
 	keepProfileID := "1688:shop-keep"

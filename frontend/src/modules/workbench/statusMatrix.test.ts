@@ -15,7 +15,7 @@ describe('workbench authorization status matrix', () => {
     ['ready', '可打开', 'ready', 'open', '打开后台'],
     ['valid', '可打开', 'ready', 'open', '打开后台'],
     ['relogin_required', '需重新登录', 'credential', 'bind', '更新凭据'],
-    ['validation_failed', '验证失败', 'credential', 'validate', '本机验证'],
+    ['validation_failed', '验证失败', 'credential', 'bind', '更新凭据'],
     ['disabled', '已停用', 'credential', 'bind', '重新启用'],
     ['expired', '授权失效', 'credential', 'bind', '更新凭据'],
   ])('maps %s into one product path', (status, label, queue, action, primaryLabel) => {

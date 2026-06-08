@@ -1,8 +1,13 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/launchcode"
+	"ant-chrome/backend/internal/managedinstance"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +17,75 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+func TestUpsertManagedProfilePrefersFingerprintCoreOverSystemChromeDefault(t *testing.T) {
+	t.Parallel()
+
+	appRoot := t.TempDir()
+	systemCoreRoot := t.TempDir()
+	systemExe := filepath.Join(systemCoreRoot, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(systemExe), 0o755); err != nil {
+		t.Fatalf("create system core dir: %v", err)
+	}
+	if err := os.WriteFile(systemExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write system core exe: %v", err)
+	}
+
+	fingerprintCorePath := "chrome/fingerprint-core"
+	fingerprintExe := filepath.Join(appRoot, fingerprintCorePath, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(fingerprintExe), 0o755); err != nil {
+		t.Fatalf("create fingerprint core dir: %v", err)
+	}
+	if err := os.WriteFile(fingerprintExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write fingerprint core exe: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Browser.Cores = []config.BrowserCore{
+		{
+			CoreId:    "system-chrome",
+			CoreName:  "System Chrome",
+			CorePath:  systemCoreRoot,
+			IsDefault: true,
+		},
+		{
+			CoreId:   "fingerprint-core",
+			CoreName: "Fingerprint Chromium",
+			CorePath: fingerprintCorePath,
+		},
+	}
+	browserMgr := browser.NewManager(cfg, appRoot)
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: browserMgr})
+	if err != nil {
+		t.Fatalf("new managed service: %v", err)
+	}
+	app := &App{
+		browserMgr:             browserMgr,
+		managedInstanceService: service,
+	}
+
+	result, err := app.UpsertManagedProfile(launchcode.ManagedProfileUpsertInput{
+		ProfileID:    "alibaba:b2b-2220216067652a3709",
+		ShopID:       "b2b-2220216067652a3709",
+		PlatformCode: "alibaba",
+		ProfileName:  "艾优品供应链",
+		UserDataDir:  "managed-profiles/alibaba__b2b-2220216067652a3709",
+		ManagedMode:  true,
+	})
+	if err != nil {
+		t.Fatalf("upsert managed profile: %v", err)
+	}
+	if result == nil || result.ProfileID != "alibaba:b2b-2220216067652a3709" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	profile := browserMgr.Profiles["alibaba:b2b-2220216067652a3709"]
+	if profile == nil {
+		t.Fatal("expected profile created")
+	}
+	if profile.CoreId != "fingerprint-core" {
+		t.Fatalf("expected fingerprint core, got %s", profile.CoreId)
+	}
+}
 
 func TestInjectManagedSessionBundleImportsCookiesAndStorages(t *testing.T) {
 	t.Parallel()

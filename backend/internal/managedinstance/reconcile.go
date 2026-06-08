@@ -77,10 +77,8 @@ func (s *Service) upsertAuthorizedProfile(profileID string, shop workspace.ShopR
 		profile.UserDataDir = firstNonEmptyString(strings.TrimSpace(profile.UserDataDir), managedProfileUserDataDir(profileID))
 		profile.Tags = clearManagedTag(mergeManagedTags(profile.Tags, platformCode, shop.ShopID), reclaimPendingTag)
 		profile.UpdatedAt = now
-		if strings.TrimSpace(profile.CoreId) == "" {
-			if defaultCore, ok := s.browserMgr.GetDefaultCore(); ok {
-				profile.CoreId = defaultCore.CoreId
-			}
+		if coreID, ok := s.PreferredManagedCoreID(profile.CoreId); ok {
+			profile.CoreId = coreID
 		}
 		snapshot := *profile
 		s.browserMgr.Mutex.Unlock()
@@ -99,7 +97,9 @@ func (s *Service) upsertAuthorizedProfile(profileID string, shop workspace.ShopR
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	if defaultCore, ok := s.browserMgr.GetDefaultCore(); ok {
+	if coreID, ok := s.PreferredManagedCoreID(""); ok {
+		newProfile.CoreId = coreID
+	} else if defaultCore, ok := s.browserMgr.GetDefaultCore(); ok {
 		newProfile.CoreId = defaultCore.CoreId
 	}
 	s.browserMgr.Profiles[profileID] = newProfile

@@ -90,9 +90,9 @@ export function authorizationStatusPresentation(status = '', label = ''): {
       status: normalized,
       label: displayLabel,
       queue: 'credential',
-      recommendedAction: 'validate',
-      primaryLabel: '本机验证',
-      description: '验证失败，需要重新本机验证后再打开后台。',
+      recommendedAction: 'bind',
+      primaryLabel: '更新凭据',
+      description: '验证失败，建议重新更新凭据后再打开后台。',
     }
   }
   if (normalized === 'relogin_required') {

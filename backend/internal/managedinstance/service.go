@@ -41,8 +41,8 @@ func (s *Service) ensureManagedProfileCore(profile *browser.Profile) error {
 	}
 
 	if s.isSystemChromeExecutablePath(corePath) {
-		if replacement, ok := s.findManagedFingerprintCore(profile.CoreId); ok {
-			profile.CoreId = replacement.CoreId
+		if replacementCoreID, ok := s.PreferredManagedCoreID(profile.CoreId); ok {
+			profile.CoreId = replacementCoreID
 			if err := s.persistProfile(profile); err != nil {
 				return fmt.Errorf("ANT_CORE_UNAVAILABLE: persist managed fingerprint core migration: %w", err)
 			}
@@ -60,6 +60,27 @@ func (s *Service) ensureManagedProfileCore(profile *browser.Profile) error {
 
 	_ = corePath
 	return nil
+}
+
+func (s *Service) PreferredManagedCoreID(currentCoreID string) (string, bool) {
+	if s == nil || s.browserMgr == nil {
+		return "", false
+	}
+
+	currentCoreID = strings.TrimSpace(currentCoreID)
+	if currentCoreID != "" {
+		if currentCore, ok := s.browserMgr.GetCore(currentCoreID); ok {
+			exePath, err := s.browserMgr.ResolveCoreExecutable(currentCore)
+			if err == nil && !s.isSystemChromeExecutablePath(exePath) {
+				return currentCore.CoreId, true
+			}
+		}
+	}
+
+	if replacement, ok := s.findManagedFingerprintCore(""); ok {
+		return replacement.CoreId, true
+	}
+	return "", false
 }
 
 func (s *Service) findManagedFingerprintCore(currentCoreID string) (browser.Core, bool) {
