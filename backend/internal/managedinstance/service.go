@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/browser"
 	"fmt"
+	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -80,7 +81,113 @@ func (s *Service) PreferredManagedCoreID(currentCoreID string) (string, bool) {
 	if replacement, ok := s.findManagedFingerprintCore(""); ok {
 		return replacement.CoreId, true
 	}
+	if coreID, ok := s.ensureBundledManagedCoreRegistered(); ok {
+		return coreID, true
+	}
 	return "", false
+}
+
+func (s *Service) ensureBundledManagedCoreRegistered() (string, bool) {
+	if s == nil || s.browserMgr == nil {
+		return "", false
+	}
+
+	core, ok := s.detectBundledManagedCore()
+	if !ok {
+		return "", false
+	}
+	if s.browserMgr.CoreDAO != nil {
+		if err := s.browserMgr.CoreDAO.Upsert(core); err != nil {
+			return "", false
+		}
+		_ = s.browserMgr.CoreDAO.SetDefault(core.CoreId)
+		s.browserMgr.Config.Browser.Cores = s.browserMgr.ListCores()
+		return core.CoreId, true
+	}
+
+	found := false
+	for index := range s.browserMgr.Config.Browser.Cores {
+		if strings.EqualFold(s.browserMgr.Config.Browser.Cores[index].CoreId, core.CoreId) ||
+			sameCorePath(s.browserMgr.Config.Browser.Cores[index].CorePath, core.CorePath) {
+			s.browserMgr.Config.Browser.Cores[index] = core
+			found = true
+		} else {
+			s.browserMgr.Config.Browser.Cores[index].IsDefault = false
+		}
+	}
+	if !found {
+		for index := range s.browserMgr.Config.Browser.Cores {
+			s.browserMgr.Config.Browser.Cores[index].IsDefault = false
+		}
+		s.browserMgr.Config.Browser.Cores = append(s.browserMgr.Config.Browser.Cores, core)
+	}
+	return core.CoreId, true
+}
+
+func (s *Service) detectBundledManagedCore() (browser.Core, bool) {
+	appRoot := strings.TrimSpace(s.browserMgr.AppRoot)
+	if appRoot == "" {
+		return browser.Core{}, false
+	}
+
+	chromeRoot := filepath.Join(appRoot, "chrome")
+	if _, _, ok := browser.FindCoreExecutable(chromeRoot); ok {
+		return browser.Core{
+			CoreId:    "bundled-fingerprint",
+			CoreName:  "Bundled Fingerprint Chromium",
+			CorePath:  "chrome",
+			IsDefault: true,
+		}, true
+	}
+
+	entries, err := os.ReadDir(chromeRoot)
+	if err != nil {
+		return browser.Core{}, false
+	}
+	var fallback browser.Core
+	hasFallback := false
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		corePath := filepath.ToSlash(filepath.Join("chrome", entry.Name()))
+		if _, _, ok := browser.FindCoreExecutable(filepath.Join(chromeRoot, entry.Name())); !ok {
+			continue
+		}
+		core := browser.Core{
+			CoreId:    "bundled-" + managedCoreIDPart(entry.Name()),
+			CoreName:  "Bundled Fingerprint Chromium",
+			CorePath:  corePath,
+			IsDefault: true,
+		}
+		if isLikelyFingerprintCore(core) {
+			return core, true
+		}
+		if !hasFallback {
+			fallback = core
+			hasFallback = true
+		}
+	}
+	return fallback, hasFallback
+}
+
+func managedCoreIDPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			builder.WriteRune(char)
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('-')
+		}
+	}
+	result := strings.Trim(builder.String(), "-")
+	if result == "" {
+		return "fingerprint"
+	}
+	return result
 }
 
 func (s *Service) findManagedFingerprintCore(currentCoreID string) (browser.Core, bool) {
@@ -118,6 +225,10 @@ func (s *Service) findManagedFingerprintCore(currentCoreID string) (browser.Core
 func isLikelyFingerprintCore(core browser.Core) bool {
 	text := strings.ToLower(filepath.ToSlash(strings.TrimSpace(core.CorePath) + " " + strings.TrimSpace(core.CoreName) + " " + strings.TrimSpace(core.CoreId)))
 	return strings.Contains(text, "fingerprint") || strings.Contains(text, "指纹")
+}
+
+func sameCorePath(aPath string, bPath string) bool {
+	return strings.EqualFold(filepath.ToSlash(strings.TrimSpace(aPath)), filepath.ToSlash(strings.TrimSpace(bPath)))
 }
 
 func (s *Service) isSystemChromeExecutablePath(corePath string) bool {

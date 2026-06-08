@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/apppath"
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/database"
 	"ant-chrome/backend/internal/managedinstance"
 	"ant-chrome/backend/internal/workspace"
 	"encoding/json"
@@ -903,6 +904,82 @@ func TestReconcileAuthorizedShopsMigratesSystemChromeCoreToFingerprintCore(t *te
 	profile := requireProfile(t, mgr, profileID)
 	if profile.CoreId != "fingerprint-core" {
 		t.Fatalf("expected fingerprint core after reconcile, got %s", profile.CoreId)
+	}
+}
+
+func TestPreferredManagedCoreIDRegistersBundledFingerprintCoreWhenDAOOnlyHasSystemChrome(t *testing.T) {
+	appRoot := t.TempDir()
+	systemRoot := t.TempDir()
+	systemExe := filepath.Join(systemRoot, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(systemExe), 0o755); err != nil {
+		t.Fatalf("create system core directory: %v", err)
+	}
+	if err := os.WriteFile(systemExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write system core executable: %v", err)
+	}
+
+	bundledCorePath := filepath.Join(appRoot, "chrome", "fingerprint")
+	bundledExe := filepath.Join(bundledCorePath, filepath.FromSlash(browser.CoreExecutableCandidates()[0]))
+	if err := os.MkdirAll(filepath.Dir(bundledExe), 0o755); err != nil {
+		t.Fatalf("create bundled core directory: %v", err)
+	}
+	if err := os.WriteFile(bundledExe, []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write bundled core executable: %v", err)
+	}
+
+	dataRoot := filepath.Join(appRoot, "data")
+	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
+		t.Fatalf("create data directory: %v", err)
+	}
+	db, err := database.NewDB(filepath.Join(dataRoot, "app.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	cfg := testBrowserConfig()
+	mgr := browser.NewManager(cfg, appRoot)
+	mgr.CoreDAO = browser.NewSQLiteCoreDAO(db.GetConn())
+	if err := mgr.CoreDAO.Upsert(browser.Core{
+		CoreId:    "system-chrome",
+		CoreName:  "System Chrome",
+		CorePath:  systemRoot,
+		IsDefault: true,
+	}); err != nil {
+		t.Fatalf("seed system core: %v", err)
+	}
+
+	service, err := managedinstance.NewService(managedinstance.Dependencies{BrowserMgr: mgr})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	coreID, ok := service.PreferredManagedCoreID("system-chrome")
+	if !ok {
+		t.Fatal("expected bundled managed core to be registered")
+	}
+	if coreID != "bundled-fingerprint" {
+		t.Fatalf("expected bundled fingerprint core, got %s", coreID)
+	}
+
+	cores := mgr.ListCores()
+	found := false
+	for _, core := range cores {
+		if core.CoreId == "bundled-fingerprint" {
+			found = true
+			if core.CorePath != filepath.ToSlash(filepath.Join("chrome", "fingerprint")) {
+				t.Fatalf("unexpected bundled core path: %s", core.CorePath)
+			}
+			if !core.IsDefault {
+				t.Fatalf("expected bundled core to become default: %+v", core)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected bundled core in DAO list: %+v", cores)
 	}
 }
 
