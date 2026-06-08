@@ -666,6 +666,7 @@ func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, 
 	envMap["AGENT_LISTEN_PORT"] = listenPort
 	envMap["AGENT_BASE_URL"] = agentBaseURL
 	envMap["ANT_RUNTIME_BASE_URL"] = defaultWorkspaceAntRuntimeBaseURL
+	envMap["ANT_RUNTIME_AUTO_BOOT"] = "false"
 
 	result := make([]string, 0, len(envMap))
 	for key, value := range envMap {

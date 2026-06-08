@@ -529,9 +529,7 @@ function Copy-WorkspaceAgentPayload {
 
     $items = @(
         "apps\agent\src",
-        "apps\agent\package.json",
-        "installer\windows\scripts\ant-runtime-bridge.mjs",
-        "installer\windows\scripts\ant-runtime-playwright-runtime.mjs"
+        "apps\agent\package.json"
     )
 
     foreach ($relativePath in $items) {
