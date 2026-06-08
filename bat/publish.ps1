@@ -586,6 +586,79 @@ function Copy-BundledWorkspaceNodePayload {
     Write-Host "✓ 复制 bundled Node runtime"
 }
 
+function Ensure-AntRuntimePlaywright {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadRoot
+    )
+
+    $playwrightPackage = Join-Path $PayloadRoot "node_modules\playwright\package.json"
+    $embeddedChromium = Join-Path $PayloadRoot "node_modules\playwright-core\.local-browsers"
+    if ((Test-Path -LiteralPath $playwrightPackage -PathType Leaf) -and (Test-Path -LiteralPath $embeddedChromium -PathType Container)) {
+        Write-Host "✓ Ant Runtime Playwright 已存在"
+        return
+    }
+
+    $npmExe = Get-Command npm -ErrorAction SilentlyContinue
+    if (-not $npmExe) {
+        throw "缺少 npm，无法准备 Ant Runtime Playwright 依赖。"
+    }
+
+    Write-Host "安装 Ant Runtime Playwright 到 staging..."
+    Push-Location $PayloadRoot
+    try {
+        Invoke-NativeCommand -FilePath $npmExe.Source -Arguments @("install", "playwright", "--no-save", "--no-audit", "--no-fund", "--package-lock=false")
+
+        $originalPlaywrightBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
+        try {
+            $env:PLAYWRIGHT_BROWSERS_PATH = "0"
+            Invoke-NativeCommand -FilePath $npmExe.Source -Arguments @("exec", "playwright", "install", "chromium")
+        }
+        finally {
+            if ($null -eq $originalPlaywrightBrowsersPath) {
+                Remove-Item Env:PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:PLAYWRIGHT_BROWSERS_PATH = $originalPlaywrightBrowsersPath
+            }
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    if ((-not (Test-Path -LiteralPath $playwrightPackage -PathType Leaf)) -or (-not (Test-Path -LiteralPath $embeddedChromium -PathType Container))) {
+        throw "Ant Runtime Playwright 依赖准备失败: $PayloadRoot"
+    }
+
+    Write-Host "✓ 安装 Ant Runtime Playwright"
+}
+
+function Remove-PlaywrightRuntimeBloat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadRoot
+    )
+
+    $embeddedBrowsersRoot = Join-Path $PayloadRoot "node_modules\playwright-core\.local-browsers"
+    if (-not (Test-Path -LiteralPath $embeddedBrowsersRoot -PathType Container)) {
+        return
+    }
+
+    $removablePatterns = @(
+        "ffmpeg-*",
+        "firefox-*",
+        "webkit-*"
+    )
+
+    foreach ($pattern in $removablePatterns) {
+        Get-ChildItem -LiteralPath $embeddedBrowsersRoot -Directory -Filter $pattern -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force
+    }
+
+    Write-Host "✓ 精简 Ant Runtime Playwright"
+}
+
 function New-WindowsStaging {
     Write-Host "[Windows] 组装 staging 目录..."
 
@@ -628,6 +701,8 @@ function New-WindowsStaging {
     Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
     Copy-WorkspaceAgentPayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
     Copy-BundledWorkspaceNodePayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
+    Ensure-AntRuntimePlaywright -PayloadRoot $stagingDir
+    Remove-PlaywrightRuntimeBloat -PayloadRoot $stagingDir
     Copy-RuntimePublishPayload -Target "windows-amd64" -StagingDir $stagingDir
 
     New-Item -ItemType Directory -Path (Join-Path $stagingDir "data") -Force | Out-Null
