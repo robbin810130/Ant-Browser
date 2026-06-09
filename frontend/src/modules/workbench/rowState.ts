@@ -22,6 +22,13 @@ function latestCredentialSuccessTime(evidence: ShopRunEvidence) {
   )
 }
 
+function latestOpenSuccessTime(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence) {
+  return Math.max(
+    parseTime(shop.lastOpenedAt),
+    isSucceeded(evidence.latestOpen) ? runTime(evidence.latestOpen) : 0,
+  )
+}
+
 function hasReadySharedLogin(shop: WorkspaceAuthorizedShop) {
   return normalizeAuthorizationStatus(shop.sharedLoginStatus) === 'ready'
 }
@@ -43,6 +50,13 @@ export function shouldSuppressStaleFailure(shop: WorkspaceAuthorizedShop, eviden
   return credentialSuccessAt > 0 && runTime(failure) <= credentialSuccessAt
 }
 
+function isStaleReportedOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence) {
+  if (!shop.lastOpenFailureCode && !shop.lastOpenFailureMessage) return false
+  const openedAt = latestOpenSuccessTime(shop, evidence)
+  const failedAt = parseTime(shop.lastOpenFailedAt)
+  return openedAt > 0 && failedAt > 0 && failedAt <= openedAt
+}
+
 export function evidenceForWorkbenchRow(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
   const withoutStaleLocalFailure = shouldSuppressStaleFailure(shop, evidence)
     ? {
@@ -51,7 +65,10 @@ export function evidenceForWorkbenchRow(shop: WorkspaceAuthorizedShop, evidence:
       }
     : evidence
 
-  const withShopOpenFailure = withoutStaleLocalFailure.latestFailure || !shop.lastOpenFailureCode || isRecoverableShopOpenFailure(shop)
+  const withShopOpenFailure = withoutStaleLocalFailure.latestFailure
+    || (!shop.lastOpenFailureCode && !shop.lastOpenFailureMessage)
+    || isRecoverableShopOpenFailure(shop)
+    || isStaleReportedOpenFailure(shop, withoutStaleLocalFailure)
     ? withoutStaleLocalFailure
     : {
         ...withoutStaleLocalFailure,

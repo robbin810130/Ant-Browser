@@ -16,6 +16,7 @@ function shop(overrides: Partial<WorkspaceAuthorizedShop> = {}): WorkspaceAuthor
     profileExists: true,
     reclaimPending: false,
     coreReady: true,
+    lastOpenedAt: '',
     lastOpenFailureCode: '',
     lastOpenFailureMessage: '',
     lastOpenFailedAt: '',
@@ -123,5 +124,27 @@ describe('workbench row state evidence', () => {
       lastOpenFailureMessage: 'managed shop requires a fingerprint core',
       lastOpenFailedAt: '2026-06-06T01:25:42.415Z',
     }), source).latestFailure).toBeNull()
+  })
+
+  it('suppresses reported open failures older than a successful open', () => {
+    const source = evidence()
+
+    expect(evidenceForWorkbenchRow(shop({
+      lastOpenedAt: '2026-06-09T09:10:00.000Z',
+      lastOpenFailureCode: 'LOCAL_BRIDGE_FAILED',
+      lastOpenFailureMessage: 'Ant Browser Runtime 不可达',
+      lastOpenFailedAt: '2026-06-09T09:00:00.000Z',
+    }), source).latestFailure).toBeNull()
+  })
+
+  it('keeps reported open failures newer than the last successful open', () => {
+    const source = evidence()
+
+    expect(evidenceForWorkbenchRow(shop({
+      lastOpenedAt: '2026-06-09T09:00:00.000Z',
+      lastOpenFailureCode: 'LOCAL_BRIDGE_FAILED',
+      lastOpenFailureMessage: 'Ant Browser Runtime 不可达',
+      lastOpenFailedAt: '2026-06-09T09:10:00.000Z',
+    }), source).latestFailure?.failureCode).toBe('LOCAL_BRIDGE_FAILED')
   })
 })

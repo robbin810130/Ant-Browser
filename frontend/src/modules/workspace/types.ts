@@ -21,6 +21,7 @@ export interface WorkspaceAuthorizedShop {
   profileExists: boolean
   reclaimPending: boolean
   coreReady: boolean
+  lastOpenedAt: string
   lastOpenFailureCode: string
   lastOpenFailureMessage: string
   lastOpenFailedAt: string
