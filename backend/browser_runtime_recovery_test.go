@@ -69,3 +69,47 @@ func TestRecoverRunningProfilesFromUserDataDirsMarksProfileRunning(t *testing.T)
 		t.Fatalf("期望 launch server 激活调试端口 %d，实际=%d", server.port, app.launchServer.ActiveDebugPort())
 	}
 }
+
+func TestRecoverRunningProfilesFromUserDataDirsClearsStaleRunningProfile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	mgr := browser.NewManager(cfg, root)
+	mgr.Profiles = map[string]*browser.Profile{
+		"alibaba:test-shop": {
+			ProfileId:   "alibaba:test-shop",
+			ProfileName: "test-shop",
+			UserDataDir: "managed-profiles/alibaba__test-shop",
+			Running:     true,
+			DebugReady:   true,
+			DebugPort:    65534,
+			Pid:          0,
+		},
+	}
+	mgr.BrowserProcesses = map[string]*exec.Cmd{}
+
+	app := &App{
+		browserMgr:   mgr,
+		launchServer: launchcode.NewLaunchServer(nil, nil, mgr, 0),
+	}
+
+	recovered := app.recoverRunningProfilesFromUserDataDirs()
+	if recovered != 0 {
+		t.Fatalf("期望不恢复已死亡实例，实际恢复=%d", recovered)
+	}
+
+	profile := mgr.Profiles["alibaba:test-shop"]
+	if profile.Running {
+		t.Fatal("期望已死亡 profile 被标记为停止")
+	}
+	if profile.DebugReady {
+		t.Fatal("期望已死亡 profile 清除调试就绪状态")
+	}
+	if profile.DebugPort != 0 {
+		t.Fatalf("期望已死亡 profile 清除调试端口，实际=%d", profile.DebugPort)
+	}
+	if profile.Pid != 0 {
+		t.Fatalf("期望已死亡 profile 清除 pid，实际=%d", profile.Pid)
+	}
+}

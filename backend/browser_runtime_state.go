@@ -207,6 +207,7 @@ func (a *App) recoverBrowserProfileRuntime(profileID string) (*BrowserProfile, b
 		a.browserMgr.Mutex.Unlock()
 		return nil, false
 	}
+	wasRunning := profile.Running
 	if profile.Running && isBrowserProfileLive(profile, a.browserMgr.BrowserProcesses[profileID]) {
 		snapshot := copyBrowserProfileSnapshot(profile)
 		a.browserMgr.Mutex.Unlock()
@@ -227,6 +228,13 @@ func (a *App) recoverBrowserProfileRuntime(profileID string) (*BrowserProfile, b
 				logger.F("user_data_dir", userDataDir),
 				logger.F("reason", err.Error()),
 			)
+			if wasRunning {
+				a.browserMgr.Mutex.Lock()
+				if current, ok := a.browserMgr.Profiles[profileID]; ok && current != nil && current.Running && !isBrowserProfileLive(current, a.browserMgr.BrowserProcesses[profileID]) {
+					a.markProfileStoppedLocked(profileID, current)
+				}
+				a.browserMgr.Mutex.Unlock()
+			}
 			return nil, false
 		}
 	}
@@ -237,6 +245,13 @@ func (a *App) recoverBrowserProfileRuntime(profileID string) (*BrowserProfile, b
 			logger.F("debug_port", debugPort),
 			logger.F("error", err.Error()),
 		)
+		if wasRunning {
+			a.browserMgr.Mutex.Lock()
+			if current, ok := a.browserMgr.Profiles[profileID]; ok && current != nil && current.Running && !isBrowserProfileLive(current, a.browserMgr.BrowserProcesses[profileID]) {
+				a.markProfileStoppedLocked(profileID, current)
+			}
+			a.browserMgr.Mutex.Unlock()
+		}
 		return nil, false
 	}
 
