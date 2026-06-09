@@ -205,21 +205,23 @@ func (a *App) startWorkspaceAgentProcess(installRoot, runtimeDir, serverOrigin s
 	}
 	a.workspaceAgentLog = logFile
 
+	antRuntimeBaseURL := a.resolveWorkspaceAntRuntimeBaseURL()
 	cmd := exec.Command(nodeExe, "--enable-source-maps", agentEntry)
 	hideWindow(cmd)
 	cmd.Dir = installRoot
-	cmd.Env = withWorkspaceAgentEnv(os.Environ(), runtimeDir, serverOrigin, listenPort, agentBaseURL)
+	cmd.Env = withWorkspaceAgentEnv(os.Environ(), runtimeDir, serverOrigin, listenPort, agentBaseURL, antRuntimeBaseURL)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
 	appendWorkspaceHostLog(runtimeDir,
-		"starting workspace agent: node=%s entry=%s cwd=%s listen=%s:%s server_origin=%s",
+		"starting workspace agent: node=%s entry=%s cwd=%s listen=%s:%s server_origin=%s ant_runtime=%s",
 		nodeExe,
 		agentEntry,
 		cmd.Dir,
 		defaultWorkspaceAgentListenHost,
 		listenPort,
 		serverOrigin,
+		antRuntimeBaseURL,
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -647,7 +649,16 @@ func appendWorkspaceHostLog(runtimeDir, format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(file, "[%s] %s\n", time.Now().Format(time.RFC3339Nano), fmt.Sprintf(format, args...))
 }
 
-func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, agentBaseURL string) []string {
+func (a *App) resolveWorkspaceAntRuntimeBaseURL() string {
+	if a != nil && a.launchServer != nil {
+		if port := a.launchServer.Port(); port > 0 {
+			return fmt.Sprintf("http://127.0.0.1:%d", port)
+		}
+	}
+	return defaultWorkspaceAntRuntimeBaseURL
+}
+
+func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, agentBaseURL, antRuntimeBaseURL string) []string {
 	envMap := make(map[string]string, len(base)+8)
 	for _, entry := range base {
 		parts := strings.SplitN(entry, "=", 2)
@@ -665,7 +676,10 @@ func withWorkspaceAgentEnv(base []string, runtimeDir, serverOrigin, listenPort, 
 	envMap["AGENT_LISTEN_HOST"] = defaultWorkspaceAgentListenHost
 	envMap["AGENT_LISTEN_PORT"] = listenPort
 	envMap["AGENT_BASE_URL"] = agentBaseURL
-	envMap["ANT_RUNTIME_BASE_URL"] = defaultWorkspaceAntRuntimeBaseURL
+	if strings.TrimSpace(antRuntimeBaseURL) == "" {
+		antRuntimeBaseURL = defaultWorkspaceAntRuntimeBaseURL
+	}
+	envMap["ANT_RUNTIME_BASE_URL"] = strings.TrimRight(strings.TrimSpace(antRuntimeBaseURL), "/")
 	envMap["ANT_RUNTIME_AUTO_BOOT"] = "false"
 
 	result := make([]string, 0, len(envMap))

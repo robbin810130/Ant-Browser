@@ -168,8 +168,8 @@ func (a *App) configureManagedInstanceRuntime() {
 		EnsureManagedProfile: a.ensureManagedProfileForOpen,
 		FindRunningProfile:   a.managedRunningProfileSnapshot,
 		WaitForDebugReady:    a.waitForBrowserDebugReady,
-		StartManagedProfile: func(profileID string, targetURL string, _ bool) (*BrowserProfile, error) {
-			return a.BrowserInstanceStartWithParams(profileID, nil, []string{targetURL}, true)
+		StartManagedProfile: func(profileID string, _ string, _ bool) (*BrowserProfile, error) {
+			return a.BrowserInstanceStartWithParams(profileID, nil, nil, true)
 		},
 		StopManagedProfile: func(profileID string) error {
 			_, err := a.StopInstance(profileID)
