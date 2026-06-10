@@ -52,11 +52,35 @@ func (e *browserStartupExitError) Detail() string {
 	lines := strings.Split(strings.TrimSpace(e.stderrTail), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if line != "" {
+		if line != "" && !isBrowserInformationalStderrLine(line) {
 			return line
 		}
 	}
 	return ""
+}
+
+func (e *browserStartupExitError) FullStderrTail() string {
+	return strings.TrimSpace(e.stderrTail)
+}
+
+func (e *browserStartupExitError) ExitError() string {
+	if e.exitErr == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.exitErr.Error())
+}
+
+func isBrowserInformationalStderrLine(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.HasPrefix(line, "DevTools listening on ")
+}
+
+func browserStartupDiagnostics(err error) (string, string) {
+	var exitErr *browserStartupExitError
+	if !errors.As(err, &exitErr) {
+		return "", ""
+	}
+	return exitErr.FullStderrTail(), exitErr.ExitError()
 }
 
 func newBrowserStartupExitError(result browserProcessExitResult) error {

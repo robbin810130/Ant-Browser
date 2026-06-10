@@ -74,6 +74,35 @@ func TestDescribeBrowserReadyFailureUsesExitDetail(t *testing.T) {
 	}
 }
 
+func TestBrowserStartupExitErrorDetailSkipsDevToolsListeningLine(t *testing.T) {
+	err := &browserStartupExitError{
+		exitErr: fmt.Errorf("exit status 5"),
+		stderrTail: strings.Join([]string{
+			"[ERROR:zygote_host_impl_linux.cc] sandbox initialization failed",
+			"DevTools listening on ws://127.0.0.1:12080/devtools/browser/test",
+		}, "\n"),
+	}
+
+	if got := err.Detail(); !strings.Contains(got, "sandbox initialization failed") {
+		t.Fatalf("expected actionable stderr detail, got %q", got)
+	}
+}
+
+func TestDescribeBrowserReadyFailureDoesNotUseDevToolsListeningAsCause(t *testing.T) {
+	err := &browserStartupExitError{
+		exitErr:    fmt.Errorf("exit status 0"),
+		stderrTail: "DevTools listening on ws://127.0.0.1:12080/devtools/browser/test",
+	}
+
+	got := describeBrowserReadyFailure(`C:\chrome.exe`, 12080, 10*time.Second, err)
+	if strings.Contains(got, "DevTools listening") {
+		t.Fatalf("expected benign DevTools line to be omitted from user-facing cause, got %q", got)
+	}
+	if !strings.Contains(got, "exit status 0") {
+		t.Fatalf("expected process exit status fallback, got %q", got)
+	}
+}
+
 func TestBrowserStartAttemptCountDefault(t *testing.T) {
 	if browserStartAttemptCount() != 5 {
 		t.Fatalf("expected default browser start attempts to be 5, got %d", browserStartAttemptCount())

@@ -260,6 +260,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 
 		startErr := fmt.Errorf("%s", describeBrowserReadyFailure(chromeBinaryPath, assignedDebugPort, totalReadyTimeout, readyErr))
 		lastStartErr = startErr
+		stderrTail, exitError := browserStartupDiagnostics(readyErr)
 		log.Error("浏览器启动未就绪",
 			logger.F("profile_id", profileId),
 			logger.F("chrome", chromeBinaryPath),
@@ -269,6 +270,8 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 			logger.F("args", strings.Join(args, " ")),
 			logger.F("error", readyErr.Error()),
 			logger.F("reason", startErr.Error()),
+			logger.F("process_exit_error", exitError),
+			logger.F("stderr_tail", stderrTail),
 		)
 
 		if attempt < maxStartAttempts && shouldRetryBrowserReadyFailure(readyErr) {
