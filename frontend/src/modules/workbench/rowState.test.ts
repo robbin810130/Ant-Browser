@@ -16,6 +16,7 @@ function shop(overrides: Partial<WorkspaceAuthorizedShop> = {}): WorkspaceAuthor
     profileExists: true,
     reclaimPending: false,
     coreReady: true,
+    lastValidatedAt: '',
     lastOpenedAt: '',
     lastOpenFailureCode: '',
     lastOpenFailureMessage: '',
@@ -111,6 +112,17 @@ describe('workbench row state evidence', () => {
       lastOpenFailureCode: 'LOCAL_BRIDGE_FAILED',
       lastOpenFailureMessage: 'fetch failed',
       lastOpenFailedAt: '2026-06-03T09:41:47.435Z',
+    }), source).latestFailure).toBeNull()
+  })
+
+  it('suppresses reported open failures older than the last successful validation timestamp', () => {
+    const source = evidence()
+
+    expect(evidenceForWorkbenchRow(shop({
+      lastValidatedAt: '2026-06-09T09:20:00.000Z',
+      lastOpenFailureCode: 'ANT_FINGERPRINT_CORE_REQUIRED',
+      lastOpenFailureMessage: 'managed shop requires a fingerprint core',
+      lastOpenFailedAt: '2026-06-09T09:10:00.000Z',
     }), source).latestFailure).toBeNull()
   })
 

@@ -15,6 +15,7 @@ func ProjectShopInstance(shop ShopRecord, runtime LocalRuntimeState) ShopInstanc
 		ProfileExists:          runtime.ProfileExists,
 		ReclaimPending:         runtime.ReclaimPending,
 		CoreReady:              runtime.CoreReady,
+		LastValidatedAt:        strings.TrimSpace(shop.LastValidatedAt),
 		LastOpenedAt:           strings.TrimSpace(shop.LastOpenedAt),
 		LastOpenFailureCode:    strings.TrimSpace(shop.LastOpenFailureCode),
 		LastOpenFailureMessage: strings.TrimSpace(shop.LastOpenFailureMessage),

@@ -24,6 +24,7 @@ type ShopRecord struct {
 	PlatformCode           string `json:"platformCode"`
 	SharedLoginStatus      string `json:"sharedLoginStatus"`
 	SharedLoginStatusLabel string `json:"sharedLoginStatusLabel"`
+	LastValidatedAt        string `json:"lastValidatedAt,omitempty"`
 	LastOpenedAt           string `json:"lastOpenedAt,omitempty"`
 	LastOpenFailureCode    string `json:"lastOpenFailureCode,omitempty"`
 	LastOpenFailureMessage string `json:"lastOpenFailureMessage,omitempty"`
@@ -50,6 +51,7 @@ type ShopInstanceProjection struct {
 	ProfileExists          bool   `json:"profileExists"`
 	ReclaimPending         bool   `json:"reclaimPending"`
 	CoreReady              bool   `json:"coreReady"`
+	LastValidatedAt        string `json:"lastValidatedAt,omitempty"`
 	LastOpenedAt           string `json:"lastOpenedAt,omitempty"`
 	LastOpenFailureCode    string `json:"lastOpenFailureCode,omitempty"`
 	LastOpenFailureMessage string `json:"lastOpenFailureMessage,omitempty"`

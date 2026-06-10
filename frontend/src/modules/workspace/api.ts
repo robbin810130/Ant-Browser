@@ -44,6 +44,7 @@ function normalizeShop(input: any): WorkspaceAuthorizedShop {
     profileExists: Boolean(input?.profileExists),
     reclaimPending: Boolean(input?.reclaimPending),
     coreReady: Boolean(input?.coreReady),
+    lastValidatedAt: String(input?.lastValidatedAt || ''),
     lastOpenedAt: String(input?.lastOpenedAt || ''),
     lastOpenFailureCode: String(input?.lastOpenFailureCode || ''),
     lastOpenFailureMessage: String(input?.lastOpenFailureMessage || ''),

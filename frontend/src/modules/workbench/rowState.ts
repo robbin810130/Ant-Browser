@@ -15,8 +15,9 @@ function isSucceeded(run: { status?: string } | null) {
   return run?.status === 'succeeded' || run?.status === 'completed'
 }
 
-function latestCredentialSuccessTime(evidence: ShopRunEvidence) {
+function latestCredentialSuccessTime(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence) {
   return Math.max(
+    parseTime(shop.lastValidatedAt),
     isSucceeded(evidence.latestCredential) ? runTime(evidence.latestCredential) : 0,
     isSucceeded(evidence.latestValidation) ? runTime(evidence.latestValidation) : 0,
   )
@@ -46,13 +47,13 @@ export function shouldSuppressStaleFailure(shop: WorkspaceAuthorizedShop, eviden
     return true
   }
 
-  const credentialSuccessAt = latestCredentialSuccessTime(evidence)
+  const credentialSuccessAt = latestCredentialSuccessTime(shop, evidence)
   return credentialSuccessAt > 0 && runTime(failure) <= credentialSuccessAt
 }
 
 function isStaleReportedOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence) {
   if (!shop.lastOpenFailureCode && !shop.lastOpenFailureMessage) return false
-  const openedAt = latestOpenSuccessTime(shop, evidence)
+  const openedAt = Math.max(latestOpenSuccessTime(shop, evidence), latestCredentialSuccessTime(shop, evidence))
   const failedAt = parseTime(shop.lastOpenFailedAt)
   return openedAt > 0 && failedAt > 0 && failedAt <= openedAt
 }
