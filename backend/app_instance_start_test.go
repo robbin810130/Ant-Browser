@@ -358,6 +358,28 @@ func TestWaitBrowserDebugPortStableAllowsDebugPortAfterLauncherExit(t *testing.T
 	}
 }
 
+func TestShouldKeepBrowserRunningPendingDebugReadyAllowsDetachedDebugPort(t *testing.T) {
+	t.Parallel()
+
+	ln := mustListenLoopback(t)
+	defer ln.Close()
+
+	cmd := shortLivedCommand()
+	monitor, err := newBrowserProcessMonitor(cmd)
+	if err != nil {
+		t.Fatalf("初始化浏览器进程监控失败: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("启动短命测试命令失败: %v", err)
+	}
+	monitor.Start()
+	<-monitor.Done()
+
+	if !shouldKeepBrowserRunningPendingDebugReady(listenerPort(t, ln), monitor) {
+		t.Fatal("期望 launcher 退出但调试端口仍可连接时进入后台附着")
+	}
+}
+
 func TestWaitBrowserProcessKeepsRunningWhileDebugPortAlive(t *testing.T) {
 	ln := mustListenLoopback(t)
 	port := listenerPort(t, ln)

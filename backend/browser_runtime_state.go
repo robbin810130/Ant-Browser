@@ -309,7 +309,13 @@ func (a *App) recoverRunningProfilesFromUserDataDirs() int {
 }
 
 func shouldKeepBrowserRunningPendingDebugReady(debugPort int, monitor *browserProcessMonitor) bool {
-	return debugPort > 0 && monitor != nil && !monitor.HasExited()
+	if debugPort <= 0 || monitor == nil {
+		return false
+	}
+	if !monitor.HasExited() {
+		return true
+	}
+	return canConnectDebugPort(debugPort, 250*time.Millisecond)
 }
 
 func isBrowserProfileLive(profile *BrowserProfile, trackedCmd *exec.Cmd) bool {
