@@ -462,6 +462,10 @@ export function WorkspaceAuthorizedShops() {
   return window['go']['main']['App']['WorkspaceAuthorizedShops']();
 }
 
+export function WorkspaceFocusShop(arg1) {
+  return window['go']['main']['App']['WorkspaceFocusShop'](arg1);
+}
+
 export function WorkspaceOpenShop(arg1) {
   return window['go']['main']['App']['WorkspaceOpenShop'](arg1);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ListChecks } from 'lucide-react'
+import { BringToFront, ListChecks } from 'lucide-react'
 import { Badge, Button, Modal } from '../../../shared/components'
 import { fetchWorkspaceRunEvents, RunTimeline, type RunEvent, type RunRecord } from '../../runEvidence'
 import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
@@ -53,12 +53,14 @@ export function ShopWorkbenchDrawer({
   runningAction,
   onClose,
   onAction,
+  onFocus,
 }: {
   row: WorkbenchRow | null
   open: boolean
-  runningAction: { shopId: string; action: WorkbenchRow['recommendedAction'] } | null
+  runningAction: { shopId: string; action: string } | null
   onClose: () => void
   onAction: (row: WorkbenchRow) => void
+  onFocus: (row: WorkbenchRow) => void
 }) {
   const [events, setEvents] = useState<RunEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
@@ -117,6 +119,9 @@ export function ShopWorkbenchDrawer({
   if (!row) return null
 
   const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+  const isFocusingThisRow = isRunningThisRow && runningAction?.action === 'focus'
+  const isActingThisRow = isRunningThisRow && runningAction?.action !== 'focus'
+  const disabledByOtherRow = Boolean(runningAction && !isRunningThisRow)
   const actionLabel = workbenchActionLabel(row.recommendedAction)
   const state = row.workbenchState
 
@@ -163,15 +168,30 @@ export function ShopWorkbenchDrawer({
                 <p className="mt-2 break-all text-xs text-[var(--color-text-muted)]">失败码：{state.failureCode}</p>
               ) : null}
             </div>
-            <Button
-              className="w-full shrink-0 whitespace-nowrap sm:w-auto"
-              size="sm"
-              loading={isRunningThisRow}
-              disabled={Boolean(runningAction && !isRunningThisRow)}
-              onClick={() => onAction(row)}
-            >
-              {actionLabel}
-            </Button>
+            <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+              {row.shop.instanceRunning ? (
+                <Button
+                  className="w-full whitespace-nowrap sm:w-auto"
+                  variant="secondary"
+                  size="sm"
+                  loading={isFocusingThisRow}
+                  disabled={disabledByOtherRow || isActingThisRow}
+                  onClick={() => onFocus(row)}
+                >
+                  <BringToFront className="h-4 w-4" />
+                  调到前台
+                </Button>
+              ) : null}
+              <Button
+                className="w-full whitespace-nowrap sm:w-auto"
+                size="sm"
+                loading={isActingThisRow}
+                disabled={disabledByOtherRow || isFocusingThisRow}
+                onClick={() => onAction(row)}
+              >
+                {actionLabel}
+              </Button>
+            </div>
           </div>
         </div>
 

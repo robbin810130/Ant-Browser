@@ -8,6 +8,7 @@ import {
   closeWorkspaceShop,
   fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
+  focusWorkspaceShop,
   openWorkspaceShop,
   startWorkspaceSharedLoginBind,
   startWorkspaceSharedLoginValidate,
@@ -29,8 +30,8 @@ import { deriveWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
-type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> }
-type RunnableWorkbenchAction = RunningWorkbenchAction['action']
+type RunnableWorkbenchAction = Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> | 'focus'
+type RunningWorkbenchAction = { shopId: string; action: RunnableWorkbenchAction }
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
@@ -54,17 +55,19 @@ function emptyEvidence(): ShopRunEvidence {
   }
 }
 
-function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorizedShop) {
+function actionSuccessLabel(action: WorkbenchActionKey | 'focus', shop: WorkspaceAuthorizedShop) {
   const name = shop.shopName || shop.shopId
   if (action === 'open') return `已打开 ${name}`
+  if (action === 'focus') return `已调起 ${name}`
   if (action === 'close') return `已关闭 ${name}`
   if (action === 'bind') return `${name} 更新凭据已发起`
   if (action === 'validate') return `${name} 本机验证已发起`
   return '动作已发起'
 }
 
-function actionFallbackError(action: WorkbenchActionKey) {
+function actionFallbackError(action: WorkbenchActionKey | 'focus') {
   if (action === 'open') return '打开店铺后台失败'
+  if (action === 'focus') return '调起店铺后台失败'
   if (action === 'close') return '关闭店铺后台失败'
   if (action === 'bind') return '发起更新凭据失败'
   if (action === 'validate') return '发起本机验证失败'
@@ -245,6 +248,39 @@ export function WorkbenchPage() {
     }
   }
 
+  async function focusRunningShop(row: WorkbenchRow) {
+    if (runningActionRef.current) {
+      toast.info('已有推荐动作正在执行，请稍候')
+      return
+    }
+
+    const nextRunningAction = { shopId: row.shop.shopId, action: 'focus' as const }
+    runningActionRef.current = nextRunningAction
+    setRunningAction(nextRunningAction)
+    try {
+      const result = await focusWorkspaceShop(row.shop.shopId)
+      await load(true)
+      if (!result.success) {
+        toast.error(result.message || '调起店铺后台失败')
+        return
+      }
+      toast.success(actionSuccessLabel('focus', row.shop))
+    } catch (error: any) {
+      console.error('focus workspace shop failed', error)
+      toast.error(String(error?.message || actionFallbackError('focus')))
+    } finally {
+      if (
+        runningActionRef.current?.shopId === nextRunningAction.shopId
+        && runningActionRef.current?.action === nextRunningAction.action
+      ) {
+        runningActionRef.current = null
+        setRunningAction((current) => (
+          current?.shopId === nextRunningAction.shopId && current.action === nextRunningAction.action ? null : current
+        ))
+      }
+    }
+  }
+
   function closeWorkbenchDrawer() {
     setSelectedRow(null)
     if (!requestedShopId) return
@@ -405,6 +441,7 @@ export function WorkbenchPage() {
             runningAction={runningAction}
             onOpenDrawer={setSelectedRow}
             onAction={(row) => void runRecommendedAction(row)}
+            onFocus={(row) => void focusRunningShop(row)}
           />
         </Card>
       </div>
@@ -415,6 +452,7 @@ export function WorkbenchPage() {
         runningAction={runningAction}
         onClose={closeWorkbenchDrawer}
         onAction={(row) => void runRecommendedAction(row)}
+        onFocus={(row) => void focusRunningShop(row)}
       />
       <SharedLoginSessionModal
         dialog={sharedLoginDialog}

@@ -72,6 +72,59 @@ func (s *Service) OpenManagedShop(req OpenRequest) (*OpenResult, error) {
 	return s.waitOpenRun(req.ProfileID)
 }
 
+func (s *Service) FocusManagedShop(req OpenRequest) (*OpenResult, error) {
+	if strings.TrimSpace(req.ProfileID) == "" || strings.TrimSpace(req.ShopID) == "" {
+		return nil, fmt.Errorf("managed focus requires profileID and shopID")
+	}
+	if !req.ManagedMode {
+		return nil, fmt.Errorf("managed focus requires managed mode")
+	}
+
+	req = normalizeOpenRequest(req)
+	runtime, err := s.getOpenRuntime()
+	if err != nil {
+		return nil, err
+	}
+
+	profile, ok := s.reusableRunningProfile(runtime, req.ProfileID)
+	if !ok || profile == nil {
+		return &OpenResult{
+			ProfileID: req.ProfileID,
+			Success:   false,
+			Code:      "ANT_INSTANCE_NOT_RUNNING",
+			Message:   "店铺后台未运行",
+		}, nil
+	}
+
+	targets, err := runtime.ListTargets(profile.ProfileId)
+	if err != nil {
+		return nil, err
+	}
+	target, ok := pickFocusableTarget(req.ShopID, req.LaunchContext, targets)
+	if !ok {
+		return &OpenResult{
+			ProfileID: req.ProfileID,
+			PID:       profile.Pid,
+			DebugPort: profile.DebugPort,
+			Success:   false,
+			Code:      "ANT_TARGET_NOT_FOUND",
+			Message:   "未找到该店铺已打开的后台页签",
+		}, nil
+	}
+	if err := runtime.ActivateTarget(profile.ProfileId, target.TargetID); err != nil {
+		return nil, err
+	}
+
+	return &OpenResult{
+		ProfileID:  profile.ProfileId,
+		PID:        profile.Pid,
+		DebugPort:  profile.DebugPort,
+		CurrentURL: strings.TrimSpace(target.CurrentURL),
+		PageTitle:  strings.TrimSpace(target.PageTitle),
+		Success:    true,
+	}, nil
+}
+
 func normalizeOpenRequest(req OpenRequest) OpenRequest {
 	req.ProfileID = strings.TrimSpace(req.ProfileID)
 	req.ShopID = strings.TrimSpace(req.ShopID)
@@ -81,6 +134,32 @@ func normalizeOpenRequest(req OpenRequest) OpenRequest {
 		req.SessionBundle = req.LaunchContext.SessionBundle
 	}
 	return req
+}
+
+func pickFocusableTarget(shopID string, launchContext workspace.ShopLaunchContext, targets []workspace.OpenRuntimeTarget) (workspace.OpenRuntimeTarget, bool) {
+	normalizedShopID := strings.ToLower(strings.TrimSpace(shopID))
+	if normalizedShopID != "" {
+		for _, target := range targets {
+			if strings.Contains(strings.ToLower(strings.TrimSpace(target.CurrentURL)), normalizedShopID) {
+				if workspace.ClassifyOpenResultForLaunchContext(shopID, launchContext, workspace.OpenRuntimeSnapshot{
+					CurrentURL: target.CurrentURL,
+					PageTitle:  target.PageTitle,
+				}).Success {
+					return target, true
+				}
+			}
+		}
+	}
+
+	for _, target := range targets {
+		if workspace.ClassifyOpenResultForLaunchContext(shopID, launchContext, workspace.OpenRuntimeSnapshot{
+			CurrentURL: target.CurrentURL,
+			PageTitle:  target.PageTitle,
+		}).Success {
+			return target, true
+		}
+	}
+	return workspace.OpenRuntimeTarget{}, false
 }
 
 func (s *Service) ensureManagedProfile(req OpenRequest) (*browser.Profile, error) {

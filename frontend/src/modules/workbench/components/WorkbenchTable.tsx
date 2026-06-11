@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { BringToFront } from 'lucide-react'
 import { Badge, Button, Table } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
@@ -15,12 +16,14 @@ export function WorkbenchTable({
   runningAction,
   onOpenDrawer,
   onAction,
+  onFocus,
 }: {
   rows: WorkbenchRow[]
   loading: boolean
-  runningAction: { shopId: string; action: WorkbenchRow['recommendedAction'] } | null
+  runningAction: { shopId: string; action: string } | null
   onOpenDrawer: (row: WorkbenchRow) => void
   onAction: (row: WorkbenchRow) => void
+  onFocus: (row: WorkbenchRow) => void
 }) {
   const columns: TableColumn<WorkbenchRow>[] = [
     {
@@ -111,15 +114,51 @@ export function WorkbenchTable({
       key: 'actions',
       title: '推荐动作',
       align: 'right',
-      width: 116,
+      width: 188,
       render: (_, row) => {
         const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+        const isFocusingThisRow = isRunningThisRow && runningAction?.action === 'focus'
+        const isActingThisRow = isRunningThisRow && runningAction?.action !== 'focus'
+        const disabledByOtherRow = Boolean(runningAction && !isRunningThisRow)
+        if (row.shop.instanceRunning) {
+          return (
+            <div className="flex justify-end gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="whitespace-nowrap px-2.5"
+                loading={isFocusingThisRow}
+                disabled={disabledByOtherRow || isActingThisRow}
+                title={`调起 ${row.shop.shopName || row.shop.shopId} 后台窗口`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onFocus(row)
+                }}
+              >
+                <BringToFront className="h-3.5 w-3.5" />
+                调到前台
+              </Button>
+              <Button
+                size="sm"
+                className="whitespace-nowrap px-2.5"
+                loading={isActingThisRow}
+                disabled={disabledByOtherRow || isFocusingThisRow}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onAction(row)
+                }}
+              >
+                {workbenchActionLabel(row.recommendedAction)}
+              </Button>
+            </div>
+          )
+        }
         return (
           <Button
             size="sm"
             className="w-full whitespace-nowrap px-3 sm:w-auto"
-            loading={isRunningThisRow}
-            disabled={Boolean(runningAction && !isRunningThisRow)}
+            loading={isActingThisRow}
+            disabled={disabledByOtherRow || isFocusingThisRow}
             onClick={(event) => {
               event.stopPropagation()
               onAction(row)

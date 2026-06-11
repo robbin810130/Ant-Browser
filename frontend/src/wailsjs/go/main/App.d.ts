@@ -241,6 +241,8 @@ export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.Pro
 
 export function WorkspaceAuthorizedShops():Promise<Array<workspace.ShopInstanceProjection>>;
 
+export function WorkspaceFocusShop(arg1:string):Promise<workspace.OpenShopResult>;
+
 export function WorkspaceOpenShop(arg1:string):Promise<workspace.OpenShopResult>;
 
 export function WorkspaceOperationTasks(arg1:workspace.OperationTaskQuery):Promise<workspace.OperationTasksPayload>;
