@@ -72,7 +72,8 @@ func (e *browserStartupExitError) ExitError() string {
 
 func isBrowserInformationalStderrLine(line string) bool {
 	line = strings.TrimSpace(line)
-	return strings.HasPrefix(line, "DevTools listening on ")
+	return strings.HasPrefix(line, "DevTools listening on ") ||
+		strings.HasPrefix(line, "[stderr read error]")
 }
 
 func browserStartupDiagnostics(err error) (string, string) {

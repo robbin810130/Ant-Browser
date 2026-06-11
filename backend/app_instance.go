@@ -215,6 +215,7 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 	args = append(args, profile.FingerprintArgs...)
 	args = append(args, sanitizedProfileLaunchArgs...)
 	args = append(args, sanitizedExtraLaunchArgs...)
+	args = ensureFingerprintCoreStabilityArgs(args)
 	args = appendLaunchTargets(args, profile, normalizedStartURLs, skipDefaultStartURLs)
 
 	cmd := buildBrowserLaunchCommand(chromeBinaryPath, args)
@@ -685,6 +686,28 @@ func ensureNewWindowLaunchArg(args []string) []string {
 		}
 	}
 	return append(args, "--new-window")
+}
+
+const disableFingerprintGpuSpoofingArg = "--disable-spoofing=gpu"
+
+func ensureFingerprintCoreStabilityArgs(args []string) []string {
+	hasFingerprintSeed := false
+	hasDisableSpoofing := false
+	for _, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		if trimmed == "--fingerprint" || strings.HasPrefix(trimmed, "--fingerprint=") {
+			hasFingerprintSeed = true
+		}
+		if trimmed == "--disable-spoofing" || strings.HasPrefix(trimmed, "--disable-spoofing=") {
+			hasDisableSpoofing = true
+		}
+	}
+	if !hasFingerprintSeed || hasDisableSpoofing {
+		return args
+	}
+	// fingerprint-chromium 139+ enables GPU spoofing with --fingerprint; it is
+	// unstable on some Windows remote desktops and can exit with STATUS_BREAKPOINT.
+	return append(args, disableFingerprintGpuSpoofingArg)
 }
 
 func fingerprintSeedForProfileID(profileID string) int {

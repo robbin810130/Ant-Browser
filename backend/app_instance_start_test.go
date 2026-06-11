@@ -33,6 +33,36 @@ func TestEnsureNewWindowLaunchArgAddsFlagOnce(t *testing.T) {
 	}
 }
 
+func TestEnsureFingerprintCoreStabilityArgsAddsGpuSpoofingGuard(t *testing.T) {
+	t.Parallel()
+
+	got := ensureFingerprintCoreStabilityArgs([]string{"--fingerprint=123", "--fingerprint-brand=Chrome"})
+	want := []string{"--fingerprint=123", "--fingerprint-brand=Chrome", disableFingerprintGpuSpoofingArg}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected GPU spoofing guard: got=%v want=%v", got, want)
+	}
+}
+
+func TestEnsureFingerprintCoreStabilityArgsDoesNotTouchNonSeedFingerprintArgs(t *testing.T) {
+	t.Parallel()
+
+	args := []string{"--fingerprint-brand=Chrome", "--fingerprint-platform=windows"}
+	got := ensureFingerprintCoreStabilityArgs(args)
+	if !reflect.DeepEqual(got, args) {
+		t.Fatalf("brand/platform-only fingerprint args should not change: got=%v want=%v", got, args)
+	}
+}
+
+func TestEnsureFingerprintCoreStabilityArgsRespectsExistingDisableSpoofing(t *testing.T) {
+	t.Parallel()
+
+	args := []string{"--fingerprint=123", "--disable-spoofing=canvas"}
+	got := ensureFingerprintCoreStabilityArgs(args)
+	if !reflect.DeepEqual(got, args) {
+		t.Fatalf("existing disable-spoofing arg should be respected: got=%v want=%v", got, args)
+	}
+}
+
 func TestFingerprintSeedForProfileIDIsBoundedAndStable(t *testing.T) {
 	t.Parallel()
 
