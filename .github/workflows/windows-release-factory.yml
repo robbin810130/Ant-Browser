@@ -33,6 +33,9 @@ jobs:
   build:
     runs-on: [self-hosted, windows, ant-browser-release]
     timeout-minutes: 180
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
 
     env:
       TARGET_VERSION: ${{ inputs.target_version }}
@@ -50,18 +53,15 @@ jobs:
           fetch-depth: 0
 
       - name: Preflight
-        shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File tools\release\windows-release-preflight.ps1
 
       - name: Build Windows release
-        shell: powershell
         run: |
           Remove-Item -Recurse -Force publish\output -ErrorAction SilentlyContinue
           bat\publish.bat W -Version $env:TARGET_VERSION
 
       - name: Verify expected artifacts
-        shell: powershell
         run: |
           $files = @(
             "publish\output\AntBrowser-Setup-$env:TARGET_VERSION.exe",
@@ -78,7 +78,6 @@ jobs:
 
       - name: Run app-update e2e
         if: ${{ inputs.run_e2e }}
-        shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass `
             -File tools\app-update\windows-app-update-e2e.ps1 `
@@ -86,7 +85,6 @@ jobs:
             -TargetVersion $env:TARGET_VERSION
 
       - name: Generate release report
-        shell: powershell
         run: |
           $commit = git rev-parse HEAD
           powershell -NoProfile -ExecutionPolicy Bypass `
@@ -110,7 +108,6 @@ jobs:
 
       - name: Upload to server test channel
         if: ${{ inputs.upload_to_server }}
-        shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass `
             -File tools\release\upload-windows-release.ps1 `
@@ -119,7 +116,6 @@ jobs:
 
       - name: Verify server test package URL
         if: ${{ inputs.upload_to_server }}
-        shell: powershell
         run: |
           $manifestUrl = "http://192.168.210.169:18080/releases/windows/$env:CHANNEL/$env:TARGET_VERSION/app-update-stable.json"
           powershell -NoProfile -ExecutionPolicy Bypass `
