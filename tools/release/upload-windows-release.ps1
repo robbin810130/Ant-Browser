@@ -1,7 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [Alias("ReleaseVersion")]
-    [string]$Version,
+    [string]$ReleaseVersion,
     [string]$Channel = "test",
     [string]$OutputDir = "publish\output",
     [string]$RemoteRoot = "/opt/1688shop/releases/windows",
@@ -10,6 +9,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$Version = $ReleaseVersion
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir

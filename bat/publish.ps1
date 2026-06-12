@@ -1,7 +1,6 @@
 ﻿param(
     [string]$Target,
-    [Alias("ReleaseVersion")]
-    [string]$Version
+    [string]$ReleaseVersion
 )
 
 Set-StrictMode -Version Latest
@@ -590,7 +589,7 @@ try {
     Write-Host "当前工作目录: $repoRoot"
     Write-Host ""
 
-    Resolve-Version -ExplicitVersion $Version
+    Resolve-Version -ExplicitVersion $ReleaseVersion
     $publishTarget = Resolve-PublishTarget -InputTarget $Target
 
     Invoke-WithTemporaryWailsVersion {
