@@ -83,7 +83,7 @@ function Publish-Version {
     param([string]$Version, [string]$Destination)
     Write-Step "Publish $Version"
     Remove-Item -Recurse -Force $outputDir -ErrorAction SilentlyContinue
-    Invoke-Native -FilePath (Join-Path $repoRoot "bat\publish.bat") -Arguments @("W", "-ReleaseVersion", $Version)
+    & (Join-Path $repoRoot "bat\publish.ps1") -Target "W" -Version $Version
     Invoke-Native -FilePath "python" -Arguments @(
         (Join-Path $repoRoot "tools\app-update\verify-app-update-package.py"),
         (Join-Path $outputDir "app-update-stable.json"),
@@ -227,7 +227,7 @@ if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
 }
 Require-Command "go"
 Require-Command "python"
-Require-File -Path (Join-Path $repoRoot "bat\publish.bat") -Label "bat\publish.bat"
+Require-File -Path (Join-Path $repoRoot "bat\publish.ps1") -Label "bat\publish.ps1"
 New-Item -ItemType Directory -Force $TestRoot | Out-Null
 
 if (-not $SkipPublish) {

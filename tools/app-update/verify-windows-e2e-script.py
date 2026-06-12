@@ -23,7 +23,7 @@ def main() -> None:
         "TargetVersion",
         "Win32NT",
         "Test-Path variable:LASTEXITCODE",
-        "bat\\publish.bat",
+        "bat\\publish.ps1",
         "verify-app-update-package.py",
         "DESKTOP_APP_UPDATE_MANIFEST_URL",
         "CurrentExePath: currentExe",
