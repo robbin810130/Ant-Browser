@@ -88,7 +88,7 @@ jobs:
       - name: Build Windows release
         run: |
           Remove-Item -Recurse -Force publish\output -ErrorAction SilentlyContinue
-          bat\publish.bat W -Version $env:TARGET_VERSION
+          bat\publish.bat W -ReleaseVersion $env:TARGET_VERSION
 
       - name: Verify expected artifacts
         run: |
@@ -118,7 +118,7 @@ jobs:
           $commit = git rev-parse HEAD
           powershell -NoProfile -ExecutionPolicy Bypass `
             -File tools\release\write-windows-release-report.ps1 `
-            -Version $env:TARGET_VERSION `
+            -ReleaseVersion $env:TARGET_VERSION `
             -CommitSha $commit `
             -Channel $env:CHANNEL
 
@@ -140,7 +140,7 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass `
             -File tools\release\upload-windows-release.ps1 `
-            -Version $env:TARGET_VERSION `
+            -ReleaseVersion $env:TARGET_VERSION `
             -Channel $env:CHANNEL
 
       - name: Verify server test package URL

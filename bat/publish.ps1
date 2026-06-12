@@ -1,5 +1,6 @@
 ﻿param(
     [string]$Target,
+    [Alias("ReleaseVersion")]
     [string]$Version
 )
 

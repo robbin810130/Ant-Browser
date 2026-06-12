@@ -83,7 +83,7 @@ function Publish-Version {
     param([string]$Version, [string]$Destination)
     Write-Step "Publish $Version"
     Remove-Item -Recurse -Force $outputDir -ErrorAction SilentlyContinue
-    Invoke-Native -FilePath (Join-Path $repoRoot "bat\publish.bat") -Arguments @("W", "-Version", $Version)
+    Invoke-Native -FilePath (Join-Path $repoRoot "bat\publish.bat") -Arguments @("W", "-ReleaseVersion", $Version)
     Invoke-Native -FilePath "python" -Arguments @(
         (Join-Path $repoRoot "tools\app-update\verify-app-update-package.py"),
         (Join-Path $outputDir "app-update-stable.json"),
