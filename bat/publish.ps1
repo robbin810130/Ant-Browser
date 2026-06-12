@@ -62,6 +62,11 @@ function Invoke-NativeCommand {
     }
 }
 
+function Get-FileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
 function Assert-RequiredSourceFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -370,6 +375,26 @@ function Copy-DirectoryContents {
     }
 }
 
+function Copy-OptionalUpdatePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath,
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadRoot
+    )
+
+    $source = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $source)) {
+        return
+    }
+
+    $destination = Join-Path $PayloadRoot $RelativePath
+    $destinationParent = Split-Path -Parent $destination
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+    Write-Host "✓ 复制更新包可选路径: $RelativePath"
+}
+
 function Copy-WindowsChromePayload {
     param(
         [Parameter(Mandatory = $true)]
@@ -521,6 +546,86 @@ function Invoke-WindowsPackaging {
     Write-Host ""
 }
 
+function New-WindowsAppUpdateArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StagingDir
+    )
+
+    Write-Host "[Windows] 生成 app-update 全量包..."
+
+    $outputDir = Join-Path $repoRoot "publish/output"
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+    $zipName = "AntBrowser-$script:Version-windows-amd64.zip"
+    $zipPath = Join-Path $outputDir $zipName
+    $zipShaPath = "$zipPath.sha256"
+    $manifestPath = Join-Path $outputDir "app-update-stable.json"
+    $manifestShaPath = "$manifestPath.sha256"
+    $payloadRoot = Join-Path $repoRoot "publish/update-payload"
+
+    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $zipShaPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $manifestShaPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+
+    try {
+        foreach ($entry in (Get-ChildItem -LiteralPath $StagingDir -Force)) {
+            if ($entry.Name -ieq "data") {
+                continue
+            }
+            Copy-Item -LiteralPath $entry.FullName -Destination (Join-Path $payloadRoot $entry.Name) -Recurse -Force
+        }
+
+        $runtimeManifestSource = Join-Path $repoRoot "publish/runtime-manifest.json"
+        if (-not (Test-Path -LiteralPath $runtimeManifestSource -PathType Leaf)) {
+            throw "缺少运行时清单: publish\runtime-manifest.json"
+        }
+        $payloadPublishDir = Join-Path $payloadRoot "publish"
+        New-Item -ItemType Directory -Path $payloadPublishDir -Force | Out-Null
+        Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $payloadPublishDir "runtime-manifest.json") -Force
+
+        Copy-OptionalUpdatePath -RelativePath "apps/agent" -PayloadRoot $payloadRoot
+        Copy-OptionalUpdatePath -RelativePath "runtime/node" -PayloadRoot $payloadRoot
+
+        Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $zipPath -Force
+
+        $zipItem = Get-Item -LiteralPath $zipPath
+        $zipSha = Get-FileSha256 -Path $zipPath
+        "$zipSha  $zipName" | Set-Content -LiteralPath $zipShaPath -Encoding ascii
+
+        $manifest = [ordered]@{
+            schemaVersion = 1
+            product = "Ant Browser"
+            channel = "stable"
+            version = $script:Version
+            generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            packages = @(
+                [ordered]@{
+                    target = "windows-amd64"
+                    version = $script:Version
+                    payloadType = "full"
+                    url = $zipName
+                    sha256 = $zipSha
+                    size = $zipItem.Length
+                }
+            )
+        }
+        $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        $manifestSha = Get-FileSha256 -Path $manifestPath
+        "$manifestSha  app-update-stable.json" | Set-Content -LiteralPath $manifestShaPath -Encoding ascii
+
+        Write-Host "✓ 更新包生成成功: publish\output\$zipName"
+        Write-Host "✓ 更新清单生成成功: publish\output\app-update-stable.json"
+        Write-Host ""
+    }
+    finally {
+        Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Remove-WindowsStaging {
     param([string]$StagingDir)
 
@@ -544,6 +649,7 @@ function Publish-Windows {
     try {
         $stagingDir = New-WindowsStaging
         Invoke-WindowsPackaging -MakensisPath $makensisPath -StagingDir $stagingDir
+        New-WindowsAppUpdateArtifacts -StagingDir $stagingDir
     }
     finally {
         Remove-WindowsStaging -StagingDir $stagingDir
