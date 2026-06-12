@@ -1,0 +1,128 @@
+name: Windows Release Factory
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: Target version, for example 1.1.8
+        required: true
+        type: string
+      baseline_version:
+        description: Baseline version for app-update e2e, for example 1.1.7
+        required: true
+        type: string
+      channel:
+        description: Release channel
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+      run_e2e:
+        description: Run Windows app-update e2e
+        required: true
+        default: true
+        type: boolean
+      upload_to_server:
+        description: Upload artifacts to server test channel
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    runs-on: [self-hosted, windows, ant-browser-release]
+    timeout-minutes: 180
+
+    env:
+      TARGET_VERSION: ${{ inputs.target_version }}
+      BASELINE_VERSION: ${{ inputs.baseline_version }}
+      CHANNEL: ${{ inputs.channel }}
+      WINDOWS_RELEASE_SSH_HOST: ${{ secrets.WINDOWS_RELEASE_SSH_HOST }}
+      WINDOWS_RELEASE_SSH_PORT: ${{ secrets.WINDOWS_RELEASE_SSH_PORT }}
+      WINDOWS_RELEASE_SSH_USER: ${{ secrets.WINDOWS_RELEASE_SSH_USER }}
+      WINDOWS_RELEASE_SSH_KEY: ${{ secrets.WINDOWS_RELEASE_SSH_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preflight
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\release\windows-release-preflight.ps1
+
+      - name: Build Windows release
+        shell: powershell
+        run: |
+          Remove-Item -Recurse -Force publish\output -ErrorAction SilentlyContinue
+          bat\publish.bat W -Version $env:TARGET_VERSION
+
+      - name: Verify expected artifacts
+        shell: powershell
+        run: |
+          $files = @(
+            "publish\output\AntBrowser-Setup-$env:TARGET_VERSION.exe",
+            "publish\output\AntBrowser-$env:TARGET_VERSION-windows-amd64.zip",
+            "publish\output\AntBrowser-$env:TARGET_VERSION-windows-amd64.zip.sha256",
+            "publish\output\app-update-stable.json",
+            "publish\output\app-update-stable.json.sha256"
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "missing artifact: $file"
+            }
+          }
+
+      - name: Run app-update e2e
+        if: ${{ inputs.run_e2e }}
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\app-update\windows-app-update-e2e.ps1 `
+            -BaselineVersion $env:BASELINE_VERSION `
+            -TargetVersion $env:TARGET_VERSION
+
+      - name: Generate release report
+        shell: powershell
+        run: |
+          $commit = git rev-parse HEAD
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\release\write-windows-release-report.ps1 `
+            -Version $env:TARGET_VERSION `
+            -CommitSha $commit `
+            -Channel $env:CHANNEL
+
+      - name: Upload GitHub artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ant-browser-windows-${{ inputs.target_version }}
+          path: |
+            publish/output/AntBrowser-Setup-${{ inputs.target_version }}.exe
+            publish/output/AntBrowser-${{ inputs.target_version }}-windows-amd64.zip
+            publish/output/AntBrowser-${{ inputs.target_version }}-windows-amd64.zip.sha256
+            publish/output/app-update-stable.json
+            publish/output/app-update-stable.json.sha256
+            publish/output/release-report.json
+            publish/output/release-report.md
+
+      - name: Upload to server test channel
+        if: ${{ inputs.upload_to_server }}
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\release\upload-windows-release.ps1 `
+            -Version $env:TARGET_VERSION `
+            -Channel $env:CHANNEL
+
+      - name: Verify server test package URL
+        if: ${{ inputs.upload_to_server }}
+        shell: powershell
+        run: |
+          $manifestUrl = "http://192.168.210.169:18080/releases/windows/$env:CHANNEL/$env:TARGET_VERSION/app-update-stable.json"
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\release\check-windows-release-url.ps1 `
+            -ManifestUrl $manifestUrl `
+            -Target windows-amd64

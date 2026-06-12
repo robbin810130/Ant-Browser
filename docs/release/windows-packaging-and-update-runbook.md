@@ -598,6 +598,54 @@ git status --short
 
 然后按目标版本执行打包、e2e、远端 HTTP 200、真实客户端升级和 server-connection 证据采集。
 
+## Windows Release Factory MVP
+
+Windows release builds should now run through GitHub Actions on XiaoQ's
+self-hosted runner.
+
+Manual workflow:
+
+```text
+Windows Release Factory
+```
+
+Required inputs:
+
+- `target_version`
+- `baseline_version`
+- `channel=test`
+- `run_e2e=true`
+- `upload_to_server=true`
+
+The workflow must pass:
+
+1. runner preflight
+2. `bat\publish.bat W -Version <target_version>`
+3. artifact validation
+4. `tools\app-update\windows-app-update-e2e.ps1`
+5. release report generation
+6. server test-channel upload
+
+Do not promote to stable from a failed run. Stable promotion is a separate
+manual operation.
+
+## Release Factory MVP Acceptance Checklist
+
+- [ ] XiaoQ runner is registered with `self-hosted`, `windows`, `ant-browser-release`.
+- [ ] `windows-release-preflight.ps1` passes on the runner.
+- [ ] `Windows Release Factory` workflow runs manually.
+- [ ] Workflow builds `AntBrowser-Setup-<version>.exe`.
+- [ ] Workflow builds `AntBrowser-<version>-windows-amd64.zip`.
+- [ ] Workflow builds `app-update-stable.json`.
+- [ ] Workflow runs app-update e2e successfully.
+- [ ] Workflow uploads GitHub artifacts.
+- [ ] Workflow uploads test-channel server artifacts.
+- [ ] Server test manifest is reachable.
+- [ ] Package SHA256 matches manifest SHA256.
+- [ ] Manual stable promote publishes tested artifacts without rebuilding.
+- [ ] A real installed client updates from baseline to target.
+- [ ] XiaoQ no longer runs manual packaging commands for normal release validation.
+
 ## 常见失败点
 
 ### 1. `makensis.exe` 缺失
