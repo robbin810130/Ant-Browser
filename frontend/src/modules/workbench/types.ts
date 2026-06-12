@@ -5,9 +5,25 @@ export type WorkbenchQueueKey = 'ready' | 'manual' | 'credential' | 'failed' | '
 export type WorkbenchActionKey = 'open' | 'close' | 'bind' | 'validate' | 'retry' | 'core_management' | 'refresh' | 'diagnostics' | 'none'
 export type ExecutableBatchActionKey = 'open' | 'bind' | 'validate' | 'retry' | 'refresh'
 
+export interface WorkbenchState {
+  rawAuthorizationStatus: string
+  normalizedAuthorizationStatus: string
+  queue: WorkbenchQueueKey
+  recommendedAction: WorkbenchActionKey
+  primaryLabel: string
+  description: string
+  failureCode: string
+  failureLabel: string
+  evidenceText: string
+  diagnosticCode: string
+  instanceRunning: boolean
+  canExecute: boolean
+}
+
 export interface WorkbenchRow {
   shop: WorkspaceAuthorizedShop
   evidence: ShopRunEvidence
+  workbenchState: WorkbenchState
   queue: WorkbenchQueueKey
   recommendedAction: WorkbenchActionKey
   failureCode: string

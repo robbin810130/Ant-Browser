@@ -121,6 +121,84 @@ func TestWorkspaceOpenShopDelegatesToManagedInstanceService(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFocusShopDelegatesWithoutOpenContextReport(t *testing.T) {
+	var gotReq managedinstance.OpenRequest
+	var unexpectedOpenContext bool
+	var unexpectedReport bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/local/shops":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{{
+						"shopId":            "b2b-222082061706256a1a",
+						"shopName":          "壹级供应链",
+						"platformCode":      "1688",
+						"profileId":         "1688:b2b-222082061706256a1a",
+						"sharedLoginStatus": "ready",
+						"instanceRunning":   true,
+					}},
+				},
+			})
+		case strings.Contains(r.URL.Path, "/open-context"):
+			unexpectedOpenContext = true
+			http.NotFound(w, r)
+		case strings.Contains(r.URL.Path, "/report"):
+			unexpectedReport = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	previousFocusManagedShop := workspaceFocusManagedShop
+	workspaceFocusManagedShop = func(_ *managedinstance.Service, req managedinstance.OpenRequest) (*managedinstance.OpenResult, error) {
+		gotReq = req
+		return &managedinstance.OpenResult{
+			ProfileID:  req.ProfileID,
+			Success:    true,
+			CurrentURL: "https://work.1688.com/?shopId=b2b-222082061706256a1a",
+			PageTitle:  "1688-卖家工作台",
+		}, nil
+	}
+	defer func() {
+		workspaceFocusManagedShop = previousFocusManagedShop
+	}()
+
+	app := &App{
+		workspaceService:       workspace.NewService(workspace.NewWorkspaceClient(server.URL, nil), nil, nil),
+		managedInstanceService: &managedinstance.Service{},
+		browserMgr:             browser.NewManager(config.DefaultConfig(), t.TempDir()),
+	}
+
+	result, err := app.WorkspaceFocusShop("b2b-222082061706256a1a")
+	if err != nil {
+		t.Fatalf("workspace focus: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("unexpected focus result: %+v", result)
+	}
+	if gotReq.ShopID != "b2b-222082061706256a1a" {
+		t.Fatalf("unexpected shop id: %s", gotReq.ShopID)
+	}
+	if gotReq.ProfileID != "1688:b2b-222082061706256a1a" {
+		t.Fatalf("unexpected profile id: %s", gotReq.ProfileID)
+	}
+	if !gotReq.ManagedMode {
+		t.Fatal("expected managed mode request")
+	}
+	if unexpectedOpenContext {
+		t.Fatal("focus should not request open-context")
+	}
+	if unexpectedReport {
+		t.Fatal("focus should not report an open result")
+	}
+}
+
 func TestWorkspaceAuthorizedShopsRecoversRunningProfilesBeforeProjection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -608,6 +686,42 @@ func TestReportWorkspaceOpenResultSendsFailurePayload(t *testing.T) {
 	}
 	if got.Runtime == nil || got.Runtime.PID != 5678 {
 		t.Fatalf("unexpected runtime payload: %#v", got.Runtime)
+	}
+}
+
+func TestBuildUnavailableShopOpenResultMapsManualVerification(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "awaiting_verification",
+	})
+	if result.Code != "ANT_MANUAL_VERIFICATION_REQUIRED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
+func TestBuildUnavailableShopOpenResultMapsValidationFailedToSessionRestore(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "validation_failed",
+	})
+	if result.Code != "ANT_SESSION_RESTORE_FAILED" {
+		t.Fatalf("unexpected code: %s", result.Code)
+	}
+}
+
+func TestBuildUnavailableShopOpenResultMapsOtherUnavailableStatusToLoginRequired(t *testing.T) {
+	result := buildUnavailableShopOpenResult(workspace.ShopInstanceProjection{
+		ShopID:            "shop-001",
+		ProfileID:         "profile-001",
+		InstanceID:        "instance-001",
+		SharedLoginStatus: "relogin_required",
+	})
+	if result.Code != "ANT_BACKEND_LOGIN_REQUIRED" {
+		t.Fatalf("unexpected code: %s", result.Code)
 	}
 }
 

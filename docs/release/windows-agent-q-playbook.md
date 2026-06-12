@@ -123,6 +123,36 @@ publish\output\app-update-stable.json.sha256
 
 如果缺任何一个文件，停止并汇报。
 
+## Release Factory 后的小Q职责
+
+小Q机器现在作为 GitHub Actions self-hosted Windows runner。默认情况下，小Q不再手工拉代码和打包。
+
+小Q仍负责：
+
+- 保持 runner 在线。
+- 维护 Windows 工具链。
+- 在 workflow 失败时提供机器侧日志。
+- 在 release 到达 test 通道后做真实客户端业务验收。
+
+小Q不再默认负责：
+
+- 手工 `git pull` 后打包。
+- 手工运行 `bat\publish.bat`。
+- 手工运行 app-update e2e。
+- 手工改 stable manifest。
+
+Release Factory workflow 的标准输入：
+
+```text
+target_version=<目标版本>
+baseline_version=<基线版本>
+channel=test
+run_e2e=true
+upload_to_server=true
+```
+
+在 workflow 未正式启用前，本节前面的手工命令仍可作为 fallback；启用后，手工命令只用于排障和一次性复现。
+
 ## Windows 自动更新门禁
 
 每次发版必须跑：

@@ -4,6 +4,7 @@ import {
   StartDesktopSharedLoginValidate,
   StopInstance,
   WorkspaceAuthorizedShops,
+  WorkspaceFocusShop,
   WorkspaceOpenShop,
   WorkspaceSummary,
 } from '../../wailsjs/go/main/App'
@@ -44,6 +45,8 @@ function normalizeShop(input: any): WorkspaceAuthorizedShop {
     profileExists: Boolean(input?.profileExists),
     reclaimPending: Boolean(input?.reclaimPending),
     coreReady: Boolean(input?.coreReady),
+    lastValidatedAt: String(input?.lastValidatedAt || ''),
+    lastOpenedAt: String(input?.lastOpenedAt || ''),
     lastOpenFailureCode: String(input?.lastOpenFailureCode || ''),
     lastOpenFailureMessage: String(input?.lastOpenFailureMessage || ''),
     lastOpenFailedAt: String(input?.lastOpenFailedAt || ''),
@@ -161,6 +164,32 @@ export async function openWorkspaceShop(shopId: string): Promise<WorkspaceOpenSh
     : {
         ...result,
         message: resolveOpenErrorMessage(result.code, result.message),
+      }
+}
+
+export async function focusWorkspaceShop(shopId: string): Promise<WorkspaceOpenShopResult> {
+  const normalizedShopId = shopId.trim()
+  if (useDevWorkspaceFallback()) {
+    const shop = devAuthorizedShops.find((item) => item.shopId === normalizedShopId)
+    return {
+      shopId: shop?.shopId || normalizedShopId,
+      profileId: shop?.profileId || '',
+      instanceId: shop?.instanceId || '',
+      currentUrl: 'https://work.1688.com/',
+      pageTitle: '1688 商家工作台',
+      success: Boolean(shop?.instanceRunning),
+      code: shop?.instanceRunning ? '' : 'ANT_INSTANCE_NOT_RUNNING',
+      message: shop?.instanceRunning ? '' : '店铺后台未运行',
+    }
+  }
+
+  const payload = await WorkspaceFocusShop(normalizedShopId)
+  const result = normalizeOpenResult(payload)
+  return result.success
+    ? result
+    : {
+        ...result,
+        message: result.message || '未能调起店铺后台窗口',
       }
 }
 

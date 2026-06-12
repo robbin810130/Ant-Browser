@@ -1,4 +1,4 @@
-import type { RecoveryAction, WorkbenchActionKey, WorkbenchQueueKey } from './types'
+import type { RecoveryAction, WorkbenchActionKey, WorkbenchQueueKey, WorkbenchState } from './types'
 
 export const credentialFailureCodes = new Set([
   'ANT_BACKEND_LOGIN_REQUIRED',
@@ -85,7 +85,17 @@ export function authorizationStatusPresentation(status = '', label = ''): {
       description: '当前授权已停用，进入工作台重新启用或更新凭据。',
     }
   }
-  if (normalized === 'relogin_required' || normalized === 'validation_failed') {
+  if (normalized === 'validation_failed') {
+    return {
+      status: normalized,
+      label: displayLabel,
+      queue: 'credential',
+      recommendedAction: 'bind',
+      primaryLabel: '更新凭据',
+      description: '验证失败，建议重新更新凭据后再打开后台。',
+    }
+  }
+  if (normalized === 'relogin_required') {
     return {
       status: normalized,
       label: displayLabel,
@@ -116,6 +126,12 @@ export function openFailurePresentation(failureCode = '', failureMessage = '') {
   if (targetMismatchFailureCodes.has(failureCode)) {
     return {
       label: '后台目标不匹配',
+      evidence: `open · 打开失败：${message}`,
+    }
+  }
+  if (coreFailureCodes.has(failureCode)) {
+    return {
+      label: '指纹内核不可用',
       evidence: `open · 打开失败：${message}`,
     }
   }
@@ -150,11 +166,48 @@ export function recoveryActionForState(input: {
   if (input.reclaimPending) return actions.none
   if (input.instanceRunning) return actions.close
   if (!input.profileExists) return actions.refresh
-  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.core_management
   if (credentialFailureCodes.has(input.failureCode || '')) return actions.bind
   if (targetMismatchFailureCodes.has(input.failureCode || '')) return actions.diagnostics
   const presentation = authorizationStatusPresentation(input.sharedLoginStatus)
   if (presentation.recommendedAction !== 'open') return actions[presentation.recommendedAction]
-  if (input.failureCode) return actions.retry
+  if (!input.coreReady || coreFailureCodes.has(input.failureCode || '')) return actions.open
+  if (input.failureCode) return actions.open
   return actions.open
+}
+
+export function deriveWorkbenchState(input: {
+  reclaimPending?: boolean
+  instanceRunning?: boolean
+  activeRun?: boolean
+  profileExists?: boolean
+  coreReady?: boolean
+  sharedLoginStatus?: string
+  failureCode?: string
+  failureMessage?: string
+}): WorkbenchState {
+  const rawAuthorizationStatus = input.sharedLoginStatus || 'not_configured'
+  const normalizedAuthorizationStatus = normalizeAuthorizationStatus(rawAuthorizationStatus)
+  const failure = openFailurePresentation(input.failureCode || '', input.failureMessage || '')
+  const action = recoveryActionForState(input)
+  const queue = queueForWorkbenchState(input)
+  const presentation = authorizationStatusPresentation(rawAuthorizationStatus)
+  const evidenceText = failure.evidence
+  const failureLabel = failure.label
+  const usesAuthorizationPresentation =
+    queue === presentation.queue && action.key === presentation.recommendedAction
+
+  return {
+    rawAuthorizationStatus,
+    normalizedAuthorizationStatus,
+    queue,
+    recommendedAction: action.key,
+    primaryLabel: usesAuthorizationPresentation ? presentation.primaryLabel : (action.label || presentation.primaryLabel),
+    description: evidenceText || action.description || presentation.description,
+    failureCode: input.failureCode || '',
+    failureLabel,
+    evidenceText,
+    diagnosticCode: action.key === 'diagnostics' ? (input.failureCode || '') : '',
+    instanceRunning: Boolean(input.instanceRunning || input.activeRun),
+    canExecute: action.key !== 'none',
+  }
 }

@@ -48,6 +48,24 @@ func TestResolveWorkspaceInstallRootRejectsInvalidExplicitEnv(t *testing.T) {
 	}
 }
 
+func TestWithWorkspaceAgentEnvUsesResolvedAntRuntimeBaseURL(t *testing.T) {
+	env := workspaceAgentEnvMap(withWorkspaceAgentEnv(
+		[]string{"ANT_RUNTIME_BASE_URL=http://127.0.0.1:1"},
+		`C:\Ant\runtime`,
+		"http://192.168.1.10:4174",
+		"51234",
+		"http://127.0.0.1:51234",
+		" http://127.0.0.1:39876/ ",
+	))
+
+	if got := env["ANT_RUNTIME_BASE_URL"]; got != "http://127.0.0.1:39876" {
+		t.Fatalf("ANT_RUNTIME_BASE_URL should use resolved launch server URL, got %q", got)
+	}
+	if got := env["ANT_RUNTIME_AUTO_BOOT"]; got != "false" {
+		t.Fatalf("ANT_RUNTIME_AUTO_BOOT should stay disabled for native runtime, got %q", got)
+	}
+}
+
 func TestResolveWorkspaceInstallRootFallsBackToAppRootDiscovery(t *testing.T) {
 	root := t.TempDir()
 	installRoot := filepath.Join(root, "desktop-repos", "1688shop-desktop")
@@ -481,4 +499,16 @@ func TestEnsureWorkspaceAgentBootstrappedUsesPersistedDesktopAccessToken(t *test
 	if got, _ := userPayload["displayName"].(string); got != "Desktop User" {
 		t.Fatalf("期望 bootstrap displayName 取自 auth/me，实际=%q", got)
 	}
+}
+
+func workspaceAgentEnvMap(entries []string) map[string]string {
+	out := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		out[parts[0]] = parts[1]
+	}
+	return out
 }

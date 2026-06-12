@@ -8,6 +8,7 @@ import {
   closeWorkspaceShop,
   fetchWorkspaceSharedLoginBindSession,
   fetchWorkspaceAuthorizedShops,
+  focusWorkspaceShop,
   openWorkspaceShop,
   startWorkspaceSharedLoginBind,
   startWorkspaceSharedLoginValidate,
@@ -24,12 +25,13 @@ import type { WorkspaceAuthorizedShop } from '../workspace/types'
 import { ShopWorkbenchDrawer } from './components/ShopWorkbenchDrawer'
 import { WorkbenchQueues } from './components/WorkbenchQueues'
 import { WorkbenchTable } from './components/WorkbenchTable'
-import { recoveryActionFor } from './recovery'
-import { queueForWorkbenchState } from './statusMatrix'
+import { evidenceForWorkbenchRow } from './rowState'
+import { deriveWorkbenchState } from './statusMatrix'
 import type { WorkbenchActionKey, WorkbenchQueueKey, WorkbenchRow } from './types'
 
 type ActiveQueue = WorkbenchQueueKey | 'all'
-type RunningWorkbenchAction = { shopId: string; action: Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> }
+type RunnableWorkbenchAction = Extract<WorkbenchActionKey, 'open' | 'close' | 'bind' | 'validate'> | 'focus'
+type RunningWorkbenchAction = { shopId: string; action: RunnableWorkbenchAction }
 
 const unsupportedActionMessage: Record<WorkbenchActionKey, string> = {
   open: '',
@@ -53,61 +55,43 @@ function emptyEvidence(): ShopRunEvidence {
   }
 }
 
-function queueFor(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): WorkbenchQueueKey {
-  const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
-  return queueForWorkbenchState({
-    reclaimPending: shop.reclaimPending,
-    instanceRunning: shop.instanceRunning,
-    activeRun: Boolean(evidence.activeRun),
-    sharedLoginStatus: shop.sharedLoginStatus,
-    failureCode,
-  })
-}
-
-function evidenceWithShopOpenFailure(shop: WorkspaceAuthorizedShop, evidence: ShopRunEvidence): ShopRunEvidence {
-  if (evidence.latestFailure || !shop.lastOpenFailureCode) return evidence
-  return {
-    ...evidence,
-    latestFailure: {
-      runId: `desktop-open:${shop.shopId}:${shop.lastOpenFailedAt || shop.lastOpenFailureCode}`,
-      taskId: '',
-      shopId: shop.shopId,
-      taskType: 'open',
-      status: 'failed',
-      statusLabel: '打开失败',
-      startedAt: shop.lastOpenFailedAt,
-      finishedAt: shop.lastOpenFailedAt,
-      profileId: shop.profileId,
-      runtime: null,
-      bindSessionId: '',
-      manualActionRequired: false,
-      challengeType: '',
-      failureCode: shop.lastOpenFailureCode,
-      failureMessage: shop.lastOpenFailureMessage,
-    },
-  }
-}
-
-function actionSuccessLabel(action: WorkbenchActionKey, shop: WorkspaceAuthorizedShop) {
+function actionSuccessLabel(action: WorkbenchActionKey | 'focus', shop: WorkspaceAuthorizedShop) {
   const name = shop.shopName || shop.shopId
   if (action === 'open') return `已打开 ${name}`
+  if (action === 'focus') return `已调起 ${name}`
   if (action === 'close') return `已关闭 ${name}`
   if (action === 'bind') return `${name} 更新凭据已发起`
   if (action === 'validate') return `${name} 本机验证已发起`
   return '动作已发起'
 }
 
-function actionFallbackError(action: WorkbenchActionKey) {
+function actionFallbackError(action: WorkbenchActionKey | 'focus') {
   if (action === 'open') return '打开店铺后台失败'
+  if (action === 'focus') return '调起店铺后台失败'
   if (action === 'close') return '关闭店铺后台失败'
   if (action === 'bind') return '发起更新凭据失败'
   if (action === 'validate') return '发起本机验证失败'
   return '动作执行失败'
 }
 
+function resolveRunnableAction(row: WorkbenchRow): RunnableWorkbenchAction | null {
+  const action = row.recommendedAction
+  if (action === 'open' || action === 'close' || action === 'bind' || action === 'validate') return action
+
+  if (action === 'retry') {
+    const failedTaskType = row.evidence.latestFailure?.taskType
+    if (failedTaskType === 'open' || failedTaskType === 'bind' || failedTaskType === 'validate') {
+      return failedTaskType
+    }
+    return 'open'
+  }
+
+  return null
+}
+
 export function WorkbenchPage() {
   const accessToken = useAuthStore((state) => state.accessToken)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [shops, setShops] = useState<WorkspaceAuthorizedShop[]>([])
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -150,24 +134,28 @@ export function WorkbenchPage() {
 
     return shops
       .map((shop) => {
-        const evidence = evidenceWithShopOpenFailure(shop, index.byShop[shop.shopId] || emptyEvidence())
-        const failureCode = evidence.latestFailure?.failureCode || shop.lastOpenFailureCode || ''
-        const recovery = recoveryActionFor({
+        const evidence = evidenceForWorkbenchRow(shop, index.byShop[shop.shopId] || emptyEvidence())
+        const failureCode = evidence.latestFailure?.failureCode || ''
+        const failureMessage = evidence.latestFailure?.failureMessage || ''
+        const workbenchState = deriveWorkbenchState({
           reclaimPending: shop.reclaimPending,
+          instanceRunning: shop.instanceRunning,
+          activeRun: Boolean(evidence.activeRun),
           profileExists: shop.profileExists,
           coreReady: shop.coreReady,
           sharedLoginStatus: shop.sharedLoginStatus,
           failureCode,
-          instanceRunning: shop.instanceRunning,
+          failureMessage,
         })
 
         return {
           shop,
           evidence,
-          queue: queueFor(shop, evidence),
-          recommendedAction: recovery.key,
+          workbenchState,
+          queue: workbenchState.queue,
+          recommendedAction: workbenchState.recommendedAction,
           failureCode,
-          failureMessage: evidence.latestFailure?.failureMessage || '',
+          failureMessage,
         }
       })
       .sort((a, b) => {
@@ -200,14 +188,14 @@ export function WorkbenchPage() {
   )
 
   async function runRecommendedAction(row: WorkbenchRow) {
-    const action = row.recommendedAction
+    const action = resolveRunnableAction(row)
     if (runningActionRef.current) {
       toast.info('已有推荐动作正在执行，请稍候')
       return
     }
 
-    if (action !== 'open' && action !== 'close' && action !== 'bind' && action !== 'validate') {
-      toast.info(unsupportedActionMessage[action])
+    if (!action) {
+      toast.info(unsupportedActionMessage[row.recommendedAction])
       return
     }
 
@@ -258,6 +246,48 @@ export function WorkbenchPage() {
         ))
       }
     }
+  }
+
+  async function focusRunningShop(row: WorkbenchRow) {
+    if (runningActionRef.current) {
+      toast.info('已有推荐动作正在执行，请稍候')
+      return
+    }
+
+    const nextRunningAction = { shopId: row.shop.shopId, action: 'focus' as const }
+    runningActionRef.current = nextRunningAction
+    setRunningAction(nextRunningAction)
+    try {
+      const result = await focusWorkspaceShop(row.shop.shopId)
+      await load(true)
+      if (!result.success) {
+        toast.error(result.message || '调起店铺后台失败')
+        return
+      }
+      toast.success(actionSuccessLabel('focus', row.shop))
+    } catch (error: any) {
+      console.error('focus workspace shop failed', error)
+      toast.error(String(error?.message || actionFallbackError('focus')))
+    } finally {
+      if (
+        runningActionRef.current?.shopId === nextRunningAction.shopId
+        && runningActionRef.current?.action === nextRunningAction.action
+      ) {
+        runningActionRef.current = null
+        setRunningAction((current) => (
+          current?.shopId === nextRunningAction.shopId && current.action === nextRunningAction.action ? null : current
+        ))
+      }
+    }
+  }
+
+  function closeWorkbenchDrawer() {
+    setSelectedRow(null)
+    if (!requestedShopId) return
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('shopId')
+    setSearchParams(nextParams, { replace: true })
   }
 
   async function handleSharedLoginTerminal(
@@ -411,6 +441,7 @@ export function WorkbenchPage() {
             runningAction={runningAction}
             onOpenDrawer={setSelectedRow}
             onAction={(row) => void runRecommendedAction(row)}
+            onFocus={(row) => void focusRunningShop(row)}
           />
         </Card>
       </div>
@@ -419,8 +450,9 @@ export function WorkbenchPage() {
         row={selectedRow}
         open={Boolean(selectedRow)}
         runningAction={runningAction}
-        onClose={() => setSelectedRow(null)}
+        onClose={closeWorkbenchDrawer}
         onAction={(row) => void runRecommendedAction(row)}
+        onFocus={(row) => void focusRunningShop(row)}
       />
       <SharedLoginSessionModal
         dialog={sharedLoginDialog}

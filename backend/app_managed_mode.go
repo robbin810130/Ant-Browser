@@ -37,13 +37,13 @@ func (a *App) UpsertManagedProfile(input launchcode.ManagedProfileUpsertInput) (
 		updated = true
 		profile.ProfileName = profileName
 		profile.UserDataDir = userDataDir
+		if coreID := a.preferredManagedProfileCoreID(profile.CoreId); coreID != "" {
+			profile.CoreId = coreID
+		}
 		profile.Tags = mergeManagedTags(profile.Tags, platformCode, shopID)
 		profile.UpdatedAt = now
 	} else {
-		coreID := ""
-		if defaultCore, ok := a.browserMgr.GetDefaultCore(); ok {
-			coreID = defaultCore.CoreId
-		}
+		coreID := a.preferredManagedProfileCoreID("")
 		a.browserMgr.Profiles[profileID] = &browser.Profile{
 			ProfileId:       profileID,
 			ProfileName:     profileName,
@@ -73,6 +73,24 @@ func (a *App) UpsertManagedProfile(input launchcode.ManagedProfileUpsertInput) (
 		ProfileID: profileID,
 		Updated:   updated,
 	}, nil
+}
+
+func (a *App) preferredManagedProfileCoreID(currentCoreID string) string {
+	currentCoreID = strings.TrimSpace(currentCoreID)
+	if a != nil && a.managedInstanceService != nil {
+		if coreID, ok := a.managedInstanceService.PreferredManagedCoreID(currentCoreID); ok {
+			return coreID
+		}
+	}
+	if currentCoreID != "" {
+		return currentCoreID
+	}
+	if a != nil && a.browserMgr != nil {
+		if defaultCore, ok := a.browserMgr.GetDefaultCore(); ok {
+			return defaultCore.CoreId
+		}
+	}
+	return ""
 }
 
 func (a *App) StopInstance(profileID string) (bool, error) {
@@ -150,8 +168,8 @@ func (a *App) configureManagedInstanceRuntime() {
 		EnsureManagedProfile: a.ensureManagedProfileForOpen,
 		FindRunningProfile:   a.managedRunningProfileSnapshot,
 		WaitForDebugReady:    a.waitForBrowserDebugReady,
-		StartManagedProfile: func(profileID string, targetURL string, _ bool) (*BrowserProfile, error) {
-			return a.BrowserInstanceStartWithParams(profileID, nil, []string{targetURL}, true)
+		StartManagedProfile: func(profileID string, _ string, _ bool) (*BrowserProfile, error) {
+			return a.BrowserInstanceStartWithParams(profileID, nil, nil, true)
 		},
 		StopManagedProfile: func(profileID string) error {
 			_, err := a.StopInstance(profileID)

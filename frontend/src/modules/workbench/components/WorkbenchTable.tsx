@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
+import { BringToFront } from 'lucide-react'
 import { Badge, Button, Table } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import { workbenchActionLabel, workbenchQueueLabels, workbenchQueueVariant } from '../presentation'
-import { openFailurePresentation } from '../statusMatrix'
 import type { WorkbenchRow } from '../types'
 
 function shortTime(value: string | undefined) {
@@ -16,12 +16,14 @@ export function WorkbenchTable({
   runningAction,
   onOpenDrawer,
   onAction,
+  onFocus,
 }: {
   rows: WorkbenchRow[]
   loading: boolean
-  runningAction: { shopId: string; action: WorkbenchRow['recommendedAction'] } | null
+  runningAction: { shopId: string; action: string } | null
   onOpenDrawer: (row: WorkbenchRow) => void
   onAction: (row: WorkbenchRow) => void
+  onFocus: (row: WorkbenchRow) => void
 }) {
   const columns: TableColumn<WorkbenchRow>[] = [
     {
@@ -82,9 +84,8 @@ export function WorkbenchTable({
       title: '最近失败',
       width: 180,
       render: (_, row) => {
-        const failure = openFailurePresentation(row.failureCode, row.failureMessage)
-        const summary = failure.evidence || '-'
-        const title = [row.failureCode, row.failureMessage].filter(Boolean).join('\n') || '-'
+        const summary = row.workbenchState.evidenceText || '-'
+        const title = [row.workbenchState.failureCode, row.failureMessage].filter(Boolean).join('\n') || '-'
         return (
           <span
             className="block max-w-[150px] truncate text-xs text-[var(--color-text-secondary)]"
@@ -113,15 +114,51 @@ export function WorkbenchTable({
       key: 'actions',
       title: '推荐动作',
       align: 'right',
-      width: 116,
+      width: 188,
       render: (_, row) => {
         const isRunningThisRow = runningAction?.shopId === row.shop.shopId
+        const isFocusingThisRow = isRunningThisRow && runningAction?.action === 'focus'
+        const isActingThisRow = isRunningThisRow && runningAction?.action !== 'focus'
+        const disabledByOtherRow = Boolean(runningAction && !isRunningThisRow)
+        if (row.shop.instanceRunning) {
+          return (
+            <div className="flex justify-end gap-1.5">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="whitespace-nowrap px-2.5"
+                loading={isFocusingThisRow}
+                disabled={disabledByOtherRow || isActingThisRow}
+                title={`调起 ${row.shop.shopName || row.shop.shopId} 后台窗口`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onFocus(row)
+                }}
+              >
+                <BringToFront className="h-3.5 w-3.5" />
+                调到前台
+              </Button>
+              <Button
+                size="sm"
+                className="whitespace-nowrap px-2.5"
+                loading={isActingThisRow}
+                disabled={disabledByOtherRow || isFocusingThisRow}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onAction(row)
+                }}
+              >
+                {workbenchActionLabel(row.recommendedAction)}
+              </Button>
+            </div>
+          )
+        }
         return (
           <Button
             size="sm"
             className="w-full whitespace-nowrap px-3 sm:w-auto"
-            loading={isRunningThisRow}
-            disabled={Boolean(runningAction && !isRunningThisRow)}
+            loading={isActingThisRow}
+            disabled={disabledByOtherRow || isFocusingThisRow}
             onClick={(event) => {
               event.stopPropagation()
               onAction(row)

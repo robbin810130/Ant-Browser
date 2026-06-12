@@ -192,17 +192,13 @@ func (a *App) startup(ctx context.Context) {
 
 	// 一次性迁移：若 SQLite 表为空则从旧文件导入
 	a.migrateToSQLite()
+	a.syncConfiguredCoresToDAO()
 
 	a.browserMgr.InitData()
 	a.autoDetectCores()
 	a.loadProxies()
 	a.reconcileProfileProxyBindings()
 	a.initWorkspaceService()
-	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
-		log.Warn("workspace agent bootstrap deferred",
-			logger.F("error", err.Error()),
-		)
-	}
 
 	// 初始化 LaunchCode 服务
 	launchCodeDAO := launchcode.NewSQLiteLaunchCodeDAO(a.db.GetConn())
@@ -226,6 +222,11 @@ func (a *App) startup(ctx context.Context) {
 		log.Info("LaunchServer 监听地址",
 			logger.F("url", fmt.Sprintf("http://127.0.0.1:%d", a.launchServer.Port())),
 			logger.F("preferred_port", port),
+		)
+	}
+	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
+		log.Warn("workspace agent bootstrap deferred",
+			logger.F("error", err.Error()),
 		)
 	}
 	if recovered := a.recoverRunningProfilesFromUserDataDirs(); recovered > 0 {

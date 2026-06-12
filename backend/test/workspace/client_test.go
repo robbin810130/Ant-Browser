@@ -17,6 +17,7 @@ func TestProjectAuthorizedShopToManagedProfile(t *testing.T) {
 		ShopName:          "壹级供应链",
 		PlatformCode:      "alibaba",
 		SharedLoginStatus: "ready",
+		LastValidatedAt:   "2026-06-09T09:20:00.000Z",
 	}, workspace.LocalRuntimeState{
 		ProfileExists: true,
 		InstanceID:    "inst-001",
@@ -31,6 +32,9 @@ func TestProjectAuthorizedShopToManagedProfile(t *testing.T) {
 	}
 	if projected.SharedLoginStatus != "ready" {
 		t.Fatalf("unexpected shared login status: %s", projected.SharedLoginStatus)
+	}
+	if projected.LastValidatedAt != "2026-06-09T09:20:00.000Z" {
+		t.Fatalf("unexpected last validated at: %s", projected.LastValidatedAt)
 	}
 }
 

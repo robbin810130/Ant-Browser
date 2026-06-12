@@ -11,6 +11,7 @@ func (a *App) WorkspaceShopProfiles() ([]workspace.ShopProfileRecord, error) {
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.ensureWorkspaceAgentReachableForRequest("shop profiles")
 	return a.workspaceService.FetchShopProfiles(context.Background())
 }
 

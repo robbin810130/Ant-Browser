@@ -59,6 +59,7 @@ docs/*
 !docs/release/
 docs/release/*
 !docs/release/windows-packaging-and-update-runbook.md
+!docs/release/windows-self-hosted-runner-setup.md
 !docs/reports/
 docs/reports/*
 !docs/reports/2026-05-16-windows-release-stability-phase-report.md

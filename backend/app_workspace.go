@@ -20,10 +20,18 @@ var workspaceOpenManagedShop = func(service *managedinstance.Service, req manage
 	return service.OpenManagedShop(req)
 }
 
+var workspaceFocusManagedShop = func(service *managedinstance.Service, req managedinstance.OpenRequest) (*managedinstance.OpenResult, error) {
+	if service == nil {
+		return nil, fmt.Errorf("managed instance service is not configured")
+	}
+	return service.FocusManagedShop(req)
+}
+
 func (a *App) WorkspaceSummary() (*workspace.WorkspaceSummary, error) {
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.ensureWorkspaceAgentReachableForRequest("workspace summary")
 	return a.workspaceService.FetchSummary(context.Background())
 }
 
@@ -31,6 +39,7 @@ func (a *App) WorkspaceAuthorizedShops() ([]workspace.ShopInstanceProjection, er
 	if a == nil || a.workspaceService == nil {
 		return nil, fmt.Errorf("workspace service is not configured")
 	}
+	a.ensureWorkspaceAgentReachableForRequest("authorized shops")
 	a.recoverRunningProfilesFromUserDataDirs()
 	return a.workspaceService.FetchAuthorizedShops(context.Background())
 }
@@ -46,6 +55,7 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		return nil, fmt.Errorf("shop id is required")
 	}
 
+	a.ensureWorkspaceAgentReachableForRequest("open shop")
 	shops, err := a.workspaceService.FetchAuthorizedShops(context.Background())
 	if err != nil {
 		return nil, err
@@ -173,6 +183,78 @@ func (a *App) WorkspaceOpenShop(shopID string) (*workspace.OpenShopResult, error
 		logger.F("profile_id", profileID),
 		logger.F("open_request_id", openContext.OpenRequestID),
 		logger.F("success", result.Success),
+	)
+	return result, nil
+}
+
+func (a *App) WorkspaceFocusShop(shopID string) (*workspace.OpenShopResult, error) {
+	if a == nil || a.workspaceService == nil {
+		return nil, fmt.Errorf("workspace service is not configured")
+	}
+	log := logger.New("WorkspaceFocus")
+
+	shopID = strings.TrimSpace(shopID)
+	if shopID == "" {
+		return nil, fmt.Errorf("shop id is required")
+	}
+
+	a.ensureWorkspaceAgentReachableForRequest("focus shop")
+	shops, err := a.workspaceService.FetchAuthorizedShops(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	projectedShop, ok := findAuthorizedShopProjection(shops, shopID)
+	if !ok {
+		return nil, fmt.Errorf("shop not found: %s", shopID)
+	}
+
+	profileID := strings.TrimSpace(projectedShop.ProfileID)
+	if profileID == "" {
+		profileID = strings.TrimSpace(projectedShop.PlatformCode) + ":" + shopID
+	}
+	result := &workspace.OpenShopResult{
+		ShopID:    shopID,
+		ProfileID: profileID,
+	}
+	if a.managedInstanceService == nil {
+		result.Code = "ANT_INSTANCE_FOCUS_FAILED"
+		result.Message = "managed instance service is not configured"
+		return result, nil
+	}
+
+	log.Info("准备调起店铺后台窗口",
+		logger.F("shop_id", shopID),
+		logger.F("profile_id", profileID),
+	)
+	managedResult, err := workspaceFocusManagedShop(a.managedInstanceService, managedinstance.OpenRequest{
+		ShopID:      shopID,
+		ProfileID:   profileID,
+		TargetURL:   workspace.DefaultBackendURL(shopID),
+		ManagedMode: true,
+	})
+	if err != nil {
+		result.Code = "ANT_INSTANCE_FOCUS_FAILED"
+		result.Message = err.Error()
+		return result, nil
+	}
+	if managedResult == nil {
+		result.Code = "ANT_INSTANCE_FOCUS_FAILED"
+		result.Message = "managed focus returned nil result"
+		return result, nil
+	}
+
+	result.Success = managedResult.Success
+	result.Code = managedResult.Code
+	result.Message = managedResult.Message
+	result.CurrentURL = managedResult.CurrentURL
+	result.PageTitle = managedResult.PageTitle
+	log.Info("店铺后台窗口调起完成",
+		logger.F("shop_id", shopID),
+		logger.F("profile_id", profileID),
+		logger.F("success", result.Success),
+		logger.F("code", result.Code),
+		logger.F("current_url", result.CurrentURL),
 	)
 	return result, nil
 }

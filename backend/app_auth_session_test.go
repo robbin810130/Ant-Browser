@@ -165,7 +165,7 @@ func TestStartDesktopSharedLoginBindUsesDesktopEndpointAndAuthorization(t *testi
 
 	var authHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-1/bind" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-1/bind-local" {
 			http.NotFound(w, r)
 			return
 		}
@@ -240,7 +240,7 @@ func TestStartDesktopSharedLoginValidateUsesDesktopEndpointAndAuthorization(t *t
 
 	var authHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-2/validate" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/desktop/shops/shop-2/validate-local" {
 			http.NotFound(w, r)
 			return
 		}
