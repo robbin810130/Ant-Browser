@@ -52,6 +52,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Bootstrap release tool paths
+        run: |
+          $goPath = (& go env GOPATH).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($goPath)) {
+            throw "go env GOPATH failed"
+          }
+
+          $goBin = Join-Path $goPath "bin"
+          New-Item -ItemType Directory -Force $goBin | Out-Null
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $goBin
+
+          $nsisBin = "C:\Program Files (x86)\NSIS\Bin"
+          if (Test-Path -LiteralPath $nsisBin -PathType Container) {
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value $nsisBin
+          }
+
+          $env:Path = "$goBin;$nsisBin;$env:Path"
+          if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
+            go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+            if ($LASTEXITCODE -ne 0) {
+              throw "go install wails failed"
+            }
+          }
+
+          Get-Command wails | Format-List Source
+          if (Test-Path -LiteralPath $nsisBin -PathType Container) {
+            Get-Command makensis.exe | Format-List Source
+          }
+
       - name: Preflight
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File tools\release\windows-release-preflight.ps1
