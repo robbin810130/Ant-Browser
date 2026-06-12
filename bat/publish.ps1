@@ -613,7 +613,8 @@ function New-WindowsAppUpdateArtifacts {
                 }
             )
         }
-        $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 10), $utf8NoBom)
         $manifestSha = Get-FileSha256 -Path $manifestPath
         "$manifestSha  app-update-stable.json" | Set-Content -LiteralPath $manifestShaPath -Encoding ascii
 
