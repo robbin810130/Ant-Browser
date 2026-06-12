@@ -1,12 +1,12 @@
 param(
     [Parameter(Mandatory = $true)]
-    [Alias("ReleaseVersion")]
-    [string]$Version,
+    [string]$ReleaseVersion,
     [string]$RemoteRoot = "/opt/1688shop/releases/windows"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$Version = $ReleaseVersion
 
 function Require-Env {
     param([string]$Name)

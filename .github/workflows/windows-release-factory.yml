@@ -88,7 +88,7 @@ jobs:
       - name: Build Windows release
         run: |
           Remove-Item -Recurse -Force publish\output -ErrorAction SilentlyContinue
-          & .\bat\publish.ps1 -Target W -Version $env:TARGET_VERSION
+          & .\bat\publish.ps1 -Target W -ReleaseVersion $env:TARGET_VERSION
 
       - name: Verify expected artifacts
         run: |

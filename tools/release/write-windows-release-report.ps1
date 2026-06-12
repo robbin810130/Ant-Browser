@@ -1,7 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [Alias("ReleaseVersion")]
-    [string]$Version,
+    [string]$ReleaseVersion,
     [Parameter(Mandatory = $true)]
     [string]$CommitSha,
     [string]$Channel = "test",
@@ -11,6 +10,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$Version = $ReleaseVersion
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir
