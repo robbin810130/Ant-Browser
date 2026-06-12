@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
+    [Alias("ReleaseVersion")]
     [string]$Version,
     [Parameter(Mandatory = $true)]
     [string]$CommitSha,

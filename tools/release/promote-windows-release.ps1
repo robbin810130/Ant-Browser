@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
+    [Alias("ReleaseVersion")]
     [string]$Version,
     [string]$RemoteRoot = "/opt/1688shop/releases/windows"
 )

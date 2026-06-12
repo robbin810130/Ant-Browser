@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
+    [Alias("ReleaseVersion")]
     [string]$Version,
     [string]$Channel = "test",
     [string]$OutputDir = "publish\output",
