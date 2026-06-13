@@ -313,11 +313,11 @@ func (b WindowsBackend) replaceInstall(plan ApplyPlan) error {
 		if preserveInstallEntry(entry.Name()) {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(plan.InstallRoot, entry.Name())); err != nil {
+		if err := b.removeInstallEntryWithRetry(plan, filepath.Join(plan.InstallRoot, entry.Name())); err != nil {
 			return err
 		}
 	}
-	return copyInstallPayload(plan.StagedPath, plan.InstallRoot)
+	return b.copyInstallPayloadWithRetry(plan)
 }
 
 func (b WindowsBackend) rollbackInstall(plan ApplyPlan) error {
@@ -327,12 +327,55 @@ func (b WindowsBackend) rollbackInstall(plan ApplyPlan) error {
 			if preserveInstallEntry(entry.Name()) {
 				continue
 			}
-			if removeErr := os.RemoveAll(filepath.Join(plan.InstallRoot, entry.Name())); removeErr != nil {
+			if removeErr := b.removeInstallEntryWithRetry(plan, filepath.Join(plan.InstallRoot, entry.Name())); removeErr != nil {
 				return removeErr
 			}
 		}
 	}
-	return copyDir(plan.BackupPath, plan.InstallRoot)
+	return b.copyBackupWithRetry(plan)
+}
+
+func (b WindowsBackend) removeInstallEntryWithRetry(plan ApplyPlan, path string) error {
+	return retryWindowsInstallMutation(func() error {
+		err := os.RemoveAll(path)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func (b WindowsBackend) copyInstallPayloadWithRetry(plan ApplyPlan) error {
+	return retryWindowsInstallMutation(func() error {
+		err := copyInstallPayload(plan.StagedPath, plan.InstallRoot)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func (b WindowsBackend) copyBackupWithRetry(plan ApplyPlan) error {
+	return retryWindowsInstallMutation(func() error {
+		err := copyDir(plan.BackupPath, plan.InstallRoot)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func retryWindowsInstallMutation(fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if err := fn(); err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(250*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 func (b WindowsBackend) prepareRunner(plan ApplyPlan) error {

@@ -220,3 +220,20 @@ func TestWindowsCloseInstalledProcessesScriptMatchesCommandLineReferences(t *tes
 		}
 	}
 }
+
+func TestWindowsBackendUsesRetryForInstallRootReplacement(t *testing.T) {
+	source, err := os.ReadFile("windows_backend.go")
+	if err != nil {
+		t.Fatalf("read windows backend source: %v", err)
+	}
+	text := string(source)
+	for _, want := range []string{
+		"removeInstallEntryWithRetry",
+		"copyInstallPayloadWithRetry",
+		"rollbackInstall",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("windows backend source missing %q", want)
+		}
+	}
+}
