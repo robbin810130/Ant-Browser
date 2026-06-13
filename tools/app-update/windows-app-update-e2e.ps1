@@ -66,6 +66,14 @@ function Stop-AntBrowser {
     Start-Sleep -Milliseconds 500
 }
 
+function Seed-PreservedDirectories {
+    foreach ($preserved in @("runtime", "diagnostics")) {
+        $dir = Join-Path $installRoot $preserved
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir "app-update-preserve-marker.txt") -Value "preserve:$preserved" -Encoding UTF8
+    }
+}
+
 function Copy-ReleaseArtifacts {
     param(
         [string]$Version,
@@ -210,8 +218,15 @@ function Assert-UpdateSucceeded {
 
     Require-File -Path (Join-Path $installRoot "data\app.db") -Label "data\app.db"
     foreach ($preserved in @("runtime", "diagnostics")) {
-        if (-not (Test-Path -LiteralPath (Join-Path $installRoot $preserved) -PathType Container)) {
+        $preservedDir = Join-Path $installRoot $preserved
+        $markerPath = Join-Path $preservedDir "app-update-preserve-marker.txt"
+        if (-not (Test-Path -LiteralPath $preservedDir -PathType Container)) {
             throw "preserved directory missing: $preserved"
+        }
+        Require-File -Path $markerPath -Label "$preserved preserve marker"
+        $marker = (Get-Content -LiteralPath $markerPath -Raw).Trim()
+        if ($marker -ne "preserve:$preserved") {
+            throw "preserved marker mismatch for ${preserved}: $marker"
         }
     }
     Require-File -Path (Join-Path $installRoot "config.yaml") -Label "config.yaml"
@@ -246,6 +261,7 @@ Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction Sil
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
 Stop-AntBrowser
 Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
+Seed-PreservedDirectories
 if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf) {
     $beforeDataHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installRoot "data\app.db")).Hash
 } else {
