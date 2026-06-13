@@ -52,6 +52,13 @@ function Get-FileSHA256OrMissing {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
 }
 
+function Read-AppUpdateStateOrNull {
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return $null
+    }
+    return Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+}
+
 function Invoke-Native {
     param(
         [string]$FilePath,
@@ -87,6 +94,23 @@ function Reset-E2EInstallRoot {
     Stop-AntBrowser
     Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
+}
+
+function Wait-ForUpdateRunner {
+    Write-Step "Wait for runner"
+    $deadline = (Get-Date).AddSeconds($RunnerWaitSeconds)
+    do {
+        Start-Sleep -Seconds 1
+        $state = Read-AppUpdateStateOrNull
+        if ($null -ne $state -and ($state.PSObject.Properties.Name -contains "status")) {
+            $status = [string]$state.status
+            if ($status -in @("succeeded", "failed_manual_repair", "rolled_back")) {
+                Write-Host "Runner terminal status: $status"
+                return
+            }
+        }
+    } while ((Get-Date) -lt $deadline)
+    Write-Host "Runner wait timeout after $RunnerWaitSeconds seconds"
 }
 
 function Copy-ReleaseArtifacts {
@@ -201,8 +225,13 @@ function Assert-UpdateSucceeded {
     Write-Step "Verify app-update result"
     Require-File -Path $statePath -Label "app-update state.json"
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Write-Host "State at verify: $($state | ConvertTo-Json -Depth 10 -Compress)"
     if ([string]$state.localAppVersion -ne $TargetVersion) {
-        throw "localAppVersion mismatch: expected $TargetVersion, got $($state.localAppVersion)"
+        $lastError = ""
+        if ($state.PSObject.Properties.Name -contains "lastError") {
+            $lastError = ($state.lastError | ConvertTo-Json -Depth 10 -Compress)
+        }
+        throw "localAppVersion mismatch: expected $TargetVersion, got $($state.localAppVersion); lastError=$lastError"
     }
     if ($state.PSObject.Properties.Name -contains "lastError" -and $null -ne $state.lastError) {
         $lastErrorCode = ""
@@ -318,8 +347,7 @@ finally {
     Pop-Location
 }
 
-Write-Step "Wait for runner"
-Start-Sleep -Seconds $RunnerWaitSeconds
+Wait-ForUpdateRunner
 Stop-AntBrowser
 
 if ($beforeDataHash -ne "") {
