@@ -37,6 +37,8 @@ def main() -> None:
         "Copy-PrebuiltTargetArtifacts",
         "Use prebuilt target artifacts",
         "Skip target publish",
+        "Restore-PrebuiltTargetArtifacts",
+        "Restore prebuilt target artifacts",
         "RunnerWaitSeconds = 90",
         "runner did not reach terminal status",
         "Expand-Archive",

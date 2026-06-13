@@ -188,6 +188,16 @@ function Copy-PrebuiltTargetArtifacts {
     return $true
 }
 
+function Restore-PrebuiltTargetArtifacts {
+    Write-Step "Restore prebuilt target artifacts $TargetVersion"
+    New-Item -ItemType Directory -Force $outputDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-Setup-$TargetVersion.exe") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-$TargetVersion-windows-amd64.zip") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-$TargetVersion-windows-amd64.zip.sha256") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "app-update-stable.json") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "app-update-stable.json.sha256") -Destination $outputDir -Force
+}
+
 function Publish-Version {
     param([string]$Version, [string]$Destination)
     Write-Step "Publish $Version"
@@ -373,6 +383,7 @@ Require-Command "python"
 Require-File -Path (Join-Path $repoRoot "bat\publish.ps1") -Label "bat\publish.ps1"
 New-Item -ItemType Directory -Force $TestRoot | Out-Null
 
+$targetPrebuilt = $false
 if (-not $SkipPublish) {
     $targetPrebuilt = Copy-PrebuiltTargetArtifacts
     Publish-Version -Version $BaselineVersion -Destination $baselineDir
@@ -427,3 +438,7 @@ if ($beforeDataHash -ne "") {
 }
 
 Assert-UpdateSucceeded
+
+if ($targetPrebuilt) {
+    Restore-PrebuiltTargetArtifacts
+}
