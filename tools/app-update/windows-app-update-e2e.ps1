@@ -91,7 +91,7 @@ function Stop-AntBrowser {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
     }
     foreach ($image in @("ant-chrome.exe", "xray.exe", "sing-box.exe")) {
-        & "$env:WINDIR\System32\taskkill.exe" /F /T /IM $image 2>$null | Out-Null
+        & "$env:WINDIR\System32\cmd.exe" /c "taskkill /F /T /IM $image >NUL 2>NUL"
     }
     Start-Sleep -Milliseconds 1200
 }
