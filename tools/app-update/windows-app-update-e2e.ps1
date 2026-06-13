@@ -44,6 +44,14 @@ function Require-Command {
     }
 }
 
+function Get-FileSHA256OrMissing {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return "<missing>"
+    }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+}
+
 function Invoke-Native {
     param(
         [string]$FilePath,
@@ -72,6 +80,13 @@ function Seed-PreservedDirectories {
         New-Item -ItemType Directory -Force $dir | Out-Null
         Set-Content -LiteralPath (Join-Path $dir "app-update-preserve-marker.txt") -Value "preserve:$preserved" -Encoding UTF8
     }
+}
+
+function Reset-E2EInstallRoot {
+    Write-Step "Reset e2e install root"
+    Stop-AntBrowser
+    Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
 }
 
 function Copy-ReleaseArtifacts {
@@ -213,6 +228,28 @@ function Assert-UpdateSucceeded {
     $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installedExe).Hash
     $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $expectedExe).Hash
     if ($installedHash -ne $expectedHash) {
+        $plan = $null
+        if (
+            (Test-Path -LiteralPath $statePath -PathType Leaf) -and
+            ($state.PSObject.Properties.Name -contains "planPath")
+        ) {
+            $planPath = [string]$state.planPath
+            if ($planPath.Trim() -ne "" -and (Test-Path -LiteralPath $planPath -PathType Leaf)) {
+                $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+            }
+        }
+        Write-Host "Installed exe path: $installedExe"
+        Write-Host "Expected exe path: $expectedExe"
+        Write-Host "Installed exe sha256: $installedHash"
+        Write-Host "Expected exe sha256: $expectedHash"
+        if ($null -ne $plan) {
+            $stagedExe = Join-Path ([string]$plan.stagedPath) "ant-chrome.exe"
+            $runnerExe = [string]$plan.runnerPath
+            Write-Host "Plan: $($plan | ConvertTo-Json -Depth 10 -Compress)"
+            Write-Host "Staged exe sha256: $(Get-FileSHA256OrMissing -Path $stagedExe)"
+            Write-Host "Runner exe sha256: $(Get-FileSHA256OrMissing -Path $runnerExe)"
+        }
+        Write-Host "State: $($state | ConvertTo-Json -Depth 10 -Compress)"
         throw "installed exe hash mismatch: expected $expectedHash, got $installedHash"
     }
 
@@ -256,8 +293,7 @@ Require-File -Path $manifestPath -Label "target app-update manifest"
 Require-File -Path $targetZip -Label "target app-update zip"
 
 Write-Step "Install baseline $BaselineVersion"
-Stop-AntBrowser
-Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
+Reset-E2EInstallRoot
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
 Stop-AntBrowser
 Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
