@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+PUBLISH_SCRIPT = ROOT / "bat" / "publish.ps1"
+WORKFLOW = ROOT / ".github" / "workflows" / "windows-release-factory.yml"
+PREFLIGHT = ROOT / "tools" / "release" / "windows-release-preflight.ps1"
+RUNNER_SETUP = ROOT / "docs" / "release" / "windows-self-hosted-runner-setup.md"
+
+
+def require_contains(path: Path, needle: str) -> None:
+    text = path.read_text(encoding="utf-8-sig")
+    if needle not in text:
+        raise AssertionError(f"{path.relative_to(ROOT)} missing expected text: {needle}")
+
+
+def main() -> None:
+    require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_WINDOWS_CHROME_ROOT")
+    require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_REQUIRE_WINDOWS_CHROME")
+    require_contains(PUBLISH_SCRIPT, "C:\\AntBrowserReleaseResources\\chrome")
+    require_contains(PUBLISH_SCRIPT, "GITHUB_ACTIONS")
+    require_contains(PUBLISH_SCRIPT, "Resolve-WindowsChromeRoot")
+    require_contains(PUBLISH_SCRIPT, "Resolve-WindowsChromeRequirement")
+    require_contains(PUBLISH_SCRIPT, "缺少可打包的 Windows 浏览器内核")
+    require_contains(PUBLISH_SCRIPT, "throw $message")
+    require_contains(PREFLIGHT, "Check Windows browser core")
+    require_contains(PREFLIGHT, "C:\\AntBrowserReleaseResources\\chrome")
+    require_contains(PREFLIGHT, "chrome.exe")
+    require_contains(RUNNER_SETUP, "ANT_BROWSER_WINDOWS_CHROME_ROOT")
+    require_contains(RUNNER_SETUP, "ANT_BROWSER_REQUIRE_WINDOWS_CHROME")
+    print("[OK] windows publish script chrome resource contract verified")
+
+
+if __name__ == "__main__":
+    main()

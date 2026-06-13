@@ -50,6 +50,63 @@ function Stop-ResidualProcesses {
     Start-Sleep -Milliseconds 500
 }
 
+function Get-TrimmedText {
+    param([AllowNull()][string]$Value)
+    if ($null -eq $Value) {
+        return ""
+    }
+    return $Value.Trim()
+}
+
+function Resolve-WindowsChromeRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WINDOWS_CHROME_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    if ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true") {
+        return "C:\AntBrowserReleaseResources\chrome"
+    }
+
+    return Join-Path $repoRoot "chrome"
+}
+
+function Resolve-WindowsChromeRequirement {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_REQUIRE_WINDOWS_CHROME
+    if ($configured -ne "") {
+        return ($configured -eq "1")
+    }
+
+    return ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true")
+}
+
+function Test-WindowsChromeCore {
+    param([string]$ChromeRoot)
+
+    $rootExecutable = Join-Path $ChromeRoot "chrome.exe"
+    if (Test-Path -LiteralPath $rootExecutable -PathType Leaf) {
+        return $true
+    }
+
+    if (-not (Test-Path -LiteralPath $ChromeRoot -PathType Container)) {
+        return $false
+    }
+
+    foreach ($entry in (Get-ChildItem -LiteralPath $ChromeRoot -Force)) {
+        if (-not $entry.PSIsContainer) {
+            continue
+        }
+        if (Test-Path -LiteralPath (Join-Path $entry.FullName "chrome.exe") -PathType Leaf) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 Write-Step "Check required commands"
 foreach ($command in @("git", "go", "node", "npm", "python", "powershell")) {
     Require-Command $command
@@ -100,6 +157,17 @@ foreach ($path in @(
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $path))) {
         throw "required file missing: $path"
     }
+}
+
+Write-Step "Check Windows browser core"
+$chromeRoot = Resolve-WindowsChromeRoot
+if (Resolve-WindowsChromeRequirement) {
+    if (-not (Test-WindowsChromeCore -ChromeRoot $chromeRoot)) {
+        throw "required Windows browser core missing: $chromeRoot"
+    }
+}
+else {
+    Write-Host "Windows browser core is optional for this run: $chromeRoot"
 }
 
 Write-Host ""

@@ -395,17 +395,48 @@ function Copy-OptionalUpdatePath {
     Write-Host "✓ 复制更新包可选路径: $RelativePath"
 }
 
+function Resolve-WindowsChromeRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WINDOWS_CHROME_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $defaultRunnerChromeRoot = "C:\AntBrowserReleaseResources\chrome"
+    if ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true") {
+        return $defaultRunnerChromeRoot
+    }
+
+    return Join-Path $repoRoot "chrome"
+}
+
+function Resolve-WindowsChromeRequirement {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_REQUIRE_WINDOWS_CHROME
+    if ($configured -ne "") {
+        return ($configured -eq "1")
+    }
+
+    return ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true")
+}
+
 function Copy-WindowsChromePayload {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ChromeRoot,
         [Parameter(Mandatory = $true)]
-        [string]$StagingDir
+        [string]$StagingDir,
+        [bool]$RequireChrome = $false
     )
 
     if (-not (Test-Path -LiteralPath $ChromeRoot -PathType Container)) {
-        Write-Host "[WARN] 缺少 chrome\ 目录，Windows 安装包将不包含浏览器内核"
-        return
+        $message = "缺少可打包的 Windows 浏览器内核目录: $ChromeRoot"
+        if ($RequireChrome) {
+            throw $message
+        }
+        Write-Host "[WARN] $message，Windows 安装包将不包含浏览器内核"
+        return $false
     }
 
     $stagingChromeDir = Join-Path $StagingDir "chrome"
@@ -415,7 +446,7 @@ function Copy-WindowsChromePayload {
 
     if (Test-PeExecutable -FilePath $rootExecutable) {
         Copy-DirectoryContents -SourceDir $ChromeRoot -DestinationDir $stagingChromeDir
-        $copiedCores += "chrome\"
+        $copiedCores += "chrome"
     }
     else {
         if (Test-Path -LiteralPath $chromeReadme -PathType Leaf) {
@@ -441,7 +472,12 @@ function Copy-WindowsChromePayload {
 
     if ($copiedCores.Count -gt 0) {
         Write-Host ("✓ 自动打包 Windows 内核: {0}" -f ($copiedCores -join ", "))
-        return
+        return $true
+    }
+
+    $message = "缺少可打包的 Windows 浏览器内核: $ChromeRoot"
+    if ($RequireChrome) {
+        throw $message
     }
 
     if (Test-Path -LiteralPath $chromeReadme -PathType Leaf) {
@@ -450,6 +486,7 @@ function Copy-WindowsChromePayload {
     else {
         Write-Host "[WARN] 未发现可打包的 Windows 内核，且缺少 chrome\README.md"
     }
+    return $false
 }
 
 function New-WindowsStaging {
@@ -459,7 +496,8 @@ function New-WindowsStaging {
     $releaseConfig = Join-Path $repoRoot "publish/config.init.yaml"
     $binaryPath = Join-Path $repoRoot "build/bin/ant-chrome.exe"
     $binDir = Join-Path $repoRoot "bin"
-    $chromeRoot = Join-Path $repoRoot "chrome"
+    $chromeRoot = Resolve-WindowsChromeRoot
+    $requireChrome = Resolve-WindowsChromeRequirement
 
     if (Test-Path -LiteralPath $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
@@ -490,7 +528,7 @@ function New-WindowsStaging {
     }
     Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe）"
 
-    Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
+    Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir -RequireChrome $requireChrome | Out-Null
 
     New-Item -ItemType Directory -Path (Join-Path $stagingDir "data") -Force | Out-Null
     Write-Host "✓ 创建空 data 目录（不打包 app.db，首次启动自动初始化）"
