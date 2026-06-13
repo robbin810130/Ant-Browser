@@ -2,7 +2,7 @@ param(
     [string]$BaselineVersion = "1.1.0",
     [string]$TargetVersion = "1.1.5",
     [string]$TestRoot = "C:\AntBrowserUpdateTest",
-    [int]$RunnerWaitSeconds = 25,
+    [int]$RunnerWaitSeconds = 90,
     [switch]$SkipPublish
 )
 
@@ -133,10 +133,12 @@ function Reset-E2EInstallRoot {
 function Wait-ForUpdateRunner {
     Write-Step "Wait for runner"
     $deadline = (Get-Date).AddSeconds($RunnerWaitSeconds)
+    $lastStateJson = "<missing>"
     do {
         Start-Sleep -Seconds 1
         $state = Read-AppUpdateStateOrNull
         if ($null -ne $state -and ($state.PSObject.Properties.Name -contains "status")) {
+            $lastStateJson = ($state | ConvertTo-Json -Depth 10 -Compress)
             $status = [string]$state.status
             if ($status -in @("succeeded", "failed_manual_repair", "rolled_back")) {
                 Write-Host "Runner terminal status: $status"
@@ -144,7 +146,7 @@ function Wait-ForUpdateRunner {
             }
         }
     } while ((Get-Date) -lt $deadline)
-    Write-Host "Runner wait timeout after $RunnerWaitSeconds seconds"
+    throw "runner did not reach terminal status after $RunnerWaitSeconds seconds; lastState=$lastStateJson"
 }
 
 function Copy-ReleaseArtifacts {
