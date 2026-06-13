@@ -37,6 +37,18 @@ function Require-File {
     }
 }
 
+function Wait-ForFile {
+    param([string]$Path, [string]$Label, [int]$TimeoutSeconds = 10)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    Require-File -Path $Path -Label $Label
+}
+
 function Require-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -78,7 +90,10 @@ function Stop-AntBrowser {
     foreach ($name in @("ant-chrome", "xray", "sing-box")) {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
     }
-    Start-Sleep -Milliseconds 500
+    foreach ($image in @("ant-chrome.exe", "xray.exe", "sing-box.exe")) {
+        & "$env:WINDIR\System32\taskkill.exe" /F /T /IM $image 2>$null | Out-Null
+    }
+    Start-Sleep -Milliseconds 1200
 }
 
 function Seed-PreservedDirectories {
@@ -98,7 +113,18 @@ function Seed-UserData {
 function Reset-E2EInstallRoot {
     Write-Step "Reset e2e install root"
     Stop-AntBrowser
-    Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue
+    $deadline = (Get-Date).AddSeconds(15)
+    do {
+        Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $installRoot)) {
+            break
+        }
+        Stop-AntBrowser
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    if (Test-Path -LiteralPath $installRoot) {
+        throw "failed to reset install root: $installRoot"
+    }
     Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
 }
 
@@ -331,7 +357,7 @@ Write-Step "Install baseline $BaselineVersion"
 Reset-E2EInstallRoot
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
 Stop-AntBrowser
-Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
+Wait-ForFile -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe" -TimeoutSeconds 15
 Seed-UserData
 Seed-PreservedDirectories
 if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf) {
