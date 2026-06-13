@@ -89,6 +89,12 @@ function Seed-PreservedDirectories {
     }
 }
 
+function Seed-UserData {
+    $dataDir = Join-Path $installRoot "data"
+    New-Item -ItemType Directory -Force $dataDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $dataDir "app.db") -Value "app-update-user-data-marker" -Encoding UTF8
+}
+
 function Reset-E2EInstallRoot {
     Write-Step "Reset e2e install root"
     Stop-AntBrowser
@@ -326,6 +332,7 @@ Reset-E2EInstallRoot
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
 Stop-AntBrowser
 Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
+Seed-UserData
 Seed-PreservedDirectories
 if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf) {
     $beforeDataHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installRoot "data\app.db")).Hash
