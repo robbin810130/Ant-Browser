@@ -56,6 +56,24 @@ func envFlagEnabled(name string) bool {
 	}
 }
 
+func parseUpdateCLI(args []string) (mode string, planPath string) {
+	if len(args) < 3 {
+		return "", ""
+	}
+	planPath = strings.TrimSpace(args[2])
+	if planPath == "" {
+		return "", ""
+	}
+	switch strings.TrimSpace(args[1]) {
+	case "--apply-update":
+		return "apply", planPath
+	case "--post-update-check":
+		return "post-check", planPath
+	default:
+		return "", ""
+	}
+}
+
 func resolveBuildVersion() string {
 	var cfg wailsBuildConfig
 	if err := json.Unmarshal(wailsConfigJSON, &cfg); err != nil {
@@ -103,6 +121,15 @@ func isWailsDevExecutableDir(exeDir, tempDir string) bool {
 }
 
 func main() {
+	buildVersion := resolveBuildVersion()
+	if mode, planPath := parseUpdateCLI(os.Args); mode != "" {
+		if err := backend.RunAppUpdateCLI(mode, planPath, buildVersion); err != nil {
+			log.Printf("app update %s failed: %v", mode, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// 确定应用根目录：
 	// 1. 生产环境：exe 所在目录（快捷方式启动时 CWD 可能不对，需要修正）
 	// 2. dev 环境：wails dev 时 exe 可能在 temp 目录或 build/bin 目录，使用当前工作目录
@@ -149,7 +176,6 @@ func main() {
 	if startupDebugEnabled && backend.RuntimeUsesDetachedState(appRoot) {
 		log.Printf("检测到安装目录需要只读运行，状态目录切换到: %s", backend.RuntimeStateRoot(appRoot))
 	}
-	buildVersion := resolveBuildVersion()
 	if startupDebugEnabled {
 		log.Printf("应用版本: %s", buildVersion)
 		log.Printf(
