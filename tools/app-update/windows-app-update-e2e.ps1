@@ -76,6 +76,7 @@ function Invoke-Native {
         [string]$FilePath,
         [string[]]$Arguments = @()
     )
+    $global:LASTEXITCODE = 0
     & $FilePath @Arguments
     $exitCode = 0
     if (Test-Path variable:LASTEXITCODE) {
@@ -92,6 +93,7 @@ function Stop-AntBrowser {
     }
     foreach ($image in @("ant-chrome.exe", "xray.exe", "sing-box.exe")) {
         & "$env:WINDIR\System32\cmd.exe" /c "taskkill /F /T /IM $image >NUL 2>NUL"
+        $global:LASTEXITCODE = 0
     }
     Start-Sleep -Milliseconds 1200
 }
