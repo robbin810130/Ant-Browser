@@ -64,6 +64,10 @@ type LaunchServerAuthConfig struct {
 	Header  string `yaml:"header"`
 }
 
+type ReleaseConfig struct {
+	AppUpdateManifestURL string `yaml:"app_update_manifest_url"`
+}
+
 // Config 应用配置
 type Config struct {
 	Database     DatabaseConfig     `yaml:"database"`
@@ -72,6 +76,7 @@ type Config struct {
 	Logging      LoggingConfig      `yaml:"logging"`
 	Browser      BrowserConfig      `yaml:"browser"`
 	LaunchServer LaunchServerConfig `yaml:"launch_server"`
+	Release      ReleaseConfig      `yaml:"release"`
 }
 
 // DatabaseConfig 数据库配置
