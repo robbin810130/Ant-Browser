@@ -225,13 +225,21 @@ func windowsCloseInstalledProcessesScript() string {
 $ErrorActionPreference = 'SilentlyContinue'
 if ([string]::IsNullOrWhiteSpace($InstallDir) -or -not (Test-Path -LiteralPath $InstallDir)) { exit 0 }
 $root = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd('\') + '\'
+$rootText = $root.ToLowerInvariant()
 $exclude = ''
 if (-not [string]::IsNullOrWhiteSpace($ExcludePath)) { $exclude = [System.IO.Path]::GetFullPath($ExcludePath) }
 function Get-AntBrowserProcesses {
   @(Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -and
-    $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -and
-    ($exclude -eq '' -or -not $_.ExecutablePath.Equals($exclude, [System.StringComparison]::OrdinalIgnoreCase))
+    $exe = if ($_.ExecutablePath) { $_.ExecutablePath } else { '' }
+    $cmd = if ($_.CommandLine) { $_.CommandLine.ToLowerInvariant() } else { '' }
+    $name = if ($_.Name) { $_.Name } else { '' }
+    $isExcluded = ($exclude -ne '' -and $exe -ne '' -and $exe.Equals($exclude, [System.StringComparison]::OrdinalIgnoreCase))
+    (
+      ($exe -ne '' -and $exe.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) -or
+      ($cmd -ne '' -and $cmd.Contains($rootText)) -or
+      ($name.Equals('chrome.exe', [System.StringComparison]::OrdinalIgnoreCase) -and $cmd.Contains('ant browser'))
+    ) -and
+    -not $isExcluded
   })
 }
 $deadline = (Get-Date).AddSeconds(10)

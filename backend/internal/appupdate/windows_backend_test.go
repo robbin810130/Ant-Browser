@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -204,5 +205,18 @@ func TestWindowsBackendPostUpdateCheckRejectsVersionMismatch(t *testing.T) {
 	}
 	if state.Status != PersistentStatusFailedManualRepair || state.LastError.Code != "APP-UPDATE-POST-CHECK-VERSION-MISMATCH" {
 		t.Fatalf("unexpected mismatch state: %+v", state)
+	}
+}
+
+func TestWindowsCloseInstalledProcessesScriptMatchesCommandLineReferences(t *testing.T) {
+	script := windowsCloseInstalledProcessesScript()
+	for _, want := range []string{
+		"$_.CommandLine",
+		"Contains($rootText",
+		"chrome.exe",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("close installed processes script missing %q", want)
+		}
 	}
 }
