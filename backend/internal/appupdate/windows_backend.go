@@ -1,6 +1,7 @@
 package appupdate
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -105,6 +106,20 @@ func (b WindowsBackend) RunApply(planPath string) error {
 	}); err != nil {
 		return err
 	}
+	if err := b.closeInstalledProcesses(plan); err != nil {
+		_ = WriteState(layout, PersistentState{
+			Status:           PersistentStatusFailedManualRepair,
+			LocalAppVersion:  plan.OldAppVersion,
+			RemoteAppVersion: plan.NewAppVersion,
+			PlanPath:         planPath,
+			BackupPath:       plan.BackupPath,
+			LastError: ErrorInfo{
+				Code:    "APP-UPDATE-CLOSE-PROCESSES-FAILED",
+				Message: err.Error(),
+			},
+		})
+		return err
+	}
 	if err := b.backupInstall(plan); err != nil {
 		_ = WriteState(layout, PersistentState{
 			Status: PersistentStatusFailedManualRepair,
@@ -148,6 +163,82 @@ func (b WindowsBackend) RunApply(planPath string) error {
 		return err
 	}
 	return b.launchPostUpdateCheck(plan, planPath)
+}
+
+func (b WindowsBackend) closeInstalledProcesses(plan ApplyPlan) error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	installRoot := strings.TrimSpace(plan.InstallRoot)
+	if installRoot == "" {
+		return nil
+	}
+	script, err := os.CreateTemp("", "ant-browser-close-installed-*.ps1")
+	if err != nil {
+		return err
+	}
+	scriptPath := script.Name()
+	defer os.Remove(scriptPath)
+
+	if _, err := script.WriteString(windowsCloseInstalledProcessesScript()); err != nil {
+		_ = script.Close()
+		return err
+	}
+	if err := script.Close(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe",
+		"-NoProfile",
+		"-ExecutionPolicy", "Bypass",
+		"-File", scriptPath,
+		"-InstallDir", filepath.Clean(installRoot),
+		"-ExcludePath", runnerExePath(plan),
+	)
+	hideWindow(cmd)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("close installed processes timed out")
+	}
+	if err != nil {
+		return fmt.Errorf("close installed processes failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func windowsCloseInstalledProcessesScript() string {
+	return `param([string]$InstallDir, [string]$ExcludePath)
+$ErrorActionPreference = 'SilentlyContinue'
+if ([string]::IsNullOrWhiteSpace($InstallDir) -or -not (Test-Path -LiteralPath $InstallDir)) { exit 0 }
+$root = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd('\') + '\'
+$exclude = ''
+if (-not [string]::IsNullOrWhiteSpace($ExcludePath)) { $exclude = [System.IO.Path]::GetFullPath($ExcludePath) }
+function Get-AntBrowserProcesses {
+  @(Get-CimInstance Win32_Process | Where-Object {
+    $_.ExecutablePath -and
+    $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -and
+    ($exclude -eq '' -or -not $_.ExecutablePath.Equals($exclude, [System.StringComparison]::OrdinalIgnoreCase))
+  })
+}
+$deadline = (Get-Date).AddSeconds(10)
+do {
+  $procs = Get-AntBrowserProcesses
+  if (-not $procs -or $procs.Count -eq 0) { exit 0 }
+  foreach ($p in $procs) {
+    try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {}
+  }
+  Start-Sleep -Milliseconds 400
+} while ((Get-Date) -lt $deadline)
+$left = Get-AntBrowserProcesses
+if ($left -and $left.Count -gt 0) {
+  $names = ($left | ForEach-Object { $_.Name + '#' + $_.ProcessId }) -join ', '
+  Write-Host ('still running: ' + $names)
+  exit 1
+}
+exit 0
+`
 }
 
 func (b WindowsBackend) PostUpdateCheck(planPath string) error {
