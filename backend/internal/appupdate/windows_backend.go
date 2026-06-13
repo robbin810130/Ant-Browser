@@ -205,7 +205,19 @@ func (b WindowsBackend) closeInstalledProcesses(plan ApplyPlan) error {
 	if err != nil {
 		return fmt.Errorf("close installed processes failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
+	b.taskkillKnownRuntimeProcesses()
+	time.Sleep(700 * time.Millisecond)
 	return nil
+}
+
+func (b WindowsBackend) taskkillKnownRuntimeProcesses() {
+	for _, image := range []string{"ant-chrome.exe", "xray.exe", "sing-box.exe"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cmd := exec.CommandContext(ctx, "taskkill.exe", "/F", "/T", "/IM", image)
+		hideWindow(cmd)
+		_ = cmd.Run()
+		cancel()
+	}
 }
 
 func windowsCloseInstalledProcessesScript() string {
