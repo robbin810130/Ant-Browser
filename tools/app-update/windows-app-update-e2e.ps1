@@ -160,6 +160,32 @@ function Copy-ReleaseArtifacts {
     Copy-Item -LiteralPath (Join-Path $outputDir "app-update-stable.json.sha256") -Destination $Destination -Force
 }
 
+function Test-ReleaseArtifacts {
+    param([string]$Version)
+    $required = @(
+        (Join-Path $outputDir "AntBrowser-Setup-$Version.exe"),
+        (Join-Path $outputDir "AntBrowser-$Version-windows-amd64.zip"),
+        (Join-Path $outputDir "AntBrowser-$Version-windows-amd64.zip.sha256"),
+        (Join-Path $outputDir "app-update-stable.json"),
+        (Join-Path $outputDir "app-update-stable.json.sha256")
+    )
+    foreach ($path in $required) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Copy-PrebuiltTargetArtifacts {
+    if (-not (Test-ReleaseArtifacts -Version $TargetVersion)) {
+        return $false
+    }
+    Write-Step "Use prebuilt target artifacts $TargetVersion"
+    Copy-ReleaseArtifacts -Version $TargetVersion -Destination $targetDir
+    return $true
+}
+
 function Publish-Version {
     param([string]$Version, [string]$Destination)
     Write-Step "Publish $Version"
@@ -346,8 +372,14 @@ Require-File -Path (Join-Path $repoRoot "bat\publish.ps1") -Label "bat\publish.p
 New-Item -ItemType Directory -Force $TestRoot | Out-Null
 
 if (-not $SkipPublish) {
+    $targetPrebuilt = Copy-PrebuiltTargetArtifacts
     Publish-Version -Version $BaselineVersion -Destination $baselineDir
-    Publish-Version -Version $TargetVersion -Destination $targetDir
+    if ($targetPrebuilt) {
+        Write-Step "Skip target publish $TargetVersion"
+    }
+    else {
+        Publish-Version -Version $TargetVersion -Destination $targetDir
+    }
 }
 
 Require-File -Path $baselineInstaller -Label "baseline installer"
