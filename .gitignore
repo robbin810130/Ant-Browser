@@ -58,6 +58,7 @@ docs/
 docs/*
 !docs/release/
 docs/release/*
+!docs/release/windows-agent-q-playbook.md
 !docs/release/windows-packaging-and-update-runbook.md
 !docs/release/windows-self-hosted-runner-setup.md
 !docs/reports/

@@ -1,6 +1,7 @@
 package appupdate
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -105,6 +106,20 @@ func (b WindowsBackend) RunApply(planPath string) error {
 	}); err != nil {
 		return err
 	}
+	if err := b.closeInstalledProcesses(plan); err != nil {
+		_ = WriteState(layout, PersistentState{
+			Status:           PersistentStatusFailedManualRepair,
+			LocalAppVersion:  plan.OldAppVersion,
+			RemoteAppVersion: plan.NewAppVersion,
+			PlanPath:         planPath,
+			BackupPath:       plan.BackupPath,
+			LastError: ErrorInfo{
+				Code:    "APP-UPDATE-CLOSE-PROCESSES-FAILED",
+				Message: err.Error(),
+			},
+		})
+		return err
+	}
 	if err := b.backupInstall(plan); err != nil {
 		_ = WriteState(layout, PersistentState{
 			Status: PersistentStatusFailedManualRepair,
@@ -148,6 +163,102 @@ func (b WindowsBackend) RunApply(planPath string) error {
 		return err
 	}
 	return b.launchPostUpdateCheck(plan, planPath)
+}
+
+func (b WindowsBackend) closeInstalledProcesses(plan ApplyPlan) error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	installRoot := strings.TrimSpace(plan.InstallRoot)
+	if installRoot == "" {
+		return nil
+	}
+	script, err := os.CreateTemp("", "ant-browser-close-installed-*.ps1")
+	if err != nil {
+		return err
+	}
+	scriptPath := script.Name()
+	defer os.Remove(scriptPath)
+
+	if _, err := script.WriteString(windowsCloseInstalledProcessesScript()); err != nil {
+		_ = script.Close()
+		return err
+	}
+	if err := script.Close(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe",
+		"-NoProfile",
+		"-ExecutionPolicy", "Bypass",
+		"-File", scriptPath,
+		"-InstallDir", filepath.Clean(installRoot),
+		"-ExcludePath", runnerExePath(plan),
+	)
+	hideWindow(cmd)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("close installed processes timed out")
+	}
+	if err != nil {
+		return fmt.Errorf("close installed processes failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	b.taskkillKnownRuntimeProcesses()
+	time.Sleep(700 * time.Millisecond)
+	return nil
+}
+
+func (b WindowsBackend) taskkillKnownRuntimeProcesses() {
+	for _, image := range []string{"ant-chrome.exe", "xray.exe", "sing-box.exe"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cmd := exec.CommandContext(ctx, "taskkill.exe", "/F", "/T", "/IM", image)
+		hideWindow(cmd)
+		_ = cmd.Run()
+		cancel()
+	}
+}
+
+func windowsCloseInstalledProcessesScript() string {
+	return `param([string]$InstallDir, [string]$ExcludePath)
+$ErrorActionPreference = 'SilentlyContinue'
+if ([string]::IsNullOrWhiteSpace($InstallDir) -or -not (Test-Path -LiteralPath $InstallDir)) { exit 0 }
+$root = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd('\') + '\'
+$rootText = $root.ToLowerInvariant()
+$exclude = ''
+if (-not [string]::IsNullOrWhiteSpace($ExcludePath)) { $exclude = [System.IO.Path]::GetFullPath($ExcludePath) }
+function Get-AntBrowserProcesses {
+  @(Get-CimInstance Win32_Process | Where-Object {
+    $exe = if ($_.ExecutablePath) { $_.ExecutablePath } else { '' }
+    $cmd = if ($_.CommandLine) { $_.CommandLine.ToLowerInvariant() } else { '' }
+    $name = if ($_.Name) { $_.Name } else { '' }
+    $isExcluded = ($exclude -ne '' -and $exe -ne '' -and $exe.Equals($exclude, [System.StringComparison]::OrdinalIgnoreCase))
+    (
+      ($exe -ne '' -and $exe.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) -or
+      ($cmd -ne '' -and $cmd.Contains($rootText)) -or
+      ($name.Equals('chrome.exe', [System.StringComparison]::OrdinalIgnoreCase) -and $cmd.Contains('ant browser'))
+    ) -and
+    -not $isExcluded
+  })
+}
+$deadline = (Get-Date).AddSeconds(10)
+do {
+  $procs = Get-AntBrowserProcesses
+  if (-not $procs -or $procs.Count -eq 0) { exit 0 }
+  foreach ($p in $procs) {
+    try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {}
+  }
+  Start-Sleep -Milliseconds 400
+} while ((Get-Date) -lt $deadline)
+$left = Get-AntBrowserProcesses
+if ($left -and $left.Count -gt 0) {
+  $names = ($left | ForEach-Object { $_.Name + '#' + $_.ProcessId }) -join ', '
+  Write-Host ('still running: ' + $names)
+  exit 1
+}
+exit 0
+`
 }
 
 func (b WindowsBackend) PostUpdateCheck(planPath string) error {
@@ -202,11 +313,11 @@ func (b WindowsBackend) replaceInstall(plan ApplyPlan) error {
 		if preserveInstallEntry(entry.Name()) {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(plan.InstallRoot, entry.Name())); err != nil {
+		if err := b.removeInstallEntryWithRetry(plan, filepath.Join(plan.InstallRoot, entry.Name())); err != nil {
 			return err
 		}
 	}
-	return copyInstallPayload(plan.StagedPath, plan.InstallRoot)
+	return b.copyInstallPayloadWithRetry(plan)
 }
 
 func (b WindowsBackend) rollbackInstall(plan ApplyPlan) error {
@@ -216,12 +327,55 @@ func (b WindowsBackend) rollbackInstall(plan ApplyPlan) error {
 			if preserveInstallEntry(entry.Name()) {
 				continue
 			}
-			if removeErr := os.RemoveAll(filepath.Join(plan.InstallRoot, entry.Name())); removeErr != nil {
+			if removeErr := b.removeInstallEntryWithRetry(plan, filepath.Join(plan.InstallRoot, entry.Name())); removeErr != nil {
 				return removeErr
 			}
 		}
 	}
-	return copyDir(plan.BackupPath, plan.InstallRoot)
+	return b.copyBackupWithRetry(plan)
+}
+
+func (b WindowsBackend) removeInstallEntryWithRetry(plan ApplyPlan, path string) error {
+	return retryWindowsInstallMutation(func() error {
+		err := os.RemoveAll(path)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func (b WindowsBackend) copyInstallPayloadWithRetry(plan ApplyPlan) error {
+	return retryWindowsInstallMutation(func() error {
+		err := copyInstallPayload(plan.StagedPath, plan.InstallRoot)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func (b WindowsBackend) copyBackupWithRetry(plan ApplyPlan) error {
+	return retryWindowsInstallMutation(func() error {
+		err := copyDir(plan.BackupPath, plan.InstallRoot)
+		if err != nil {
+			_ = b.closeInstalledProcesses(plan)
+		}
+		return err
+	})
+}
+
+func retryWindowsInstallMutation(fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if err := fn(); err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(250*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 func (b WindowsBackend) prepareRunner(plan ApplyPlan) error {

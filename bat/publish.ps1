@@ -1,6 +1,6 @@
 ﻿param(
     [string]$Target,
-    [string]$Version
+    [string]$ReleaseVersion
 )
 
 Set-StrictMode -Version Latest
@@ -62,11 +62,9 @@ function Invoke-NativeCommand {
     }
 }
 
-function Assert-PublishContract {
-    Write-Host "[Windows] 校验发布契约..."
-    Invoke-NativeCommand -FilePath "python3" -Arguments @("tools/runtime/verify-publish-contract.py")
-    Write-Host "✓ 发布契约校验通过"
-    Write-Host ""
+function Get-FileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
 function Assert-RequiredSourceFiles {
@@ -289,15 +287,7 @@ function Assert-RuntimeHashes {
 
     Write-Host "[Windows] 校验运行时哈希..."
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $entries = @()
-    if ($manifest.PSObject.Properties.Name -contains "packages") {
-        $entries = @($manifest.packages | Where-Object {
-            $_.required -and (Get-TrimmedText ([string]$_.target)).ToLowerInvariant() -eq $Target.ToLowerInvariant()
-        })
-    }
-    if ($entries.Count -eq 0 -and ($manifest.PSObject.Properties.Name -contains "files")) {
-        $entries = @($manifest.files | Where-Object { $_.targets -contains $Target })
-    }
+    $entries = @($manifest.files | Where-Object { $_.targets -contains $Target })
     if ($entries.Count -eq 0) {
         throw "运行时清单中不存在目标平台: $Target"
     }
@@ -334,62 +324,6 @@ function Assert-RuntimeHashes {
 
     Write-Host "✓ 运行时哈希校验通过: $Target"
     Write-Host ""
-}
-
-function Copy-RuntimePublishPayload {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Target,
-        [Parameter(Mandatory = $true)]
-        [string]$StagingDir
-    )
-
-    $publishRoot = Join-Path $repoRoot "publish"
-    $manifestPath = Join-Path $publishRoot "runtime-manifest.json"
-    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-        throw "缺少运行时清单: publish\runtime-manifest.json"
-    }
-
-    $stagingPublishDir = Join-Path $StagingDir "publish"
-    New-Item -ItemType Directory -Path $stagingPublishDir -Force | Out-Null
-    Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $stagingPublishDir "runtime-manifest.json") -Force
-
-    $sourcesPath = Join-Path $publishRoot "runtime-sources.json"
-    if (Test-Path -LiteralPath $sourcesPath -PathType Leaf) {
-        Copy-Item -LiteralPath $sourcesPath -Destination (Join-Path $stagingPublishDir "runtime-sources.json") -Force
-    }
-
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $packages = @()
-    if ($manifest.PSObject.Properties.Name -contains "packages") {
-        $packages = @($manifest.packages | Where-Object {
-            $_.required -and (Get-TrimmedText ([string]$_.target)).ToLowerInvariant() -eq $Target.ToLowerInvariant()
-        })
-    }
-    if ($packages.Count -eq 0) {
-        throw "运行时清单中不存在目标平台所需 packages: $Target"
-    }
-
-    foreach ($pkg in $packages) {
-        $relativePath = Get-TrimmedText ([string]$pkg.path)
-        if ($relativePath -eq "") {
-            throw "运行时 package 缺少 path: $($pkg.id)"
-        }
-
-        $sourcePath = Join-Path $publishRoot ($relativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-            throw "缺少运行时包文件: publish\$relativePath"
-        }
-
-        $destinationPath = Join-Path $stagingPublishDir ($relativePath -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-        $destinationDir = Split-Path -Path $destinationPath -Parent
-        if ($destinationDir) {
-            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-        }
-        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-    }
-
-    Write-Host "✓ 复制 publish\runtime-manifest.json 与目标运行时包"
 }
 
 function Test-PeExecutable {
@@ -441,17 +375,68 @@ function Copy-DirectoryContents {
     }
 }
 
+function Copy-OptionalUpdatePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath,
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadRoot
+    )
+
+    $source = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $source)) {
+        return
+    }
+
+    $destination = Join-Path $PayloadRoot $RelativePath
+    $destinationParent = Split-Path -Parent $destination
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+    Write-Host "✓ 复制更新包可选路径: $RelativePath"
+}
+
+function Resolve-WindowsChromeRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WINDOWS_CHROME_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $defaultRunnerChromeRoot = "C:\AntBrowserReleaseResources\chrome"
+    if ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true") {
+        return $defaultRunnerChromeRoot
+    }
+
+    return Join-Path $repoRoot "chrome"
+}
+
+function Resolve-WindowsChromeRequirement {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_REQUIRE_WINDOWS_CHROME
+    if ($configured -ne "") {
+        return ($configured -eq "1")
+    }
+
+    return ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true")
+}
+
 function Copy-WindowsChromePayload {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ChromeRoot,
         [Parameter(Mandatory = $true)]
-        [string]$StagingDir
+        [string]$StagingDir,
+        [bool]$RequireChrome = $false
     )
 
     if (-not (Test-Path -LiteralPath $ChromeRoot -PathType Container)) {
-        Write-Host "[WARN] 缺少 chrome\ 目录，Windows 安装包将不包含浏览器内核"
-        return
+        $message = "缺少可打包的 Windows 浏览器内核目录: $ChromeRoot"
+        if ($RequireChrome) {
+            throw $message
+        }
+        Write-Host "[WARN] $message，Windows 安装包将不包含浏览器内核"
+        return $false
     }
 
     $stagingChromeDir = Join-Path $StagingDir "chrome"
@@ -461,7 +446,7 @@ function Copy-WindowsChromePayload {
 
     if (Test-PeExecutable -FilePath $rootExecutable) {
         Copy-DirectoryContents -SourceDir $ChromeRoot -DestinationDir $stagingChromeDir
-        $copiedCores += "chrome\"
+        $copiedCores += "chrome"
     }
     else {
         if (Test-Path -LiteralPath $chromeReadme -PathType Leaf) {
@@ -487,7 +472,12 @@ function Copy-WindowsChromePayload {
 
     if ($copiedCores.Count -gt 0) {
         Write-Host ("✓ 自动打包 Windows 内核: {0}" -f ($copiedCores -join ", "))
-        return
+        return $true
+    }
+
+    $message = "缺少可打包的 Windows 浏览器内核: $ChromeRoot"
+    if ($RequireChrome) {
+        throw $message
     }
 
     if (Test-Path -LiteralPath $chromeReadme -PathType Leaf) {
@@ -496,92 +486,7 @@ function Copy-WindowsChromePayload {
     else {
         Write-Host "[WARN] 未发现可打包的 Windows 内核，且缺少 chrome\README.md"
     }
-}
-
-function Resolve-WorkspacePayloadRoot {
-    $candidates = @()
-    if ($env:ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT) {
-        $candidates += (Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT)
-    }
-    $desktopReposRoot = Split-Path -Parent $repoRoot
-    $candidates += (Join-Path $desktopReposRoot "1688shop-desktop")
-
-    foreach ($candidate in $candidates) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) {
-            continue
-        }
-        $agentEntry = Join-Path $candidate "apps\agent\src\server\index.mjs"
-        if (Test-Path -LiteralPath $agentEntry -PathType Leaf) {
-            return $candidate
-        }
-    }
-
-    throw "未找到 workspace agent payload 根目录。请准备 desktop-repos\\1688shop-desktop，或设置 ANT_BROWSER_WORKSPACE_PAYLOAD_ROOT 指向包含 apps\\agent\\src\\server\\index.mjs 的目录。"
-}
-
-function Copy-WorkspaceAgentPayload {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkspacePayloadRoot,
-        [Parameter(Mandatory = $true)]
-        [string]$StagingDir
-    )
-
-    $items = @(
-        "apps\agent\src",
-        "apps\agent\package.json"
-    )
-
-    foreach ($relativePath in $items) {
-        $sourcePath = Join-Path $WorkspacePayloadRoot $relativePath
-        if (-not (Test-Path -LiteralPath $sourcePath)) {
-            if ($relativePath -like "installer\windows\scripts\*") {
-                continue
-            }
-            throw "缺少 workspace agent payload: $sourcePath"
-        }
-
-        $destinationPath = Join-Path $StagingDir $relativePath
-        $destinationDir = Split-Path -Parent $destinationPath
-        if ($destinationDir) {
-            New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-        }
-        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
-    }
-
-    Write-Host "✓ 复制本地 workspace agent payload"
-}
-
-function Copy-BundledWorkspaceNodePayload {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkspacePayloadRoot,
-        [Parameter(Mandatory = $true)]
-        [string]$StagingDir
-    )
-
-    $targetDir = Join-Path $StagingDir "runtime\node"
-    $targetExe = Join-Path $targetDir "node.exe"
-    $sourceDir = Join-Path $WorkspacePayloadRoot "runtime\node"
-
-    if (Test-Path -LiteralPath $sourceDir -PathType Container) {
-        New-Item -ItemType Directory -Path (Split-Path -Parent $targetDir) -Force | Out-Null
-        Copy-Item -LiteralPath $sourceDir -Destination $targetDir -Recurse -Force
-    }
-    else {
-        $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-        if (-not $nodeCmd) {
-            throw "缺少 bundled node runtime，且 PATH 中也找不到 node.exe。请先安装 Node.js 或准备 runtime\\node\\node.exe。"
-        }
-        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-        Copy-Item -LiteralPath $nodeCmd.Source -Destination $targetExe -Force
-    }
-
-    if (-not (Test-Path -LiteralPath $targetExe -PathType Leaf)) {
-        throw "staging 中缺少 runtime\\node\\node.exe"
-    }
-
-    Write-Host "✓ 复制 bundled Node runtime"
+    return $false
 }
 
 function New-WindowsStaging {
@@ -591,8 +496,8 @@ function New-WindowsStaging {
     $releaseConfig = Join-Path $repoRoot "publish/config.init.yaml"
     $binaryPath = Join-Path $repoRoot "build/bin/ant-chrome.exe"
     $binDir = Join-Path $repoRoot "bin"
-    $chromeRoot = Join-Path $repoRoot "chrome"
-    $workspacePayloadRoot = Resolve-WorkspacePayloadRoot
+    $chromeRoot = Resolve-WindowsChromeRoot
+    $requireChrome = Resolve-WindowsChromeRequirement
 
     if (Test-Path -LiteralPath $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
@@ -623,10 +528,7 @@ function New-WindowsStaging {
     }
     Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe）"
 
-    Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir
-    Copy-WorkspaceAgentPayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
-    Copy-BundledWorkspaceNodePayload -WorkspacePayloadRoot $workspacePayloadRoot -StagingDir $stagingDir
-    Copy-RuntimePublishPayload -Target "windows-amd64" -StagingDir $stagingDir
+    Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir -RequireChrome $requireChrome | Out-Null
 
     New-Item -ItemType Directory -Path (Join-Path $stagingDir "data") -Force | Out-Null
     Write-Host "✓ 创建空 data 目录（不打包 app.db，首次启动自动初始化）"
@@ -682,63 +584,85 @@ function Invoke-WindowsPackaging {
     Write-Host ""
 }
 
-function New-AppUpdateZip {
+function New-WindowsAppUpdateArtifacts {
     param(
         [Parameter(Mandatory = $true)]
         [string]$StagingDir
     )
 
+    Write-Host "[Windows] 生成 app-update 全量包..."
+
     $outputDir = Join-Path $repoRoot "publish/output"
-    if (-not (Test-Path -LiteralPath $outputDir)) {
-        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+    $zipName = "AntBrowser-$script:Version-windows-amd64.zip"
+    $zipPath = Join-Path $outputDir $zipName
+    $zipShaPath = "$zipPath.sha256"
+    $manifestPath = Join-Path $outputDir "app-update-stable.json"
+    $manifestShaPath = "$manifestPath.sha256"
+    $payloadRoot = Join-Path $repoRoot "publish/update-payload"
+
+    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $zipShaPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $manifestShaPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+
+    try {
+        foreach ($entry in (Get-ChildItem -LiteralPath $StagingDir -Force)) {
+            if ($entry.Name -ieq "data") {
+                continue
+            }
+            Copy-Item -LiteralPath $entry.FullName -Destination (Join-Path $payloadRoot $entry.Name) -Recurse -Force
+        }
+
+        $runtimeManifestSource = Join-Path $repoRoot "publish/runtime-manifest.json"
+        if (-not (Test-Path -LiteralPath $runtimeManifestSource -PathType Leaf)) {
+            throw "缺少运行时清单: publish\runtime-manifest.json"
+        }
+        $payloadPublishDir = Join-Path $payloadRoot "publish"
+        New-Item -ItemType Directory -Path $payloadPublishDir -Force | Out-Null
+        Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $payloadPublishDir "runtime-manifest.json") -Force
+
+        Copy-OptionalUpdatePath -RelativePath "apps/agent" -PayloadRoot $payloadRoot
+        Copy-OptionalUpdatePath -RelativePath "runtime/node" -PayloadRoot $payloadRoot
+
+        Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $zipPath -Force
+
+        $zipItem = Get-Item -LiteralPath $zipPath
+        $zipSha = Get-FileSha256 -Path $zipPath
+        "$zipSha  $zipName" | Set-Content -LiteralPath $zipShaPath -Encoding ascii
+
+        $manifest = [ordered]@{
+            schemaVersion = 1
+            product = "Ant Browser"
+            channel = "stable"
+            version = $script:Version
+            generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            packages = @(
+                [ordered]@{
+                    target = "windows-amd64"
+                    version = $script:Version
+                    payloadType = "full"
+                    url = $zipName
+                    sha256 = $zipSha
+                    size = $zipItem.Length
+                }
+            )
+        }
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 10), $utf8NoBom)
+        $manifestSha = Get-FileSha256 -Path $manifestPath
+        "$manifestSha  app-update-stable.json" | Set-Content -LiteralPath $manifestShaPath -Encoding ascii
+
+        Write-Host "✓ 更新包生成成功: publish\output\$zipName"
+        Write-Host "✓ 更新清单生成成功: publish\output\app-update-stable.json"
+        Write-Host ""
     }
-
-    $zipPath = Join-Path $outputDir "AntBrowser-$script:Version-windows-amd64.zip"
-    if (Test-Path -LiteralPath $zipPath) {
-        Remove-Item -LiteralPath $zipPath -Force
+    finally {
+        Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-
-    $payloadPaths = @(Get-ChildItem -LiteralPath $StagingDir -Force | Where-Object { $_.Name -ne "data" } | ForEach-Object { $_.FullName })
-    if ($payloadPaths.Count -eq 0) {
-        throw "app update zip payload is empty"
-    }
-    Compress-Archive -LiteralPath $payloadPaths -DestinationPath $zipPath -Force
-    return $zipPath
-}
-
-function New-AppUpdateManifest {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ZipPath
-    )
-
-    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash.ToLowerInvariant()
-    $size = (Get-Item -LiteralPath $ZipPath).Length
-    $manifestPath = Join-Path $repoRoot "publish/output/app-update-stable.json"
-    $zipName = Split-Path -Leaf $ZipPath
-    $manifest = [ordered]@{
-        schemaVersion = 1
-        channel = "stable"
-        version = $script:Version
-        minimumRuntimeResourceVersion = $script:Version
-        minimumAppVersion = $script:Version
-        publishedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        notes = "Ant Browser $script:Version"
-        packages = @(@{
-            target = "windows-amd64"
-            payloadType = "full"
-            url = $zipName
-            sha256 = $hash
-            size = $size
-        })
-    }
-    $json = $manifest | ConvertTo-Json -Depth 20
-    [System.IO.File]::WriteAllText($manifestPath, $json + "`n", [System.Text.UTF8Encoding]::new($false))
-
-    $manifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash.ToLowerInvariant()
-    [System.IO.File]::WriteAllText("$manifestPath.sha256", "$manifestHash  app-update-stable.json`n", [System.Text.UTF8Encoding]::new($false))
-    [System.IO.File]::WriteAllText("$ZipPath.sha256", "$hash  $zipName`n", [System.Text.UTF8Encoding]::new($false))
-    return $manifestPath
 }
 
 function Remove-WindowsStaging {
@@ -757,7 +681,6 @@ function Publish-Windows {
     Write-Host ""
 
     $makensisPath = Resolve-NsisPath
-    Assert-PublishContract
     Assert-RuntimeHashes -Target "windows-amd64"
     Build-WindowsBinary
 
@@ -765,11 +688,7 @@ function Publish-Windows {
     try {
         $stagingDir = New-WindowsStaging
         Invoke-WindowsPackaging -MakensisPath $makensisPath -StagingDir $stagingDir
-        $appUpdateZip = New-AppUpdateZip -StagingDir $stagingDir
-        $appUpdateManifest = New-AppUpdateManifest -ZipPath $appUpdateZip
-        Invoke-NativeCommand -FilePath "python3" -Arguments @("tools/app-update/verify-app-update-package.py", $appUpdateManifest, $appUpdateZip, "windows-amd64")
-        Write-Host "✓ 应用本体更新包生成成功"
-        Write-Host ""
+        New-WindowsAppUpdateArtifacts -StagingDir $stagingDir
     }
     finally {
         Remove-WindowsStaging -StagingDir $stagingDir
@@ -815,7 +734,7 @@ try {
     Write-Host "当前工作目录: $repoRoot"
     Write-Host ""
 
-    Resolve-Version -ExplicitVersion $Version
+    Resolve-Version -ExplicitVersion $ReleaseVersion
     $publishTarget = Resolve-PublishTarget -InputTarget $Target
 
     Invoke-WithTemporaryWailsVersion {
@@ -849,7 +768,6 @@ try {
         }
     }
     Write-Host ""
-    Write-Host "提示：runtime/current.json 将在首次通过环境检查后写入用户状态目录"
     Write-Host "提示：用户安装后可将旧的 data\ 目录粘贴到安装目录覆盖初始数据"
     exit 0
 }

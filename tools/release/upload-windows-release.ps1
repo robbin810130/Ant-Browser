@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Version,
+    [string]$ReleaseVersion,
     [string]$Channel = "test",
     [string]$OutputDir = "publish\output",
     [string]$RemoteRoot = "/opt/1688shop/releases/windows",
@@ -9,6 +9,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$Version = $ReleaseVersion
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir
@@ -59,6 +60,27 @@ function Protect-PrivateKeyFile {
     Invoke-Native -FilePath "chmod" -Arguments @("600", $Path)
 }
 
+function Normalize-PrivateKeyText {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    $normalized = $Value.Trim().Replace("`r`n", "`n").Replace("`r", "`n")
+    if ($normalized -notmatch "`n" -and $normalized.Contains('\n')) {
+        $normalized = $normalized.Replace('\n', "`n")
+    }
+    $header = "-----BEGIN OPENSSH PRIVATE KEY-----"
+    $footer = "-----END OPENSSH PRIVATE KEY-----"
+    if ($normalized -notmatch "`n" -and $normalized.StartsWith($header) -and $normalized.EndsWith($footer)) {
+        $body = $normalized.Substring($header.Length, $normalized.Length - $header.Length - $footer.Length)
+        $body = $body.Trim() -replace "\s+", ""
+        $lines = @()
+        for ($i = 0; $i -lt $body.Length; $i += 70) {
+            $lines += $body.Substring($i, [Math]::Min(70, $body.Length - $i))
+        }
+        return ((@($header) + $lines + @($footer)) -join "`n") + "`n"
+    }
+    return $normalized.TrimEnd() + "`n"
+}
+
 $hostName = Require-Env "WINDOWS_RELEASE_SSH_HOST"
 $port = Require-Env "WINDOWS_RELEASE_SSH_PORT"
 $user = Require-Env "WINDOWS_RELEASE_SSH_USER"
@@ -66,13 +88,20 @@ $keyText = Require-Env "WINDOWS_RELEASE_SSH_KEY"
 
 $tempKey = Join-Path $env:TEMP "windows-release-key-$([guid]::NewGuid().ToString('N')).pem"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($tempKey, $keyText.Replace("`r`n", "`n"), $utf8NoBom)
+[System.IO.File]::WriteAllText($tempKey, (Normalize-PrivateKeyText -Value $keyText), $utf8NoBom)
 Protect-PrivateKeyFile -Path $tempKey
 
 try {
     $target = "$user@$hostName"
     $remoteDir = "$RemoteRoot/$Channel/$Version"
-    $sshBaseArgs = @("-i", $tempKey, "-p", $port, "-o", "StrictHostKeyChecking=accept-new")
+    $sshOptions = @(
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=15",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "StrictHostKeyChecking=accept-new"
+    )
+    $sshBaseArgs = @("-i", $tempKey, "-p", $port) + $sshOptions
     $artifacts = @(
         "AntBrowser-Setup-$Version.exe",
         "AntBrowser-$Version-windows-amd64.zip",
@@ -94,13 +123,14 @@ try {
     foreach ($artifact in $artifacts) {
         $localPath = Join-Path $resolvedOutputDir $artifact
         $remotePath = "${target}:$remoteDir/$artifact"
-        Invoke-Native -FilePath "scp" -Arguments @(
+        $scpArgs = @(
             "-i", $tempKey,
-            "-P", $port,
-            "-o", "StrictHostKeyChecking=accept-new",
+            "-P", $port
+        ) + $sshOptions + @(
             $localPath,
             $remotePath
         )
+        Invoke-Native -FilePath "scp" -Arguments $scpArgs
     }
 
     $verifyRemote = "set -eu; cd '$remoteDir'; sha256sum AntBrowser-$Version-windows-amd64.zip app-update-stable.json > remote-sha256.txt; cat remote-sha256.txt"

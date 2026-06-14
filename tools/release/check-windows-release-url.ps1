@@ -44,7 +44,9 @@ function Invoke-Download {
 
 Write-Host "[INFO] checking release manifest: $ManifestUrl"
 $manifestResponse = Invoke-WebRequest -UseBasicParsing -Uri $ManifestUrl -TimeoutSec 30
-$manifest = $manifestResponse.Content | ConvertFrom-Json
+$manifestContent = [string]$manifestResponse.Content
+$manifestContent = $manifestContent.TrimStart([char[]]@([char]0xFEFF, [char]0xEF, [char]0xBB, [char]0xBF))
+$manifest = $manifestContent | ConvertFrom-Json
 
 if ([int]$manifest.schemaVersion -ne 1) {
     throw "unexpected manifest schemaVersion: $($manifest.schemaVersion)"

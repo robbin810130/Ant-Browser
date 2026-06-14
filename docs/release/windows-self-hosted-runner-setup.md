@@ -45,6 +45,38 @@ makensis.exe /VERSION
 pwsh --version
 ```
 
+## Required Release Resources
+
+The release runner must have the Windows fingerprint browser core available
+outside the git worktree. Do not commit the browser core into this repository.
+
+Recommended layout:
+
+```powershell
+C:\AntBrowserReleaseResources\chrome\<core-name>\chrome.exe
+```
+
+Register that path as a GitHub repository variable:
+
+```text
+ANT_BROWSER_WINDOWS_CHROME_ROOT=C:\AntBrowserReleaseResources\chrome
+```
+
+If `ANT_BROWSER_WINDOWS_CHROME_ROOT` is not set, the release script uses
+`C:\AntBrowserReleaseResources\chrome` by default while running in GitHub
+Actions.
+
+The Windows release script treats GitHub Actions builds as if this flag is set:
+
+```text
+ANT_BROWSER_REQUIRE_WINDOWS_CHROME=1
+```
+
+With that gate enabled, packaging fails if no valid Windows `chrome.exe` is
+found under `ANT_BROWSER_WINDOWS_CHROME_ROOT`. This prevents producing a green
+release that cannot open managed 1688 shop windows with the packaged Ant
+fingerprint core.
+
 ## Required Network Access
 
 The runner must reach the internal server and static update host used by release

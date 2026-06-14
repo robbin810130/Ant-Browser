@@ -2,7 +2,7 @@ param(
     [string]$BaselineVersion = "1.1.0",
     [string]$TargetVersion = "1.1.5",
     [string]$TestRoot = "C:\AntBrowserUpdateTest",
-    [int]$RunnerWaitSeconds = 25,
+    [int]$RunnerWaitSeconds = 90,
     [switch]$SkipPublish
 )
 
@@ -37,6 +37,18 @@ function Require-File {
     }
 }
 
+function Wait-ForFile {
+    param([string]$Path, [string]$Label, [int]$TimeoutSeconds = 10)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    Require-File -Path $Path -Label $Label
+}
+
 function Require-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -44,11 +56,27 @@ function Require-Command {
     }
 }
 
+function Get-FileSHA256OrMissing {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return "<missing>"
+    }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+}
+
+function Read-AppUpdateStateOrNull {
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return $null
+    }
+    return Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+}
+
 function Invoke-Native {
     param(
         [string]$FilePath,
         [string[]]$Arguments = @()
     )
+    $global:LASTEXITCODE = 0
     & $FilePath @Arguments
     $exitCode = 0
     if (Test-Path variable:LASTEXITCODE) {
@@ -63,7 +91,62 @@ function Stop-AntBrowser {
     foreach ($name in @("ant-chrome", "xray", "sing-box")) {
         Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
     }
-    Start-Sleep -Milliseconds 500
+    foreach ($image in @("ant-chrome.exe", "xray.exe", "sing-box.exe")) {
+        & "$env:WINDIR\System32\cmd.exe" /c "taskkill /F /T /IM $image >NUL 2>NUL"
+        $global:LASTEXITCODE = 0
+    }
+    Start-Sleep -Milliseconds 1200
+}
+
+function Seed-PreservedDirectories {
+    foreach ($preserved in @("runtime", "diagnostics")) {
+        $dir = Join-Path $installRoot $preserved
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir "app-update-preserve-marker.txt") -Value "preserve:$preserved" -Encoding UTF8
+    }
+}
+
+function Seed-UserData {
+    $dataDir = Join-Path $installRoot "data"
+    New-Item -ItemType Directory -Force $dataDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $dataDir "app.db") -Value "app-update-user-data-marker" -Encoding UTF8
+}
+
+function Reset-E2EInstallRoot {
+    Write-Step "Reset e2e install root"
+    Stop-AntBrowser
+    $deadline = (Get-Date).AddSeconds(15)
+    do {
+        Remove-Item -Recurse -Force $installRoot -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $installRoot)) {
+            break
+        }
+        Stop-AntBrowser
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    if (Test-Path -LiteralPath $installRoot) {
+        throw "failed to reset install root: $installRoot"
+    }
+    Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
+}
+
+function Wait-ForUpdateRunner {
+    Write-Step "Wait for runner"
+    $deadline = (Get-Date).AddSeconds($RunnerWaitSeconds)
+    $lastStateJson = "<missing>"
+    do {
+        Start-Sleep -Seconds 1
+        $state = Read-AppUpdateStateOrNull
+        if ($null -ne $state -and ($state.PSObject.Properties.Name -contains "status")) {
+            $lastStateJson = ($state | ConvertTo-Json -Depth 10 -Compress)
+            $status = [string]$state.status
+            if ($status -in @("succeeded", "failed_manual_repair", "rolled_back")) {
+                Write-Host "Runner terminal status: $status"
+                return
+            }
+        }
+    } while ((Get-Date) -lt $deadline)
+    throw "runner did not reach terminal status after $RunnerWaitSeconds seconds; lastState=$lastStateJson"
 }
 
 function Copy-ReleaseArtifacts {
@@ -79,11 +162,47 @@ function Copy-ReleaseArtifacts {
     Copy-Item -LiteralPath (Join-Path $outputDir "app-update-stable.json.sha256") -Destination $Destination -Force
 }
 
+function Test-ReleaseArtifacts {
+    param([string]$Version)
+    $required = @(
+        (Join-Path $outputDir "AntBrowser-Setup-$Version.exe"),
+        (Join-Path $outputDir "AntBrowser-$Version-windows-amd64.zip"),
+        (Join-Path $outputDir "AntBrowser-$Version-windows-amd64.zip.sha256"),
+        (Join-Path $outputDir "app-update-stable.json"),
+        (Join-Path $outputDir "app-update-stable.json.sha256")
+    )
+    foreach ($path in $required) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Copy-PrebuiltTargetArtifacts {
+    if (-not (Test-ReleaseArtifacts -Version $TargetVersion)) {
+        return $false
+    }
+    Write-Step "Use prebuilt target artifacts $TargetVersion"
+    Copy-ReleaseArtifacts -Version $TargetVersion -Destination $targetDir
+    return $true
+}
+
+function Restore-PrebuiltTargetArtifacts {
+    Write-Step "Restore prebuilt target artifacts $TargetVersion"
+    New-Item -ItemType Directory -Force $outputDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-Setup-$TargetVersion.exe") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-$TargetVersion-windows-amd64.zip") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "AntBrowser-$TargetVersion-windows-amd64.zip.sha256") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "app-update-stable.json") -Destination $outputDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDir "app-update-stable.json.sha256") -Destination $outputDir -Force
+}
+
 function Publish-Version {
     param([string]$Version, [string]$Destination)
     Write-Step "Publish $Version"
     Remove-Item -Recurse -Force $outputDir -ErrorAction SilentlyContinue
-    Invoke-Native -FilePath (Join-Path $repoRoot "bat\publish.bat") -Arguments @("W", "-Version", $Version)
+    & (Join-Path $repoRoot "bat\publish.ps1") -Target "W" -ReleaseVersion $Version
     Invoke-Native -FilePath "python" -Arguments @(
         (Join-Path $repoRoot "tools\app-update\verify-app-update-package.py"),
         (Join-Path $outputDir "app-update-stable.json"),
@@ -178,8 +297,13 @@ function Assert-UpdateSucceeded {
     Write-Step "Verify app-update result"
     Require-File -Path $statePath -Label "app-update state.json"
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    Write-Host "State at verify: $($state | ConvertTo-Json -Depth 10 -Compress)"
     if ([string]$state.localAppVersion -ne $TargetVersion) {
-        throw "localAppVersion mismatch: expected $TargetVersion, got $($state.localAppVersion)"
+        $lastError = ""
+        if ($state.PSObject.Properties.Name -contains "lastError") {
+            $lastError = ($state.lastError | ConvertTo-Json -Depth 10 -Compress)
+        }
+        throw "localAppVersion mismatch: expected $TargetVersion, got $($state.localAppVersion); lastError=$lastError"
     }
     if ($state.PSObject.Properties.Name -contains "lastError" -and $null -ne $state.lastError) {
         $lastErrorCode = ""
@@ -205,13 +329,42 @@ function Assert-UpdateSucceeded {
     $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installedExe).Hash
     $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $expectedExe).Hash
     if ($installedHash -ne $expectedHash) {
+        $plan = $null
+        if (
+            (Test-Path -LiteralPath $statePath -PathType Leaf) -and
+            ($state.PSObject.Properties.Name -contains "planPath")
+        ) {
+            $planPath = [string]$state.planPath
+            if ($planPath.Trim() -ne "" -and (Test-Path -LiteralPath $planPath -PathType Leaf)) {
+                $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+            }
+        }
+        Write-Host "Installed exe path: $installedExe"
+        Write-Host "Expected exe path: $expectedExe"
+        Write-Host "Installed exe sha256: $installedHash"
+        Write-Host "Expected exe sha256: $expectedHash"
+        if ($null -ne $plan) {
+            $stagedExe = Join-Path ([string]$plan.stagedPath) "ant-chrome.exe"
+            $runnerExe = [string]$plan.runnerPath
+            Write-Host "Plan: $($plan | ConvertTo-Json -Depth 10 -Compress)"
+            Write-Host "Staged exe sha256: $(Get-FileSHA256OrMissing -Path $stagedExe)"
+            Write-Host "Runner exe sha256: $(Get-FileSHA256OrMissing -Path $runnerExe)"
+        }
+        Write-Host "State: $($state | ConvertTo-Json -Depth 10 -Compress)"
         throw "installed exe hash mismatch: expected $expectedHash, got $installedHash"
     }
 
     Require-File -Path (Join-Path $installRoot "data\app.db") -Label "data\app.db"
     foreach ($preserved in @("runtime", "diagnostics")) {
-        if (-not (Test-Path -LiteralPath (Join-Path $installRoot $preserved) -PathType Container)) {
+        $preservedDir = Join-Path $installRoot $preserved
+        $markerPath = Join-Path $preservedDir "app-update-preserve-marker.txt"
+        if (-not (Test-Path -LiteralPath $preservedDir -PathType Container)) {
             throw "preserved directory missing: $preserved"
+        }
+        Require-File -Path $markerPath -Label "$preserved preserve marker"
+        $marker = (Get-Content -LiteralPath $markerPath -Raw).Trim()
+        if ($marker -ne "preserve:$preserved") {
+            throw "preserved marker mismatch for ${preserved}: $marker"
         }
     }
     Require-File -Path (Join-Path $installRoot "config.yaml") -Label "config.yaml"
@@ -227,12 +380,19 @@ if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
 }
 Require-Command "go"
 Require-Command "python"
-Require-File -Path (Join-Path $repoRoot "bat\publish.bat") -Label "bat\publish.bat"
+Require-File -Path (Join-Path $repoRoot "bat\publish.ps1") -Label "bat\publish.ps1"
 New-Item -ItemType Directory -Force $TestRoot | Out-Null
 
+$targetPrebuilt = $false
 if (-not $SkipPublish) {
+    $targetPrebuilt = Copy-PrebuiltTargetArtifacts
     Publish-Version -Version $BaselineVersion -Destination $baselineDir
-    Publish-Version -Version $TargetVersion -Destination $targetDir
+    if ($targetPrebuilt) {
+        Write-Step "Skip target publish $TargetVersion"
+    }
+    else {
+        Publish-Version -Version $TargetVersion -Destination $targetDir
+    }
 }
 
 Require-File -Path $baselineInstaller -Label "baseline installer"
@@ -241,11 +401,12 @@ Require-File -Path $manifestPath -Label "target app-update manifest"
 Require-File -Path $targetZip -Label "target app-update zip"
 
 Write-Step "Install baseline $BaselineVersion"
-Stop-AntBrowser
-Remove-Item -Recurse -Force (Join-Path $stateRoot "app-update") -ErrorAction SilentlyContinue
+Reset-E2EInstallRoot
 Invoke-Native -FilePath $baselineInstaller -Arguments @("/S")
 Stop-AntBrowser
-Require-File -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe"
+Wait-ForFile -Path (Join-Path $installRoot "ant-chrome.exe") -Label "baseline ant-chrome.exe" -TimeoutSeconds 15
+Seed-UserData
+Seed-PreservedDirectories
 if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf) {
     $beforeDataHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installRoot "data\app.db")).Hash
 } else {
@@ -266,8 +427,7 @@ finally {
     Pop-Location
 }
 
-Write-Step "Wait for runner"
-Start-Sleep -Seconds $RunnerWaitSeconds
+Wait-ForUpdateRunner
 Stop-AntBrowser
 
 if ($beforeDataHash -ne "") {
@@ -278,3 +438,7 @@ if ($beforeDataHash -ne "") {
 }
 
 Assert-UpdateSucceeded
+
+if ($targetPrebuilt) {
+    Restore-PrebuiltTargetArtifacts
+}
