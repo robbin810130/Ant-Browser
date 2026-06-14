@@ -89,7 +89,14 @@ function Invoke-Native {
 
 function Stop-AntBrowser {
     foreach ($name in @("ant-chrome", "xray", "sing-box")) {
-        Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
+        foreach ($process in @(Get-Process $name -ErrorAction SilentlyContinue)) {
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "could not stop process $name pid=$($process.Id): $($_.Exception.Message)"
+            }
+        }
     }
     foreach ($image in @("ant-chrome.exe", "xray.exe", "sing-box.exe")) {
         & "$env:WINDIR\System32\cmd.exe" /c "taskkill /F /T /IM $image >NUL 2>NUL"

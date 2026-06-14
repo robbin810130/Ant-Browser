@@ -45,7 +45,14 @@ function Test-HttpOk {
 
 function Stop-ResidualProcesses {
     foreach ($name in @("ant-chrome", "xray", "sing-box")) {
-        Get-Process $name -ErrorAction SilentlyContinue | Stop-Process -Force
+        foreach ($process in @(Get-Process $name -ErrorAction SilentlyContinue)) {
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "could not stop residual process $name pid=$($process.Id): $($_.Exception.Message)"
+            }
+        }
     }
     Start-Sleep -Milliseconds 500
 }
