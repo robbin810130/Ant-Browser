@@ -516,6 +516,15 @@ function New-WindowsStaging {
     Copy-Item -LiteralPath $releaseConfig -Destination (Join-Path $stagingDir "config.yaml") -Force
     Write-Host "✓ 复制发布配置模板 publish\config.init.yaml -> config.yaml"
 
+    $runtimeManifestSource = Join-Path $repoRoot "publish/runtime-manifest.json"
+    if (-not (Test-Path -LiteralPath $runtimeManifestSource -PathType Leaf)) {
+        throw "缺少运行时清单: publish\runtime-manifest.json"
+    }
+    $stagingPublishDir = Join-Path $stagingDir "publish"
+    New-Item -ItemType Directory -Path $stagingPublishDir -Force | Out-Null
+    Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $stagingPublishDir "runtime-manifest.json") -Force
+    Write-Host "✓ 复制运行时清单 publish\runtime-manifest.json"
+
     $stagingBinDir = Join-Path $stagingDir "bin"
     New-Item -ItemType Directory -Path $stagingBinDir -Force | Out-Null
 

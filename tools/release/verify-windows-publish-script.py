@@ -24,6 +24,8 @@ def main() -> None:
     require_contains(PUBLISH_SCRIPT, "Resolve-WindowsChromeRequirement")
     require_contains(PUBLISH_SCRIPT, "缺少可打包的 Windows 浏览器内核")
     require_contains(PUBLISH_SCRIPT, "throw $message")
+    require_contains(PUBLISH_SCRIPT, "publish/runtime-manifest.json")
+    require_contains(PUBLISH_SCRIPT, "复制运行时清单")
     require_contains(PREFLIGHT, "Check Windows browser core")
     require_contains(PREFLIGHT, "C:\\AntBrowserReleaseResources\\chrome")
     require_contains(PREFLIGHT, "chrome.exe")
