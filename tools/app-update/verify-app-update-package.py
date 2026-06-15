@@ -29,21 +29,14 @@ def normalized_zip_names(zip_path: Path) -> set[str]:
 
 def required_paths_for_target(target: str) -> set[str]:
     if target == "windows-amd64":
-        required = {
+        return {
             "ant-chrome.exe",
             "publish/runtime-manifest.json",
             "bin/xray.exe",
             "bin/sing-box.exe",
+            "apps/agent/src/server/index.mjs",
+            "runtime/node/node.exe",
         }
-        repo_root = Path(__file__).resolve().parents[2]
-        optional_repo_paths = {
-            "apps/agent/src/server/index.mjs": repo_root / "apps" / "agent" / "src" / "server" / "index.mjs",
-            "runtime/node/node.exe": repo_root / "runtime" / "node" / "node.exe",
-        }
-        for archive_path, repo_path in optional_repo_paths.items():
-            if repo_path.exists():
-                required.add(archive_path)
-        return required
     if target in {"darwin-arm64", "darwin-amd64"}:
         return {
             "Ant Browser.app/Contents/Info.plist",

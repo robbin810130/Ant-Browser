@@ -91,6 +91,9 @@ __pycache__/
 
 # Local runtime cache
 .tmp/runtime-cache/
+apps/agent/.local-agent-state/
+apps/agent/.runtime/
+apps/agent/node_modules/
 
 # Test outputs / coverage
 coverage/

@@ -90,6 +90,79 @@ function Resolve-WindowsChromeRequirement {
     return ((Get-TrimmedText $env:GITHUB_ACTIONS) -eq "true")
 }
 
+function Resolve-WindowsWorkspaceAgentRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_AGENT_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $repoAgentRoot = Join-Path $repoRoot "apps\agent"
+    if (Test-Path -LiteralPath (Join-Path $repoAgentRoot "src\server\index.mjs") -PathType Leaf) {
+        return $repoAgentRoot
+    }
+
+    return "C:\AntBrowserReleaseResources\apps\agent"
+}
+
+function Resolve-WindowsWorkspaceNodeRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_NODE_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $repoNodeRoot = Join-Path $repoRoot "runtime\node"
+    if (Test-Path -LiteralPath (Join-Path $repoNodeRoot "node.exe") -PathType Leaf) {
+        return $repoNodeRoot
+    }
+
+    $defaultRunnerNodeRoot = "C:\AntBrowserReleaseResources\runtime\node"
+    if (Test-Path -LiteralPath (Join-Path $defaultRunnerNodeRoot "node.exe") -PathType Leaf) {
+        return $defaultRunnerNodeRoot
+    }
+
+    return ""
+}
+
+function Test-RequiredFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+        [Parameter(Mandatory = $true)]
+        [string]$RelativePath,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $path = Join-Path $Root $RelativePath
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "$Name missing: $path"
+    }
+}
+
+function Test-WindowsWorkspaceNodeRuntime {
+    param([string]$Root)
+
+    if ($Root -ne "" -and (Test-Path -LiteralPath (Join-Path $Root "node.exe") -PathType Leaf)) {
+        return
+    }
+
+    $nodeCommand = Get-Command "node.exe" -ErrorAction SilentlyContinue
+    if ($null -eq $nodeCommand) {
+        $nodeCommand = Get-Command "node" -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $nodeCommand -or -not (Test-Path -LiteralPath $nodeCommand.Source -PathType Leaf)) {
+        throw "workspace Node.js runtime missing: runtime\node\node.exe not found and node.exe is not available in PATH"
+    }
+
+    Write-Host "workspace Node.js runtime will be copied from PATH: $($nodeCommand.Source)"
+}
+
 function Test-WindowsChromeCore {
     param([string]$ChromeRoot)
 
@@ -157,6 +230,7 @@ foreach ($path in @(
     "publish\runtime-sources.json",
     "bin\xray.exe",
     "bin\sing-box.exe",
+    "apps\agent\src\server\index.mjs",
     "wails.json",
     "go.mod",
     "frontend\package-lock.json"
@@ -176,6 +250,13 @@ if (Resolve-WindowsChromeRequirement) {
 else {
     Write-Host "Windows browser core is optional for this run: $chromeRoot"
 }
+
+Write-Step "Check bundled workspace agent payload"
+Test-RequiredFile `
+    -Root (Resolve-WindowsWorkspaceAgentRoot) `
+    -RelativePath "src\server\index.mjs" `
+    -Name "workspace agent entry"
+Test-WindowsWorkspaceNodeRuntime -Root (Resolve-WindowsWorkspaceNodeRoot)
 
 Write-Host ""
 Write-Host "[OK] Windows release preflight passed"

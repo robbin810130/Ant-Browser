@@ -375,24 +375,94 @@ function Copy-DirectoryContents {
     }
 }
 
-function Copy-OptionalUpdatePath {
+function Resolve-WindowsWorkspaceAgentRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_AGENT_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $repoAgentRoot = Join-Path $repoRoot "apps\agent"
+    if (Test-Path -LiteralPath (Join-Path $repoAgentRoot "src\server\index.mjs") -PathType Leaf) {
+        return $repoAgentRoot
+    }
+
+    return "C:\AntBrowserReleaseResources\apps\agent"
+}
+
+function Resolve-WindowsWorkspaceNodeRoot {
+    $configured = Get-TrimmedText $env:ANT_BROWSER_WORKSPACE_NODE_ROOT
+    if ($configured -ne "") {
+        if (-not [System.IO.Path]::IsPathRooted($configured)) {
+            $configured = Join-Path $repoRoot $configured
+        }
+        return $configured
+    }
+
+    $repoNodeRoot = Join-Path $repoRoot "runtime\node"
+    if (Test-Path -LiteralPath (Join-Path $repoNodeRoot "node.exe") -PathType Leaf) {
+        return $repoNodeRoot
+    }
+
+    $defaultRunnerNodeRoot = "C:\AntBrowserReleaseResources\runtime\node"
+    if (Test-Path -LiteralPath (Join-Path $defaultRunnerNodeRoot "node.exe") -PathType Leaf) {
+        return $defaultRunnerNodeRoot
+    }
+
+    return ""
+}
+
+function Copy-RequiredDirectoryContents {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RelativePath,
+        [string]$SourceDir,
         [Parameter(Mandatory = $true)]
-        [string]$PayloadRoot
+        [string]$DestinationDir,
+        [Parameter(Mandatory = $true)]
+        [string]$RequiredFile,
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
     )
 
-    $source = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $source)) {
+    if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) {
+        throw "缺少 $DisplayName 目录: $SourceDir"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $SourceDir $RequiredFile) -PathType Leaf)) {
+        throw "缺少 $DisplayName 必需文件: $(Join-Path $SourceDir $RequiredFile)"
+    }
+
+    Copy-DirectoryContents -SourceDir $SourceDir -DestinationDir $DestinationDir
+    Write-Host "✓ 复制 $DisplayName"
+}
+
+function Copy-WindowsWorkspaceNodeRuntime {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$SourceDir,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationDir
+    )
+
+    if ($SourceDir -ne "" -and (Test-Path -LiteralPath (Join-Path $SourceDir "node.exe") -PathType Leaf)) {
+        Copy-DirectoryContents -SourceDir $SourceDir -DestinationDir $DestinationDir
+        Write-Host "✓ 复制 Node.js 运行时"
         return
     }
 
-    $destination = Join-Path $PayloadRoot $RelativePath
-    $destinationParent = Split-Path -Parent $destination
-    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
-    Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
-    Write-Host "✓ 复制更新包可选路径: $RelativePath"
+    $nodeCommand = Get-Command "node.exe" -ErrorAction SilentlyContinue
+    if ($null -eq $nodeCommand) {
+        $nodeCommand = Get-Command "node" -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $nodeCommand -or -not (Test-Path -LiteralPath $nodeCommand.Source -PathType Leaf)) {
+        throw "缺少 Node.js 运行时: 未找到 runtime\node\node.exe，且 PATH 中没有 node.exe"
+    }
+
+    New-Item -ItemType Directory -Path $DestinationDir -Force | Out-Null
+    Copy-Item -LiteralPath $nodeCommand.Source -Destination (Join-Path $DestinationDir "node.exe") -Force
+    Write-Host "✓ 从 PATH 复制 Node.js 运行时: $($nodeCommand.Source)"
 }
 
 function Resolve-WindowsChromeRoot {
@@ -498,6 +568,8 @@ function New-WindowsStaging {
     $binDir = Join-Path $repoRoot "bin"
     $chromeRoot = Resolve-WindowsChromeRoot
     $requireChrome = Resolve-WindowsChromeRequirement
+    $workspaceAgentRoot = Resolve-WindowsWorkspaceAgentRoot
+    $workspaceNodeRoot = Resolve-WindowsWorkspaceNodeRoot
 
     if (Test-Path -LiteralPath $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
@@ -536,6 +608,16 @@ function New-WindowsStaging {
         Copy-Item -LiteralPath $source -Destination (Join-Path $stagingBinDir $required) -Force
     }
     Write-Host "✓ 复制 bin\（xray.exe, sing-box.exe）"
+
+    Copy-RequiredDirectoryContents `
+        -SourceDir $workspaceAgentRoot `
+        -DestinationDir (Join-Path $stagingDir "apps\agent") `
+        -RequiredFile "src\server\index.mjs" `
+        -DisplayName "workspace agent 运行时"
+
+    Copy-WindowsWorkspaceNodeRuntime `
+        -SourceDir $workspaceNodeRoot `
+        -DestinationDir (Join-Path $stagingDir "runtime\node")
 
     Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir -RequireChrome $requireChrome | Out-Null
 
@@ -633,9 +715,6 @@ function New-WindowsAppUpdateArtifacts {
         $payloadPublishDir = Join-Path $payloadRoot "publish"
         New-Item -ItemType Directory -Path $payloadPublishDir -Force | Out-Null
         Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $payloadPublishDir "runtime-manifest.json") -Force
-
-        Copy-OptionalUpdatePath -RelativePath "apps/agent" -PayloadRoot $payloadRoot
-        Copy-OptionalUpdatePath -RelativePath "runtime/node" -PayloadRoot $payloadRoot
 
         Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $zipPath -Force
 

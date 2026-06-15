@@ -50,21 +50,34 @@ pwsh --version
 The release runner must have the Windows fingerprint browser core available
 outside the git worktree. Do not commit the browser core into this repository.
 
+The bundled workspace agent source is part of this repository under
+`apps/agent`. The bundled Node.js runtime is copied from
+`ANT_BROWSER_WORKSPACE_NODE_ROOT` when configured, or from the runner's
+`node.exe` on `PATH`.
+
 Recommended layout:
 
 ```powershell
 C:\AntBrowserReleaseResources\chrome\<core-name>\chrome.exe
+C:\AntBrowserReleaseResources\runtime\node\node.exe   # optional override
 ```
 
-Register that path as a GitHub repository variable:
+Register these paths as GitHub repository variables when using a non-default
+layout:
 
 ```text
 ANT_BROWSER_WINDOWS_CHROME_ROOT=C:\AntBrowserReleaseResources\chrome
+ANT_BROWSER_WORKSPACE_AGENT_ROOT=C:\custom\apps\agent      # optional
+ANT_BROWSER_WORKSPACE_NODE_ROOT=C:\custom\runtime\node     # optional
 ```
 
 If `ANT_BROWSER_WINDOWS_CHROME_ROOT` is not set, the release script uses
 `C:\AntBrowserReleaseResources\chrome` by default while running in GitHub
-Actions.
+Actions. If the workspace agent variable is not set, the release script uses
+the checked-out `apps/agent` source. If the Node.js variable is not set, the
+release script first checks `runtime\node`, then
+`C:\AntBrowserReleaseResources\runtime\node`, then falls back to copying
+`node.exe` from `PATH`.
 
 The Windows release script treats GitHub Actions builds as if this flag is set:
 
@@ -76,6 +89,10 @@ With that gate enabled, packaging fails if no valid Windows `chrome.exe` is
 found under `ANT_BROWSER_WINDOWS_CHROME_ROOT`. This prevents producing a green
 release that cannot open managed 1688 shop windows with the packaged Ant
 fingerprint core.
+
+Packaging also fails if the bundled workspace agent entry or Node.js runtime is
+missing. This prevents producing an installer that starts but blocks at
+`ENV-WORKSPACE-AGENT-PAYLOAD-MISSING`.
 
 ## Required Network Access
 
