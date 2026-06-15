@@ -374,9 +374,21 @@ func (a *App) focusBrowserAppForProfile(profileID string) {
 
 	a.browserMgr.Mutex.Lock()
 	profile, exists := a.browserMgr.Profiles[profileID]
+	pid := 0
+	if exists && profile != nil {
+		pid = profile.Pid
+	}
 	a.browserMgr.Mutex.Unlock()
 	if !exists || profile == nil {
 		return
+	}
+
+	if err := raiseBrowserWindowForPID(pid); err != nil {
+		logger.New("ManagedOpen").Warn("浏览器窗口置前失败",
+			logger.F("profile_id", profileID),
+			logger.F("pid", pid),
+			logger.F("reason", err.Error()),
+		)
 	}
 
 	chromeBinaryPath, err := a.browserMgr.ResolveChromeBinary(profile)

@@ -199,6 +199,32 @@ func TestWorkspaceFocusShopDelegatesWithoutOpenContextReport(t *testing.T) {
 	}
 }
 
+func TestFocusBrowserAppForProfileRaisesTrackedNativeWindow(t *testing.T) {
+	browserMgr := browser.NewManager(config.DefaultConfig(), t.TempDir())
+	browserMgr.Profiles["profile-1"] = &browser.Profile{
+		ProfileId: "profile-1",
+		Running:   true,
+		Pid:       4321,
+	}
+	app := &App{browserMgr: browserMgr}
+
+	previousRaiseBrowserWindowForPID := raiseBrowserWindowForPID
+	var gotPID int
+	raiseBrowserWindowForPID = func(pid int) error {
+		gotPID = pid
+		return nil
+	}
+	defer func() {
+		raiseBrowserWindowForPID = previousRaiseBrowserWindowForPID
+	}()
+
+	app.focusBrowserAppForProfile("profile-1")
+
+	if gotPID != 4321 {
+		t.Fatalf("expected native focus for pid=4321, got=%d", gotPID)
+	}
+}
+
 func TestWorkspaceAuthorizedShopsRecoversRunningProfilesBeforeProjection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
