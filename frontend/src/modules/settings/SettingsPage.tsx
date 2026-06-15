@@ -49,6 +49,7 @@ export function SettingsPage() {
   const retryEnvironmentCheck = useRuntimeStore((s) => s.retryCheck)
   const repairRuntimeNow = useRuntimeStore((s) => s.repairNow)
   const exportRuntimeDiagnostics = useRuntimeStore((s) => s.exportDiagnostics)
+  const checkRuntimeUpdateNow = useRuntimeStore((s) => s.checkUpdateNow)
 
   useEffect(() => {
     loadSettings()
@@ -334,6 +335,19 @@ export function SettingsPage() {
     }
   }
 
+  const handleCheckUpdate = async () => {
+    try {
+      const updateState = await checkRuntimeUpdateNow()
+      if (updateState.kind === 'soft' || updateState.kind === 'required') {
+        toast.success(`发现客户端更新 ${updateState.remoteAppVersion || ''}`.trim())
+        return
+      }
+      toast.success('当前已是最新版本')
+    } catch (error: any) {
+      toast.error(error?.message || '更新检查失败')
+    }
+  }
+
   const handleRuntimeRepair = async () => {
     try {
       await repairRuntimeNow()
@@ -537,6 +551,10 @@ export function SettingsPage() {
               <Button variant="secondary" size="sm" onClick={handleRuntimeRecheck} disabled={runtimeChecking || runtimeRepairing}>
                 <RefreshCw className="w-4 h-4" />
                 重新检查
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handleCheckUpdate} disabled={runtimeChecking || runtimeRepairing}>
+                <RefreshCw className="w-4 h-4" />
+                检查更新
               </Button>
               <Button size="sm" onClick={handleRuntimeRepair} disabled={runtimeChecking || runtimeRepairing || runtimeStatus.state === 'blocked'}>
                 <Wrench className="w-4 h-4" />

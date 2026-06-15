@@ -33,6 +33,7 @@ interface RuntimeStoreState {
   retryCheck: () => Promise<void>
   repairNow: () => Promise<void>
   confirmUpdate: () => Promise<void>
+  checkUpdateNow: () => Promise<ReleaseUpdateState>
   dismissUpdatePrompt: () => void
   exportDiagnostics: () => Promise<string>
 }
@@ -163,6 +164,40 @@ export const useRuntimeStore = create<RuntimeStoreState>((set, get) => ({
       throw error
     } finally {
       set({ updating: false })
+    }
+  },
+  checkUpdateNow: async () => {
+    if (get().checking || get().repairing || get().updating) {
+      return get().updateState ?? {
+        kind: 'none',
+        localAppVersion: get().appVersion,
+        remoteAppVersion: '',
+        resourceVersion: '',
+        manifestSource: '',
+        manifestUrl: '',
+      }
+    }
+
+    set({ checking: true, updateError: '' })
+    try {
+      const updateState = await checkDesktopReleaseUpdate()
+      const shouldPrompt = updateState.kind === 'soft' || updateState.kind === 'required'
+      set({
+        checking: false,
+        updateState: shouldPrompt ? updateState : null,
+        updatePromptOpen: shouldPrompt,
+        updateError: '',
+      })
+      return updateState
+    } catch (error) {
+      const updateError = resolveRuntimeErrorMessage(error, '更新检查失败')
+      set({
+        checking: false,
+        updateState: null,
+        updatePromptOpen: true,
+        updateError,
+      })
+      throw error
     }
   },
   dismissUpdatePrompt: () =>

@@ -279,7 +279,7 @@ function CloseConfirmModal() {
 }
 
 function DevDesktopAuthCleanupPanel() {
-  const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
+  const isDev = Boolean((import.meta as any).env?.DEV)
   const signingOut = useAuthStore((state) => state.signingOut)
   const setAnonymous = useAuthStore((state) => state.setAnonymous)
   const setSigningOut = useAuthStore((state) => state.setSigningOut)
@@ -420,8 +420,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
-    if (!isDev) return
+    if (!Boolean((import.meta as any).env?.DEV)) return
 
     const params = new URLSearchParams(window.location.search)
     const reason = params.get('desktopAuthCleanup')

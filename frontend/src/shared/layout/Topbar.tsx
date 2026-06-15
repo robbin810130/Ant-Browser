@@ -198,8 +198,7 @@ export function Topbar() {
   }, [])
 
   useEffect(() => {
-    const isDev = Boolean((window as Window & { __ANT_APP_BOOTED__?: boolean }).__ANT_APP_BOOTED__)
-    if (!isDev) return
+    if (!Boolean((import.meta as any).env?.DEV)) return
 
     const onKeyDown = async (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || !event.altKey || signingOut) return
