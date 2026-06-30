@@ -168,7 +168,7 @@ if [ -e '$remoteDir' ] && [ '$overwriteFlag' != '1' ]; then
 fi
 available_kb=`$(df -Pk '$channelDir' | awk 'NR==2 {print `$4}')
 if [ -z "`$available_kb" ] || [ "`$available_kb" -lt $requiredKb ]; then
-  echo "insufficient remote disk space in $channelDir: available_kb=`$available_kb required_kb=$requiredKb" >&2
+  echo "insufficient remote disk space in ${channelDir}: available_kb=`$available_kb required_kb=$requiredKb" >&2
   exit 24
 fi
 rm -rf '$stagingDir'
