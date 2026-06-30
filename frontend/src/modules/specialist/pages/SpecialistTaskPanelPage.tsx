@@ -208,7 +208,7 @@ export function SpecialistTaskPanelPage() {
   ] as const
 
   return (
-    <div className="space-y-4 p-5">
+    <div className="specialist-task-panel space-y-4 p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Title level={4} style={{ margin: 0 }}>专员任务台</Title>
@@ -251,7 +251,7 @@ export function SpecialistTaskPanelPage() {
       ) : null}
       {error ? <Alert type="error" showIcon message="任务读取失败" description={error} /> : null}
 
-      <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
+      <Card className="specialist-task-panel__metrics" size="small" styles={{ body: { padding: '12px 16px' } }}>
         <Row gutter={[16, 12]}>
           {metrics.map(([title, value]) => (
             <Col key={title} xs={12} sm={8} lg={4}>
@@ -261,7 +261,7 @@ export function SpecialistTaskPanelPage() {
         </Row>
       </Card>
 
-      <Card size="small" styles={{ body: { padding: 0 } }}>
+      <Card className="specialist-task-panel__table" size="small" styles={{ body: { padding: 0 } }}>
         <Table
           rowKey="id"
           size="small"

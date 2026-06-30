@@ -67,6 +67,10 @@ const drawerSource = await readFile(
   resolve(root, 'src', 'modules', 'specialist', 'components', 'SpecialistTaskDrawer.tsx'),
   'utf8',
 )
+const apiSource = await readFile(
+  resolve(root, 'src', 'modules', 'specialist', 'api.ts'),
+  'utf8',
+)
 
 assert.match(pageSource, /from 'antd'/, 'specialist task page should use Ant Design components')
 assert.match(drawerSource, /from 'antd'/, 'specialist task drawer should use Ant Design components')
@@ -88,6 +92,8 @@ assert.doesNotMatch(
 assert.match(drawerSource, /\bUpload\b/, 'specialist task drawer should expose an Ant Design screenshot upload')
 assert.match(drawerSource, /dataUrl/, 'screenshot evidence should include portable image data')
 assert.match(drawerSource, /return \{ url:/, 'link evidence should submit a URL payload')
+assert.match(apiSource, /DesktopWorkspaceRequest/, 'specialist task API should proxy through the Wails backend')
+assert.doesNotMatch(apiSource, /\bfetch\(/, 'specialist task API must not fetch the workspace server directly from the renderer')
 
 await rm(outDir, { recursive: true, force: true })
 console.log('specialist presentation smoke passed')

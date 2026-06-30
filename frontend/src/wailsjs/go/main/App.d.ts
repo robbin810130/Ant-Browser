@@ -143,6 +143,8 @@ export function DeleteGroup(arg1:string):Promise<void>;
 
 export function DesktopAuthStrongCleanup(arg1:string):Promise<void>;
 
+export function DesktopWorkspaceRequest(arg1:string,arg2:string,arg3:string,arg4:Record<string, any>):Promise<Record<string, any>>;
+
 export function DownloadDesktopAppUpdate():Promise<appupdate.State>;
 
 export function ExportDesktopEnvironmentDiagnostics():Promise<string>;
