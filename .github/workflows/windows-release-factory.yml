@@ -29,6 +29,10 @@ on:
         default: true
         type: boolean
 
+concurrency:
+  group: windows-release-factory-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   build:
     # Keep the legacy infrastructure label until every production runner has
