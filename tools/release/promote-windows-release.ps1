@@ -213,8 +213,8 @@ verify_release() {
   require_file "`$release_dir/app-update-stable.json.sha256"
   (
     cd "`$release_dir"
-    sha256sum -c "MakaBrowser-$Version-windows-amd64.zip.sha256"
-    sha256sum -c "app-update-stable.json.sha256"
+    tr -d '\r' < "MakaBrowser-$Version-windows-amd64.zip.sha256" | sha256sum -c -
+    tr -d '\r' < "app-update-stable.json.sha256" | sha256sum -c -
   )
 }
 
