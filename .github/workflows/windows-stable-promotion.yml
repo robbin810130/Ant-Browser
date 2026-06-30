@@ -1,0 +1,67 @@
+name: Windows Stable Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: Tested version to promote, for example 1.1.23
+        required: true
+        type: string
+
+concurrency:
+  group: windows-release-factory-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: [self-hosted, windows, ant-browser-release]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
+
+    env:
+      TARGET_VERSION: ${{ inputs.target_version }}
+      WINDOWS_RELEASE_SSH_HOST: ${{ secrets.WINDOWS_RELEASE_SSH_HOST }}
+      WINDOWS_RELEASE_SSH_PORT: ${{ secrets.WINDOWS_RELEASE_SSH_PORT }}
+      WINDOWS_RELEASE_SSH_USER: ${{ secrets.WINDOWS_RELEASE_SSH_USER }}
+      WINDOWS_RELEASE_SSH_KEY: ${{ secrets.WINDOWS_RELEASE_SSH_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate promotion input
+        run: |
+          if ($env:TARGET_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "invalid target_version: $env:TARGET_VERSION"
+          }
+
+      - name: Promote tested release to stable
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\release\promote-windows-release.ps1 `
+            -ReleaseVersion $env:TARGET_VERSION
+
+      - name: Verify stable manifest and update package
+        run: |
+          $manifestUrl = "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File tools\release\check-windows-release-url.ps1 `
+            -ManifestUrl $manifestUrl `
+            -Target windows-amd64
+
+      - name: Verify stable installer and original test release
+        run: |
+          function Assert-ReleaseUrl {
+            param([Parameter(Mandatory = $true)][string]$Url)
+
+            & curl.exe --fail --silent --show-error --head $Url
+            if ($LASTEXITCODE -ne 0) {
+              throw "release URL verification failed: $Url"
+            }
+            Write-Host "[OK] release URL: $Url"
+          }
+
+          Assert-ReleaseUrl "http://192.168.210.169:18080/releases/windows/stable/MakaBrowser-Setup-$env:TARGET_VERSION.exe"
+          Assert-ReleaseUrl "http://192.168.210.169:18080/releases/windows/test/$env:TARGET_VERSION/app-update-stable.json"

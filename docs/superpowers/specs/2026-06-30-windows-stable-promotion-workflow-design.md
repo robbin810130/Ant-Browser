@@ -30,9 +30,11 @@ The workflow does not build packages, modify application code, deploy the
    directory.
 5. It verifies the copied ZIP and manifest before atomically renaming the
    temporary directory to `stable/<version>`.
-6. Only after those checks pass does it atomically replace
-   `stable/app-update-stable.json`.
-7. The workflow downloads the stable manifest and validates its package URL and
+6. It atomically publishes stable-root aliases for the ZIP and installer.
+7. Only after the payload aliases exist does it atomically replace
+   `stable/app-update-stable.json`; its relative package URL therefore remains
+   valid throughout the switch.
+8. The workflow downloads the stable manifest and validates its package URL and
    SHA256, then checks the installer URL.
 
 ## Idempotency and Failure Handling
