@@ -70,6 +70,54 @@ function Invoke-NativeWithRetry {
     throw "$FilePath $($Arguments -join ' ') failed with exit code $lastExitCode after $MaxAttempts attempts"
 }
 
+function Invoke-RemoteBashScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$TempKey,
+        [Parameter(Mandatory = $true)][string]$Port,
+        [Parameter(Mandatory = $true)][string[]]$SshOptions,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$RemoteScriptPath,
+        [Parameter(Mandatory = $true)][string]$Script,
+        [string]$Description = "remote bash script"
+    )
+
+    $localScriptPath = Join-Path $env:TEMP "windows-release-remote-$([guid]::NewGuid().ToString('N')).sh"
+    $normalizedScript = $Script.Trim().Replace("`r`n", "`n").Replace("`r", "`n") + "`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($localScriptPath, $normalizedScript, $utf8NoBom)
+
+    try {
+        $scpArgs = @(
+            "-i", $TempKey,
+            "-P", $Port
+        ) + $SshOptions + @(
+            $localScriptPath,
+            "${Target}:$RemoteScriptPath"
+        )
+        Invoke-NativeWithRetry -FilePath "scp" -Arguments $scpArgs -MaxAttempts 3 -RetryDelaySeconds 5 -Description "Upload $Description"
+
+        $sshArgs = @(
+            "-i", $TempKey,
+            "-p", $Port
+        ) + $SshOptions + @(
+            $Target,
+            "bash '$RemoteScriptPath'"
+        )
+        Invoke-Native -FilePath "ssh" -Arguments $sshArgs
+    }
+    finally {
+        Remove-Item -LiteralPath $localScriptPath -Force -ErrorAction SilentlyContinue
+        $cleanupArgs = @(
+            "-i", $TempKey,
+            "-p", $Port
+        ) + $SshOptions + @(
+            $Target,
+            "rm -f '$RemoteScriptPath'"
+        )
+        & "ssh" @cleanupArgs
+    }
+}
+
 function Protect-PrivateKeyFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -134,7 +182,6 @@ try {
         "-o", "ServerAliveCountMax=6",
         "-o", "StrictHostKeyChecking=accept-new"
     )
-    $sshBaseArgs = @("-i", $tempKey, "-p", $port) + $sshOptions
     $payloadArtifacts = @(
         "MakaBrowser-Setup-$Version.exe",
         "MakaBrowser-$Version-windows-amd64.zip",
@@ -174,7 +221,15 @@ fi
 rm -rf '$stagingDir'
 mkdir -p '$stagingDir'
 "@
-    Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $prepareRemote))
+    $prepareRemoteScriptPath = "/tmp/maka-release-$Version-$uploadId-prepare.sh"
+    Invoke-RemoteBashScript `
+        -TempKey $tempKey `
+        -Port $port `
+        -SshOptions $sshOptions `
+        -Target $target `
+        -RemoteScriptPath $prepareRemoteScriptPath `
+        -Script $prepareRemote `
+        -Description "remote release prepare script"
 
     foreach ($artifact in $payloadArtifacts) {
         $localPath = Join-Path $resolvedOutputDir $artifact
@@ -202,11 +257,42 @@ mkdir -p '$stagingDir'
         Invoke-NativeWithRetry -FilePath "scp" -Arguments $scpArgs -MaxAttempts 3 -RetryDelaySeconds 10 -Description "Upload manifest $artifact"
     }
 
-    $verifyRemote = "set -eu; cd '$stagingDir'; sha256sum MakaBrowser-$Version-windows-amd64.zip app-update-stable.json > remote-sha256.txt; cat remote-sha256.txt"
-    Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $verifyRemote))
+    $verifyRemote = @"
+set -eu
+cd '$stagingDir'
+sha256sum MakaBrowser-$Version-windows-amd64.zip app-update-stable.json > remote-sha256.txt
+cat remote-sha256.txt
+"@
+    $verifyRemoteScriptPath = "/tmp/maka-release-$Version-$uploadId-verify.sh"
+    Invoke-RemoteBashScript `
+        -TempKey $tempKey `
+        -Port $port `
+        -SshOptions $sshOptions `
+        -Target $target `
+        -RemoteScriptPath $verifyRemoteScriptPath `
+        -Script $verifyRemote `
+        -Description "remote release verify script"
 
-    $publishRemote = "set -eu; if [ '$overwriteFlag' = '1' ]; then rm -rf '$remoteDir'; fi; if [ -e '$remoteDir' ]; then echo 'remote release directory exists: $remoteDir' >&2; exit 23; fi; mv -f '$stagingDir' '$remoteDir'"
-    Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $publishRemote))
+    $publishRemote = @"
+set -eu
+if [ '$overwriteFlag' = '1' ]; then
+  rm -rf '$remoteDir'
+fi
+if [ -e '$remoteDir' ]; then
+  echo 'remote release directory exists: $remoteDir' >&2
+  exit 23
+fi
+mv -f '$stagingDir' '$remoteDir'
+"@
+    $publishRemoteScriptPath = "/tmp/maka-release-$Version-$uploadId-publish.sh"
+    Invoke-RemoteBashScript `
+        -TempKey $tempKey `
+        -Port $port `
+        -SshOptions $sshOptions `
+        -Target $target `
+        -RemoteScriptPath $publishRemoteScriptPath `
+        -Script $publishRemote `
+        -Description "remote release publish script"
     $published = $true
 
     Write-Host "[OK] uploaded Windows release $Version to $remoteDir"
