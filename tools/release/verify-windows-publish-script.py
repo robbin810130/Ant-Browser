@@ -17,6 +17,12 @@ def require_contains(path: Path, needle: str) -> None:
         raise AssertionError(f"{path.relative_to(ROOT)} missing expected text: {needle}")
 
 
+def require_not_contains(path: Path, needle: str) -> None:
+    text = path.read_text(encoding="utf-8-sig")
+    if needle in text:
+        raise AssertionError(f"{path.relative_to(ROOT)} contains forbidden text: {needle}")
+
+
 def main() -> None:
     require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_WINDOWS_CHROME_ROOT")
     require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_REQUIRE_WINDOWS_CHROME")
@@ -60,6 +66,8 @@ def main() -> None:
     require_contains(UPLOAD_SCRIPT, "app-update-stable.json")
     require_contains(UPLOAD_SCRIPT, "$payloadArtifacts")
     require_contains(UPLOAD_SCRIPT, "$manifestArtifacts")
+    require_not_contains(UPLOAD_SCRIPT, "$channelDir:")
+    require_contains(UPLOAD_SCRIPT, "${channelDir}:")
     require_contains(INSTALLER, '!define PRODUCT_NAME    "Maka Browser"')
     require_contains(INSTALLER, '!define UNINSTALL_KEY   "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AntBrowser"')
     require_contains(INSTALLER, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"')
