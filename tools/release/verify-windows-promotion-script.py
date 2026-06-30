@@ -69,8 +69,8 @@ def write_release_fixture(root: Path, version: str) -> Path:
     zip_sha = hashlib.sha256(zip_bytes).hexdigest()
     (release_dir / zip_name).write_bytes(zip_bytes)
     (release_dir / installer_name).write_bytes(installer_bytes)
-    (release_dir / f"{zip_name}.sha256").write_text(
-        f"{zip_sha}  {zip_name}\n", encoding="ascii"
+    (release_dir / f"{zip_name}.sha256").write_bytes(
+        f"{zip_sha}  {zip_name}\r\n".encode("ascii")
     )
     manifest = {
         "schemaVersion": 1,
@@ -90,8 +90,8 @@ def write_release_fixture(root: Path, version: str) -> Path:
     manifest_path = release_dir / "app-update-stable.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-    (release_dir / "app-update-stable.json.sha256").write_text(
-        f"{manifest_sha}  app-update-stable.json\n", encoding="ascii"
+    (release_dir / "app-update-stable.json.sha256").write_bytes(
+        f"{manifest_sha}  app-update-stable.json\r\n".encode("ascii")
     )
     return release_dir
 
@@ -159,6 +159,7 @@ def main() -> None:
         "bash '$RemoteScriptPath'",
         "$remotePromotion = @\"",
         "sha256sum -c",
+        "tr -d '\\r'",
         ".promoting-$Version-",
         "stable_zip=",
         "stable_installer=",
