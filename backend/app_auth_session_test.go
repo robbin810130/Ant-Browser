@@ -350,6 +350,72 @@ func TestFetchDesktopSharedLoginBindSessionUsesDesktopEndpointAndAuthorization(t
 	}
 }
 
+func TestDesktopWorkspaceRequestProxiesRelativeAuthedJSON(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	var authHeader string
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks/task-1/evidence" {
+			http.NotFound(w, r)
+			return
+		}
+
+		authHeader = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("解析代理请求失败: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"evidenceId": "evidence-1",
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = desktopAuthTestConfig(t, server.URL)
+
+	envelope, err := app.DesktopWorkspaceRequest(
+		" desktop-token ",
+		" post ",
+		"/api/tasks/task-1/evidence",
+		map[string]any{"summary": " 已处理并提交证据 "},
+	)
+	if err != nil {
+		t.Fatalf("DesktopWorkspaceRequest 返回错误: %v", err)
+	}
+	if authHeader != "Bearer desktop-token" {
+		t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", authHeader)
+	}
+	if got, _ := requestBody["summary"].(string); got != " 已处理并提交证据 " {
+		t.Fatalf("期望代理请求体保留 summary，实际=%q", got)
+	}
+	if code, _ := envelope["code"].(float64); code != 0 {
+		t.Fatalf("期望 envelope.code=0，实际=%#v", envelope)
+	}
+	data, _ := envelope["data"].(map[string]any)
+	if data["evidenceId"] != "evidence-1" {
+		t.Fatalf("期望 evidenceId=evidence-1，实际=%#v", data)
+	}
+}
+
+func TestDesktopWorkspaceRequestRejectsAbsoluteProxyPath(t *testing.T) {
+	app := NewApp(t.TempDir())
+	app.config = desktopAuthTestConfig(t, "http://workspace.invalid")
+
+	_, err := app.DesktopWorkspaceRequest("desktop-token", http.MethodGet, "http://evil.invalid/api/auth/me", nil)
+	if err == nil {
+		t.Fatal("期望 DesktopWorkspaceRequest 拒绝绝对 URL")
+	}
+	if !strings.Contains(err.Error(), "must start with /") && !strings.Contains(err.Error(), "relative") {
+		t.Fatalf("期望错误说明路径必须是相对路径，实际=%v", err)
+	}
+}
+
 func TestDesktopAuthSessionRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

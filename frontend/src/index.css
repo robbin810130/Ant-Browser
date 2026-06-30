@@ -205,6 +205,53 @@ input, select, textarea {
   animation: slideInBottom 0.3s ease-out;
 }
 
+.specialist-task-panel {
+  min-height: 100%;
+  color: var(--color-text-primary);
+}
+
+.specialist-task-panel .ant-typography {
+  color: var(--color-text-primary);
+}
+
+.specialist-task-panel .ant-typography-secondary {
+  color: var(--color-text-secondary) !important;
+}
+
+.specialist-task-panel .ant-card {
+  border-color: var(--color-border-default);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.specialist-task-panel__metrics .ant-statistic-title {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.specialist-task-panel__metrics .ant-statistic-content {
+  color: var(--color-text-primary);
+}
+
+.specialist-task-panel__table .ant-table {
+  color: var(--color-text-primary);
+}
+
+.specialist-task-panel__table .ant-table-thead > tr > th {
+  border-bottom-color: var(--color-border-default);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.specialist-task-panel__table .ant-table-tbody > tr > td {
+  border-bottom-color: var(--color-border-muted);
+}
+
+.specialist-task-panel__table .ant-table-tbody > tr:hover > td {
+  background: var(--color-bg-subtle);
+}
+
 .client-drawer-root {
   position: fixed;
   inset: 0;

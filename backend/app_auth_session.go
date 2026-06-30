@@ -202,6 +202,37 @@ func (a *App) FetchDesktopSharedLoginBindSession(accessToken, bindSessionID stri
 	return &session, nil
 }
 
+func (a *App) DesktopWorkspaceRequest(accessToken, method, path string, body map[string]any) (map[string]any, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("desktop auth access token is required")
+	}
+
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+	default:
+		return nil, fmt.Errorf("unsupported workspace request method: %s", method)
+	}
+
+	path = strings.TrimSpace(path)
+	if err := validateDesktopWorkspaceProxyPath(path); err != nil {
+		return nil, err
+	}
+
+	var envelope map[string]any
+	if err := a.doDesktopAuthedWorkspaceJSON(accessToken, method, path, body, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope == nil {
+		envelope = map[string]any{}
+	}
+	return envelope, nil
+}
+
 func (a *App) BootstrapDesktopAuthRuntime() error {
 	if err := a.ensureWorkspaceAgentBootstrapped(); err != nil {
 		return err
@@ -345,6 +376,25 @@ func (a *App) doDesktopAuthedWorkspaceJSON(accessToken, method, path string, bod
 	request.Header.Set("authorization", "Bearer "+accessToken)
 
 	return normalizeDesktopWorkspaceRequestError(doWorkspaceJSON(request, dest), serverOrigin)
+}
+
+func validateDesktopWorkspaceProxyPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("workspace request path is required")
+	}
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("workspace request path must start with /")
+	}
+	if strings.HasPrefix(path, "//") {
+		return fmt.Errorf("workspace request path must be relative")
+	}
+	if strings.ContainsAny(path, "\r\n\t") {
+		return fmt.Errorf("workspace request path contains invalid characters")
+	}
+	if parsed, err := url.Parse(path); err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return fmt.Errorf("workspace request path must be relative")
+	}
+	return nil
 }
 
 func jsonMarshalWorkspaceBody(body any) (string, error) {

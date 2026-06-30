@@ -266,6 +266,10 @@ export function DesktopAuthStrongCleanup(arg1) {
   return window['go']['main']['App']['DesktopAuthStrongCleanup'](arg1);
 }
 
+export function DesktopWorkspaceRequest(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['DesktopWorkspaceRequest'](arg1, arg2, arg3, arg4);
+}
+
 export function DownloadDesktopAppUpdate() {
   return window['go']['main']['App']['DownloadDesktopAppUpdate']();
 }
