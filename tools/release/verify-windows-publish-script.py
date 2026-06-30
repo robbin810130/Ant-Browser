@@ -8,6 +8,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "windows-release-factory.yml"
 PREFLIGHT = ROOT / "tools" / "release" / "windows-release-preflight.ps1"
 RUNNER_SETUP = ROOT / "docs" / "release" / "windows-self-hosted-runner-setup.md"
 INSTALLER = ROOT / "publish" / "installer.nsi"
+UPLOAD_SCRIPT = ROOT / "tools" / "release" / "upload-windows-release.ps1"
 
 
 def require_contains(path: Path, needle: str) -> None:
@@ -46,6 +47,16 @@ def main() -> None:
     require_contains(RUNNER_SETUP, "ANT_BROWSER_WORKSPACE_AGENT_ROOT")
     require_contains(RUNNER_SETUP, "ANT_BROWSER_WORKSPACE_NODE_ROOT")
     require_contains(WORKFLOW, "runs-on: [self-hosted, windows, ant-browser-release]")
+    require_contains(UPLOAD_SCRIPT, "Invoke-NativeWithRetry")
+    require_contains(UPLOAD_SCRIPT, "MaxAttempts")
+    require_contains(UPLOAD_SCRIPT, "Start-Sleep -Seconds")
+    require_contains(UPLOAD_SCRIPT, "df -Pk")
+    require_contains(UPLOAD_SCRIPT, "remote release directory exists")
+    require_contains(UPLOAD_SCRIPT, ".uploading-$Version-")
+    require_contains(UPLOAD_SCRIPT, "mv -f")
+    require_contains(UPLOAD_SCRIPT, "app-update-stable.json")
+    require_contains(UPLOAD_SCRIPT, "$payloadArtifacts")
+    require_contains(UPLOAD_SCRIPT, "$manifestArtifacts")
     require_contains(INSTALLER, '!define PRODUCT_NAME    "Maka Browser"')
     require_contains(INSTALLER, '!define UNINSTALL_KEY   "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AntBrowser"')
     require_contains(INSTALLER, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"')
