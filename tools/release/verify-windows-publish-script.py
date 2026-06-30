@@ -68,6 +68,7 @@ def main() -> None:
     require_contains(UPLOAD_SCRIPT, "$manifestArtifacts")
     require_not_contains(UPLOAD_SCRIPT, "$channelDir:")
     require_contains(UPLOAD_SCRIPT, "${channelDir}:")
+    require_not_contains(UPLOAD_SCRIPT, '@ -replace "(`r`n|`n|`r)+", "; "')
     require_contains(INSTALLER, '!define PRODUCT_NAME    "Maka Browser"')
     require_contains(INSTALLER, '!define UNINSTALL_KEY   "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AntBrowser"')
     require_contains(INSTALLER, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"')
