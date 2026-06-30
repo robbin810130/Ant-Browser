@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import re
+import subprocess
 from pathlib import Path
 
 
@@ -23,7 +25,39 @@ def require_not_contains(path: Path, needle: str) -> None:
         raise AssertionError(f"{path.relative_to(ROOT)} contains forbidden text: {needle}")
 
 
+def extract_here_string(text: str, variable_name: str) -> str:
+    pattern = re.compile(
+        rf"^\s*\${re.escape(variable_name)}\s*=\s*@\"\n(?P<body>.*?)\n\"@",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        raise AssertionError(f"tools/release/upload-windows-release.ps1 missing here-string: ${variable_name}")
+    return match.group("body")
+
+
+def powershell_here_string_to_bash(text: str) -> str:
+    return text.replace("`$", "$").replace("``", "`")
+
+
+def require_bash_syntax(script_name: str, script_text: str) -> None:
+    if "\r" in script_text:
+        raise AssertionError(f"{script_name} contains CR characters")
+    if "then;" in script_text:
+        raise AssertionError(f"{script_name} contains invalid bash token: then;")
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=script_text,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"{script_name} is not valid bash:\n{result.stderr}")
+
+
 def main() -> None:
+    upload_script_text = UPLOAD_SCRIPT.read_text(encoding="utf-8-sig")
     require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_WINDOWS_CHROME_ROOT")
     require_contains(PUBLISH_SCRIPT, "ANT_BROWSER_REQUIRE_WINDOWS_CHROME")
     require_contains(PUBLISH_SCRIPT, "C:\\AntBrowserReleaseResources\\chrome")
@@ -69,6 +103,21 @@ def main() -> None:
     require_not_contains(UPLOAD_SCRIPT, "$channelDir:")
     require_contains(UPLOAD_SCRIPT, "${channelDir}:")
     require_not_contains(UPLOAD_SCRIPT, '@ -replace "(`r`n|`n|`r)+", "; "')
+    require_contains(UPLOAD_SCRIPT, "Invoke-RemoteBashScript")
+    require_contains(UPLOAD_SCRIPT, "remote release prepare script")
+    require_contains(UPLOAD_SCRIPT, "remote release verify script")
+    require_contains(UPLOAD_SCRIPT, "remote release publish script")
+    require_contains(UPLOAD_SCRIPT, 'Replace("`r`n", "`n").Replace("`r", "`n")')
+    require_contains(UPLOAD_SCRIPT, "bash '$RemoteScriptPath'")
+    require_not_contains(UPLOAD_SCRIPT, "$sshBaseArgs")
+    require_not_contains(UPLOAD_SCRIPT, 'Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $prepareRemote))')
+    require_not_contains(UPLOAD_SCRIPT, '$verifyRemote = "set -eu;')
+    require_not_contains(UPLOAD_SCRIPT, '$publishRemote = "set -eu;')
+    for script_name in ("prepareRemote", "verifyRemote", "publishRemote"):
+        require_bash_syntax(
+            script_name,
+            powershell_here_string_to_bash(extract_here_string(upload_script_text, script_name)),
+        )
     require_contains(INSTALLER, '!define PRODUCT_NAME    "Maka Browser"')
     require_contains(INSTALLER, '!define UNINSTALL_KEY   "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AntBrowser"')
     require_contains(INSTALLER, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"')
