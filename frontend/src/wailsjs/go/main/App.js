@@ -62,6 +62,10 @@ export function BrowserCoreExtendedInfo() {
   return window['go']['main']['App']['BrowserCoreExtendedInfo']();
 }
 
+export function BrowserCoreImportLocal() {
+  return window['go']['main']['App']['BrowserCoreImportLocal']();
+}
+
 export function BrowserCoreList() {
   return window['go']['main']['App']['BrowserCoreList']();
 }

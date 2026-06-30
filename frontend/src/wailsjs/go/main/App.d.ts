@@ -41,6 +41,8 @@ export function BrowserCoreDownload(arg1:string,arg2:string,arg3:string):Promise
 
 export function BrowserCoreExtendedInfo():Promise<Array<browser.CoreExtendedInfo>>;
 
+export function BrowserCoreImportLocal():Promise<config.BrowserCore>;
+
 export function BrowserCoreList():Promise<Array<config.BrowserCore>>;
 
 export function BrowserCoreSave(arg1:browser.CoreInput):Promise<void>;
