@@ -173,7 +173,7 @@ if [ -z "`$available_kb" ] || [ "`$available_kb" -lt $requiredKb ]; then
 fi
 rm -rf '$stagingDir'
 mkdir -p '$stagingDir'
-"@ -replace "(`r`n|`n|`r)+", "; "
+"@
     Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $prepareRemote))
 
     foreach ($artifact in $payloadArtifacts) {
