@@ -2,6 +2,7 @@ param(
     [string]$BaselineVersion = "1.1.0",
     [string]$TargetVersion = "1.1.5",
     [string]$TestRoot = "C:\MakaBrowserUpdateTest",
+    [string]$BaselineArtifactsRoot = "C:\MakaBrowserUpdateTest\baselines",
     [int]$RunnerWaitSeconds = 90,
     [switch]$SkipPublish
 )
@@ -12,6 +13,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $outputDir = Join-Path $repoRoot "publish\output"
 $baselineDir = Join-Path $TestRoot "baseline"
+$baselineCacheDir = Join-Path $BaselineArtifactsRoot $BaselineVersion
 $targetDir = Join-Path $TestRoot "target"
 $installRoot = Join-Path $env:LOCALAPPDATA "Programs\Ant Browser"
 $stateRoot = Join-Path $env:LOCALAPPDATA "Ant Browser"
@@ -170,13 +172,13 @@ function Copy-ReleaseArtifacts {
 }
 
 function Test-ReleaseArtifacts {
-    param([string]$Version)
+    param([string]$Version, [string]$Directory = $outputDir)
     $required = @(
-        (Join-Path $outputDir "MakaBrowser-Setup-$Version.exe"),
-        (Join-Path $outputDir "MakaBrowser-$Version-windows-amd64.zip"),
-        (Join-Path $outputDir "MakaBrowser-$Version-windows-amd64.zip.sha256"),
-        (Join-Path $outputDir "app-update-stable.json"),
-        (Join-Path $outputDir "app-update-stable.json.sha256")
+        (Join-Path $Directory "MakaBrowser-Setup-$Version.exe"),
+        (Join-Path $Directory "MakaBrowser-$Version-windows-amd64.zip"),
+        (Join-Path $Directory "MakaBrowser-$Version-windows-amd64.zip.sha256"),
+        (Join-Path $Directory "app-update-stable.json"),
+        (Join-Path $Directory "app-update-stable.json.sha256")
     )
     foreach ($path in $required) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -186,6 +188,20 @@ function Test-ReleaseArtifacts {
     return $true
 }
 
+function Copy-ReleaseArtifactsFromDirectory {
+    param(
+        [string]$Version,
+        [string]$Source,
+        [string]$Destination
+    )
+    New-Item -ItemType Directory -Force $Destination | Out-Null
+    Copy-Item -LiteralPath (Join-Path $Source "MakaBrowser-Setup-$Version.exe") -Destination $Destination -Force
+    Copy-Item -LiteralPath (Join-Path $Source "MakaBrowser-$Version-windows-amd64.zip") -Destination $Destination -Force
+    Copy-Item -LiteralPath (Join-Path $Source "MakaBrowser-$Version-windows-amd64.zip.sha256") -Destination $Destination -Force
+    Copy-Item -LiteralPath (Join-Path $Source "app-update-stable.json") -Destination $Destination -Force
+    Copy-Item -LiteralPath (Join-Path $Source "app-update-stable.json.sha256") -Destination $Destination -Force
+}
+
 function Copy-PrebuiltTargetArtifacts {
     if (-not (Test-ReleaseArtifacts -Version $TargetVersion)) {
         return $false
@@ -193,6 +209,20 @@ function Copy-PrebuiltTargetArtifacts {
     Write-Step "Use prebuilt target artifacts $TargetVersion"
     Copy-ReleaseArtifacts -Version $TargetVersion -Destination $targetDir
     return $true
+}
+
+function Copy-PrebuiltBaselineArtifacts {
+    if (-not (Test-ReleaseArtifacts -Version $BaselineVersion -Directory $baselineCacheDir)) {
+        return $false
+    }
+    Write-Step "Use prebuilt baseline artifacts $BaselineVersion"
+    Copy-ReleaseArtifactsFromDirectory -Version $BaselineVersion -Source $baselineCacheDir -Destination $baselineDir
+    return $true
+}
+
+function Cache-BaselineArtifacts {
+    Write-Step "Cache baseline artifacts $BaselineVersion"
+    Copy-ReleaseArtifactsFromDirectory -Version $BaselineVersion -Source $baselineDir -Destination $baselineCacheDir
 }
 
 function Restore-PrebuiltTargetArtifacts {
@@ -393,7 +423,11 @@ New-Item -ItemType Directory -Force $TestRoot | Out-Null
 $targetPrebuilt = $false
 if (-not $SkipPublish) {
     $targetPrebuilt = Copy-PrebuiltTargetArtifacts
-    Publish-Version -Version $BaselineVersion -Destination $baselineDir
+    $baselinePrebuilt = Copy-PrebuiltBaselineArtifacts
+    if (-not $baselinePrebuilt) {
+        Publish-Version -Version $BaselineVersion -Destination $baselineDir
+        Cache-BaselineArtifacts
+    }
     if ($targetPrebuilt) {
         Write-Step "Skip target publish $TargetVersion"
     }
