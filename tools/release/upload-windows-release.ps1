@@ -44,6 +44,32 @@ function Invoke-Native {
     }
 }
 
+function Invoke-NativeWithRetry {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments = @(),
+        [int]$MaxAttempts = 3,
+        [int]$RetryDelaySeconds = 10,
+        [string]$Description = "native command"
+    )
+
+    $lastExitCode = 0
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        Write-Host "$Description (attempt $attempt/$MaxAttempts)"
+        & $FilePath @Arguments
+        $lastExitCode = $LASTEXITCODE
+        if ($lastExitCode -eq 0) {
+            return
+        }
+        if ($attempt -lt $MaxAttempts) {
+            Write-Warning "$Description failed with exit code $lastExitCode; retrying in $RetryDelaySeconds seconds"
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+
+    throw "$FilePath $($Arguments -join ' ') failed with exit code $lastExitCode after $MaxAttempts attempts"
+}
+
 function Protect-PrivateKeyFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -91,38 +117,68 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($tempKey, (Normalize-PrivateKeyText -Value $keyText), $utf8NoBom)
 Protect-PrivateKeyFile -Path $tempKey
 
+$published = $false
+$stagingDir = ""
+$sshOptions = @()
+
 try {
     $target = "$user@$hostName"
+    $channelDir = "$RemoteRoot/$Channel"
     $remoteDir = "$RemoteRoot/$Channel/$Version"
+    $uploadId = [guid]::NewGuid().ToString("N")
+    $stagingDir = "$channelDir/.uploading-$Version-$uploadId"
     $sshOptions = @(
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=15",
-        "-o", "ServerAliveInterval=10",
-        "-o", "ServerAliveCountMax=3",
+        "-o", "ServerAliveInterval=5",
+        "-o", "ServerAliveCountMax=6",
         "-o", "StrictHostKeyChecking=accept-new"
     )
     $sshBaseArgs = @("-i", $tempKey, "-p", $port) + $sshOptions
-    $artifacts = @(
+    $payloadArtifacts = @(
         "MakaBrowser-Setup-$Version.exe",
         "MakaBrowser-$Version-windows-amd64.zip",
-        "MakaBrowser-$Version-windows-amd64.zip.sha256",
+        "MakaBrowser-$Version-windows-amd64.zip.sha256"
+    )
+    $manifestArtifacts = @(
         "app-update-stable.json",
         "app-update-stable.json.sha256",
         "release-report.json",
         "release-report.md"
     )
+    $artifacts = $payloadArtifacts + $manifestArtifacts
 
     foreach ($artifact in $artifacts) {
         Require-File (Join-Path $resolvedOutputDir $artifact)
     }
 
     $overwriteFlag = if ($AllowOverwrite) { "1" } else { "0" }
-    $prepareRemote = "set -eu; if [ -e '$remoteDir' ] && [ '$overwriteFlag' != '1' ]; then echo 'remote release directory exists: $remoteDir' >&2; exit 23; fi; mkdir -p '$remoteDir'"
+    $requiredBytes = 0
+    foreach ($artifact in $artifacts) {
+        $requiredBytes += (Get-Item -LiteralPath (Join-Path $resolvedOutputDir $artifact)).Length
+    }
+    $requiredKb = [Math]::Ceiling(($requiredBytes * 2) / 1024)
+
+    $prepareRemote = @"
+set -eu
+mkdir -p '$channelDir'
+if [ -e '$remoteDir' ] && [ '$overwriteFlag' != '1' ]; then
+  echo 'remote release directory exists: $remoteDir' >&2
+  exit 23
+fi
+available_kb=`$(df -Pk '$channelDir' | awk 'NR==2 {print `$4}')
+if [ -z "`$available_kb" ] || [ "`$available_kb" -lt $requiredKb ]; then
+  echo "insufficient remote disk space in $channelDir: available_kb=`$available_kb required_kb=$requiredKb" >&2
+  exit 24
+fi
+rm -rf '$stagingDir'
+mkdir -p '$stagingDir'
+"@ -replace "(`r`n|`n|`r)+", "; "
     Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $prepareRemote))
 
-    foreach ($artifact in $artifacts) {
+    foreach ($artifact in $payloadArtifacts) {
         $localPath = Join-Path $resolvedOutputDir $artifact
-        $remotePath = "${target}:$remoteDir/$artifact"
+        $remotePath = "${target}:$stagingDir/$artifact"
         $scpArgs = @(
             "-i", $tempKey,
             "-P", $port
@@ -130,14 +186,40 @@ try {
             $localPath,
             $remotePath
         )
-        Invoke-Native -FilePath "scp" -Arguments $scpArgs
+        Invoke-NativeWithRetry -FilePath "scp" -Arguments $scpArgs -MaxAttempts 3 -RetryDelaySeconds 10 -Description "Upload payload $artifact"
     }
 
-    $verifyRemote = "set -eu; cd '$remoteDir'; sha256sum MakaBrowser-$Version-windows-amd64.zip app-update-stable.json > remote-sha256.txt; cat remote-sha256.txt"
+    foreach ($artifact in $manifestArtifacts) {
+        $localPath = Join-Path $resolvedOutputDir $artifact
+        $remotePath = "${target}:$stagingDir/$artifact"
+        $scpArgs = @(
+            "-i", $tempKey,
+            "-P", $port
+        ) + $sshOptions + @(
+            $localPath,
+            $remotePath
+        )
+        Invoke-NativeWithRetry -FilePath "scp" -Arguments $scpArgs -MaxAttempts 3 -RetryDelaySeconds 10 -Description "Upload manifest $artifact"
+    }
+
+    $verifyRemote = "set -eu; cd '$stagingDir'; sha256sum MakaBrowser-$Version-windows-amd64.zip app-update-stable.json > remote-sha256.txt; cat remote-sha256.txt"
     Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $verifyRemote))
+
+    $publishRemote = "set -eu; if [ '$overwriteFlag' = '1' ]; then rm -rf '$remoteDir'; fi; if [ -e '$remoteDir' ]; then echo 'remote release directory exists: $remoteDir' >&2; exit 23; fi; mv -f '$stagingDir' '$remoteDir'"
+    Invoke-Native -FilePath "ssh" -Arguments ($sshBaseArgs + @($target, $publishRemote))
+    $published = $true
 
     Write-Host "[OK] uploaded Windows release $Version to $remoteDir"
 }
 finally {
+    if ((-not $published) -and -not [string]::IsNullOrWhiteSpace($stagingDir)) {
+        try {
+            $cleanupTarget = "$user@$hostName"
+            $cleanupArgs = @("-i", $tempKey, "-p", $port) + $sshOptions + @($cleanupTarget, "rm -rf '$stagingDir'")
+            & "ssh" @cleanupArgs
+        } catch {
+            Write-Warning "failed to clean remote staging directory ${stagingDir}: $_"
+        }
+    }
     Remove-Item -LiteralPath $tempKey -Force -ErrorAction SilentlyContinue
 }
