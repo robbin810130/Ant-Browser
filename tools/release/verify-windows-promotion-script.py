@@ -68,6 +68,10 @@ def main() -> None:
         "$remotePromotion = @\"",
         "sha256sum -c",
         ".promoting-$Version-",
+        "stable_zip=",
+        "stable_installer=",
+        "zip_alias_tmp=",
+        "installer_alias_tmp=",
         "mv -f",
         "app-update-stable.json",
         "MakaBrowser-Setup-$Version.exe",
@@ -88,6 +92,8 @@ def main() -> None:
     require_bash_syntax(promotion_bash)
     if promotion_bash.index("sha256sum -c") > promotion_bash.index("mv -f"):
         raise AssertionError("promotion publishes before SHA256 verification")
+    if promotion_bash.index("stable_zip=") > promotion_bash.rindex("stable_alias"):
+        raise AssertionError("stable payload aliases are not prepared before the manifest alias")
     if promotion_bash.rindex("app-update-stable.json") < promotion_bash.index("mv -f"):
         raise AssertionError("stable alias is not updated after version publication")
 
