@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -84,12 +85,23 @@ def main() -> None:
 
     windows_e2e_text = windows_e2e_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_e2e_text, "CurrentExePath: currentExe", "tools/app-update/windows-app-update-e2e.ps1")
-    assert_contains(windows_e2e_text, "DESKTOP_APP_UPDATE_MANIFEST_URL", "tools/app-update/windows-app-update-e2e.ps1")
     assert_contains(windows_e2e_text, "localAppVersion", "tools/app-update/windows-app-update-e2e.ps1")
     assert_contains(windows_e2e_text, "data\\app.db", "tools/app-update/windows-app-update-e2e.ps1")
 
-    windows_e2e_verifier_text = windows_e2e_verifier_path.read_text(encoding="utf-8")
-    assert_contains(windows_e2e_verifier_text, "Windows app-update e2e script contract verified", "tools/app-update/verify-windows-e2e-script.py")
+    windows_e2e_verifier = subprocess.run(
+        [sys.executable, str(windows_e2e_verifier_path)],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if windows_e2e_verifier.returncode != 0:
+        details = "\n".join(
+            output.strip()
+            for output in (windows_e2e_verifier.stdout, windows_e2e_verifier.stderr)
+            if output.strip()
+        )
+        fail("Windows app-update e2e verifier failed" + (f":\n{details}" if details else ""))
 
     mac_publish_text = mac_publish_path.read_text(encoding="utf-8")
     assert_contains(mac_publish_text, 'cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"', "publish/mac/publish-mac.sh")

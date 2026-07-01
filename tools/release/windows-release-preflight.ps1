@@ -225,7 +225,9 @@ foreach ($path in @(
     "bat\publish.bat",
     "bat\publish.ps1",
     "tools\app-update\windows-app-update-e2e.ps1",
+    "tools\app-update\verify-windows-e2e-script.py",
     "tools\app-update\verify-app-update-package.py",
+    "tools\runtime\verify-publish-contract.py",
     "publish\runtime-manifest.json",
     "publish\runtime-sources.json",
     "bin\xray.exe",
@@ -239,6 +241,9 @@ foreach ($path in @(
         throw "required file missing: $path"
     }
 }
+
+Write-Step "Check release contracts"
+Invoke-Native -FilePath "python" -Arguments @("tools\runtime\verify-publish-contract.py")
 
 Write-Step "Check Windows browser core"
 $chromeRoot = Resolve-WindowsChromeRoot

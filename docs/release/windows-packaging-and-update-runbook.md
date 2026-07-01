@@ -130,7 +130,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\app-update\windows-app
 1. 分别打包 baseline 与 target。
 2. 校验 target `MakaBrowser-<version>-windows-amd64.zip` 与 `app-update-stable.json`。
 3. 静默安装 baseline 到 `%LOCALAPPDATA%\Programs\Maka Browser`。
-4. 使用 Windows 本地绝对路径配置 `DESKTOP_APP_UPDATE_MANIFEST_URL`。
+4. 临时 Go harness 通过本地 `ManifestProvider` 直接提供 target manifest，不写用户级或进程级环境变量。
 5. 通过临时 Go harness 调用 `Check -> Download -> Apply`。
 6. 显式设置 `WindowsBackend.CurrentExePath` 为已安装的 `ant-chrome.exe`，避免 `go run` 的临时程序被复制成 runner。
 7. 等待 runner 完成替换。
