@@ -40,14 +40,16 @@ func TestClearDesktopAppUpdateFailureRemovesState(t *testing.T) {
 	}
 }
 
-func TestDownloadDesktopAppUpdateUsesManager(t *testing.T) {
+func TestDownloadDesktopAppUpdateReturnsIdleWhenUpdatesDisabled(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "1")
+
 	app := NewApp(t.TempDir(), "1.1.0")
 	state, err := app.DownloadDesktopAppUpdate()
 	if err != nil {
 		t.Fatalf("DownloadDesktopAppUpdate returned error: %v", err)
 	}
 	if state.Kind != appupdate.UpdateKindNone || state.Status != appupdate.PersistentStatusIdle {
-		t.Fatalf("expected missing manifest source to disable app update, got %+v", state)
+		t.Fatalf("expected updates disabled to return idle state, got %+v", state)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	DefaultStableManifestURL     = "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"
 	envManifestURL               = "DESKTOP_APP_UPDATE_MANIFEST_URL"
 	envUpdatesDisabled           = "DESKTOP_APP_UPDATE_DISABLED"
 	envAllowLocalhostManifestURL = "DESKTOP_APP_UPDATE_ALLOW_LOCAL_MANIFEST_URL"
@@ -72,7 +73,10 @@ func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSource
 		}
 	}
 
-	return ManifestSourceResolution{}
+	return ManifestSourceResolution{
+		URL:    DefaultStableManifestURL,
+		Source: "default-stable",
+	}
 }
 
 func truthyEnv(name string) bool {

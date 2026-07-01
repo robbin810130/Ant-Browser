@@ -148,6 +148,23 @@ func TestResolveManifestSourceUsesConfig(t *testing.T) {
 	}
 }
 
+func TestResolveManifestSourceUsesDefaultStableManifest(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "")
+	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "")
+
+	resolution := ResolveManifestSource(t.TempDir(), &config.Config{})
+
+	if resolution.URL != DefaultStableManifestURL {
+		t.Fatalf("default stable URL 不正确: got=%q want=%q", resolution.URL, DefaultStableManifestURL)
+	}
+	if resolution.Source != "default-stable" {
+		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+	if resolution.ConfigPath != "" {
+		t.Fatalf("ConfigPath 应为空: got=%q", resolution.ConfigPath)
+	}
+}
+
 func TestLoadManifestFromSourceSupportsHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
