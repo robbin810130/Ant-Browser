@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLayoutStore } from '../../store/layoutStore'
+import { useRuntimeStore } from '../../store/runtimeStore'
 import { projectConfig, navigationConfig } from '../../config'
 
 // 导入应用logo
@@ -53,6 +54,10 @@ function getIcon(iconName: string): LucideIcon {
 export function Sidebar() {
   const location = useLocation()
   const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
+  const appVersion = useRuntimeStore((state) => state.appVersion)
+  const versionLabel = appVersion && appVersion !== 'unknown'
+    ? `${projectConfig.name} v${appVersion}`
+    : projectConfig.name
 
   return (
     <aside className={clsx(
@@ -86,7 +91,10 @@ export function Sidebar() {
             </h2>
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-[var(--color-accent)] flex items-center justify-center">
+          <div
+            className="w-8 h-8 rounded-full overflow-hidden bg-[var(--color-accent)] flex items-center justify-center"
+            title={versionLabel}
+          >
             <img 
               src={logoImage} 
               alt="应用Logo" 
@@ -149,6 +157,11 @@ export function Sidebar() {
 
       {/* Toggle Button */}
       <div className="p-3 border-t border-[var(--color-border-muted)]">
+        {!sidebarCollapsed && (
+          <div className="mb-2 px-3 text-[11px] leading-5 text-[var(--color-text-muted)]">
+            {versionLabel}
+          </div>
+        )}
         <button
           onClick={toggleSidebar}
           className={clsx(

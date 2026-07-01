@@ -46,6 +46,7 @@ export function SettingsPage() {
   const diagnosticsPath = useRuntimeStore((s) => s.diagnosticsPath)
   const diagnosticsError = useRuntimeStore((s) => s.diagnosticsError)
   const updateError = useRuntimeStore((s) => s.updateError)
+  const appVersion = useRuntimeStore((s) => s.appVersion)
   const retryEnvironmentCheck = useRuntimeStore((s) => s.retryCheck)
   const repairRuntimeNow = useRuntimeStore((s) => s.repairNow)
   const exportRuntimeDiagnostics = useRuntimeStore((s) => s.exportDiagnostics)
@@ -543,6 +544,9 @@ export function SettingsPage() {
                 <div>
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">桌面运行环境</p>
                   <p className="text-xs text-[var(--color-text-muted)] mt-1">{runtimeStatusMeta.description}</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    当前版本：{appVersion && appVersion !== 'unknown' ? `v${appVersion}` : '读取中'}
+                  </p>
                 </div>
               </div>
             </div>
