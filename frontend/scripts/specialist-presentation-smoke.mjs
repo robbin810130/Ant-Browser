@@ -72,26 +72,47 @@ const apiSource = await readFile(
   'utf8',
 )
 
-assert.match(pageSource, /from 'antd'/, 'specialist task page should use Ant Design components')
-assert.match(drawerSource, /from 'antd'/, 'specialist task drawer should use Ant Design components')
+assert.match(pageSource, /shared\/components/, 'specialist task page should use the Maka Browser shared components')
+assert.match(drawerSource, /shared\/components/, 'specialist task drawer should use the Maka Browser shared components')
+assert.doesNotMatch(pageSource, /from 'antd'/, 'specialist task page must stay aligned with the Maka Browser client component system')
+assert.doesNotMatch(drawerSource, /from 'antd'/, 'specialist task drawer must stay aligned with the Maka Browser client component system')
 assert.doesNotMatch(
   pageSource,
-  /shared\/components/,
-  'specialist task page must not use custom shared business controls',
+  /@ant-design\/icons/,
+  'specialist task page must not depend on Ant Design icons',
 )
 assert.doesNotMatch(
   drawerSource,
-  /shared\/components/,
-  'specialist task drawer must not use custom shared business controls',
+  /@ant-design\/icons/,
+  'specialist task drawer must not depend on Ant Design icons',
 )
 assert.doesNotMatch(
   pageSource,
   /requiredStepSummary\(row\.sopSteps\)/,
   'task list must not claim SOP progress when list responses omit SOP steps',
 )
-assert.match(drawerSource, /\bUpload\b/, 'specialist task drawer should expose an Ant Design screenshot upload')
+assert.match(drawerSource, /type="file"/, 'specialist task drawer should expose a native screenshot file picker')
+assert.match(drawerSource, /\bProgress\b/, 'specialist task drawer should expose required SOP completion progress with the shared component')
+assert.match(drawerSource, /role="tablist"/, 'specialist task drawer should separate submit, appeal, and blocked actions with client tabs')
+assert.match(drawerSource, /lastEvidenceFeedback/, 'evidence submission should leave local feedback inside the drawer')
+assert.match(drawerSource, /最近提交反馈/, 'evidence submission feedback should be visible to the specialist')
+assert.match(drawerSource, /onRefreshTask/, 'SOP step changes should refresh the selected task detail from the server contract')
+assert.match(drawerSource, /await onRefreshTask\(task\.id\)/, 'SOP step changes should re-read task detail after a successful mutation')
+assert.match(drawerSource, /screenshotError/, 'screenshot validation should provide field-level feedback')
+assert.match(drawerSource, /evidenceLinkError/, 'link evidence validation should provide field-level feedback')
 assert.match(drawerSource, /dataUrl/, 'screenshot evidence should include portable image data')
 assert.match(drawerSource, /return \{ url:/, 'link evidence should submit a URL payload')
+assert.doesNotMatch(
+  apiSource,
+  /SOP 步骤状态暂不能在客户端直接更新/,
+  'SOP updates must call the Maka specialist server contract instead of being blocked in the renderer',
+)
+assert.match(
+  apiSource,
+  /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/sop-steps\/\$\{encodeURIComponent\(stepId\.trim\(\)\)\}/,
+  'SOP updates should use the Maka specialist task contract path',
+)
+assert.match(apiSource, /devSpecialistTask/, 'dev fallback should preserve local specialist task state across detail refreshes')
 assert.match(apiSource, /DesktopWorkspaceRequest/, 'specialist task API should proxy through the Wails backend')
 assert.doesNotMatch(apiSource, /\bfetch\(/, 'specialist task API must not fetch the workspace server directly from the renderer')
 

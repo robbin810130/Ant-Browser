@@ -222,10 +222,18 @@ export async function updateSpecialistTaskSopStep(
   stepId: string,
   payload: UpdateSpecialistTaskSopStepPayload,
 ): Promise<SpecialistTaskMutationResponse> {
-  void taskId
-  void stepId
-  void payload
-  unsupportedContract('SOP 步骤状态暂不能在客户端直接更新')
+  const data = await specialistRequest<unknown>(
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/sop-steps/${encodeURIComponent(stepId.trim())}`,
+    {
+      method: 'POST',
+      body: {
+        status: payload.status,
+        operatorNote: payload.operatorNote ?? '',
+        evidenceRefs: payload.evidenceRefs ?? [],
+      },
+    },
+  )
+  return normalizeMutationResponse(data)
 }
 
 export async function submitSpecialistTaskEvidence(
@@ -310,7 +318,7 @@ function buildDevTask(overrides: Partial<SpecialistTaskRecord> = {}): Specialist
         title: '检查核心商品曝光',
         description: '进入 1688 后台检查核心商品曝光入口。',
         required: true,
-        evidenceTypes: ['text_note', 'screenshot'],
+        evidenceTypes: ['text_note', 'screenshot', 'backend_url'],
         status: 'not_started',
         evidenceRefs: [],
         operatorNote: '',
@@ -334,11 +342,33 @@ function buildDevTask(overrides: Partial<SpecialistTaskRecord> = {}): Specialist
   })
 }
 
+let devSpecialistTask: SpecialistTaskRecord | null = null
+let devEvidenceSequence = 0
+
+function getDevSpecialistTask(): SpecialistTaskRecord {
+  if (!devSpecialistTask) {
+    devSpecialistTask = buildDevTask()
+  }
+  return devSpecialistTask
+}
+
+function setDevSpecialistTask(task: SpecialistTaskRecord): SpecialistTaskRecord {
+  devSpecialistTask = normalizeSpecialistTask(task)
+  return devSpecialistTask
+}
+
+function devListResponse(task: SpecialistTaskRecord, path: string): SpecialistTaskListResponse {
+  const query = path.includes('?') ? new URLSearchParams(path.split('?')[1]) : new URLSearchParams()
+  const status = normalizeString(query.get('status'))
+  const items = status && task.status !== status ? [] : [task]
+  return normalizeListResponse({ items })
+}
+
 async function devSpecialistRequest<T>(path: string, init: SpecialistRequestInit = {}): Promise<T> {
   const method = String(init.method || 'GET').toUpperCase()
-  const task = buildDevTask()
+  const task = getDevSpecialistTask()
   if (method === 'GET' && (path.includes('/tasks/today') || path.includes('/workbench/tasks'))) {
-    return normalizeListResponse({ items: [task] }) as T
+    return devListResponse(task, path) as T
   }
   if (method === 'GET' && path.includes('/shops/')) {
     const shopId = decodeURIComponent(path.split('/shops/')[1]?.split('/tasks')[0] || '')
@@ -347,6 +377,57 @@ async function devSpecialistRequest<T>(path: string, init: SpecialistRequestInit
   }
   if (method === 'GET') {
     return task as T
+  }
+  const sopStepMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/sop-steps\/([^/?]+)/)
+  if (method === 'POST' && sopStepMatch) {
+    const taskId = decodeURIComponent(sopStepMatch[1])
+    const stepId = decodeURIComponent(sopStepMatch[2])
+    const body = normalizeObject(init.body)
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
+    const now = new Date().toISOString()
+    const nextTask = setDevSpecialistTask({
+      ...task,
+      updatedAt: now,
+      sopSteps: task.sopSteps.map((step) => step.stepId === stepId
+        ? {
+            ...step,
+            status: normalizeString(body.status || step.status),
+            operatorNote: normalizeString(body.operatorNote),
+            evidenceRefs: normalizeStringArray(body.evidenceRefs),
+            updatedAt: now,
+          }
+        : step),
+    })
+    return normalizeMutationResponse({ task: nextTask }) as T
+  }
+  if (method === 'POST' && path.includes('/evidence')) {
+    const now = new Date().toISOString()
+    const body = normalizeObject(init.body)
+    const attachments = normalizeStringArray(body.attachments)
+    const summary = normalizeString(body.summary || body.text || body.note || attachments[0])
+    devEvidenceSequence += 1
+    const nextTask = setDevSpecialistTask({
+      ...task,
+      updatedAt: now,
+      evidenceRecords: [
+        ...task.evidenceRecords,
+        {
+          id: `dev-evidence-${devEvidenceSequence}`,
+          taskId: task.id,
+          stepId: normalizeNullableString(body.stepId),
+          evidenceType: normalizeString(body.evidenceType || (attachments.length ? 'backend_url' : 'text_note')),
+          payload: {
+            text: summary,
+            url: attachments[0] || undefined,
+          },
+          submittedBy: 'dev',
+          createdAt: now,
+        },
+      ],
+    })
+    return normalizeMutationResponse({ task: nextTask, evidenceId: `dev-evidence-${devEvidenceSequence}` }) as T
   }
   return normalizeMutationResponse({ task }) as T
 }

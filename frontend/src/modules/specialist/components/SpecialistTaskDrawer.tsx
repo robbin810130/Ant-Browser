@@ -1,28 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
-import { UploadOutlined } from '@ant-design/icons'
+import { ChangeEvent, useEffect, useMemo, useState } from 'react'
+import clsx from 'clsx'
+import { CheckCircle2, FileImage, Loader2 } from 'lucide-react'
 import {
   Alert,
-  App,
+  Badge,
   Button,
   Card,
-  Checkbox,
-  Col,
-  Descriptions,
-  Divider,
   Drawer,
-  Empty,
-  Form,
+  FormItem,
   Input,
-  List,
-  Row,
+  Progress,
   Select,
-  Skeleton,
-  Space,
-  Tag,
-  Typography,
-  Upload,
-} from 'antd'
-import type { UploadProps } from 'antd'
+  Textarea,
+  toast,
+} from '../../../shared/components'
 import {
   appealSpecialistTask,
   blockSpecialistTask,
@@ -38,11 +29,11 @@ import {
 } from '../presentation'
 import type { SpecialistTaskRecord, SpecialistTaskSopStep } from '../types'
 
-const { Paragraph, Text } = Typography
-const { TextArea } = Input
 const maxScreenshotSourceBytes = 8 * 1024 * 1024
 const maxScreenshotPayloadBytes = 800 * 1024
 const maxScreenshotDimension = 1600
+
+type ActionMode = 'submit' | 'appeal' | 'block'
 
 interface ScreenshotEvidence {
   fileName: string
@@ -51,12 +42,20 @@ interface ScreenshotEvidence {
   dataUrl: string
 }
 
-function statusColor(status: string) {
-  if (status === 'completed') return 'success'
-  if (status === 'appeal_in_review' || status === 'overdue') return 'warning'
-  if (status === 'validation_failed_penalty' || status === 'rejected_rework') return 'error'
-  if (status === 'submitted_pending_validation' || status === 'in_progress') return 'processing'
-  return 'default'
+interface EvidenceFeedback {
+  typeLabel: string
+  summary: string
+  submittedAt: string
+}
+
+interface SpecialistTaskDrawerProps {
+  open: boolean
+  task: SpecialistTaskRecord | null
+  loading?: boolean
+  onClose: () => void
+  onTaskUpdated: (task: SpecialistTaskRecord) => void
+  onRefreshTask: (taskId: string) => Promise<SpecialistTaskRecord | null>
+  onReload: () => void
 }
 
 function formatTime(value: string | null | undefined) {
@@ -152,13 +151,15 @@ function evidenceRecordSummary(payload: Record<string, unknown>) {
   return text || '已提交'
 }
 
-interface SpecialistTaskDrawerProps {
-  open: boolean
-  task: SpecialistTaskRecord | null
-  loading?: boolean
-  onClose: () => void
-  onTaskUpdated: (task: SpecialistTaskRecord) => void
-  onReload: () => void
+function taskFieldRows(task: SpecialistTaskRecord) {
+  return [
+    ['店铺', task.shopName || task.shopId || '-'],
+    ['优先级', specialistTaskPriorityLabel(task.priority)],
+    ['截止时间', formatTime(task.deadlineAt)],
+    ['负责人', task.assigneeName || task.assigneeUserId || '-'],
+    ['任务编号', task.id],
+    ['异常类型', task.anomalySignalType || '-'],
+  ] as const
 }
 
 export function SpecialistTaskDrawer({
@@ -167,21 +168,29 @@ export function SpecialistTaskDrawer({
   loading = false,
   onClose,
   onTaskUpdated,
+  onRefreshTask,
   onReload,
 }: SpecialistTaskDrawerProps) {
-  const { notification } = App.useApp()
   const [savingAction, setSavingAction] = useState('')
   const [operatorNote, setOperatorNote] = useState('')
   const [evidenceStepId, setEvidenceStepId] = useState('')
   const [evidenceType, setEvidenceType] = useState('text_note')
   const [evidenceText, setEvidenceText] = useState('')
   const [screenshotEvidence, setScreenshotEvidence] = useState<ScreenshotEvidence | null>(null)
+  const [screenshotError, setScreenshotError] = useState('')
+  const [lastEvidenceFeedback, setLastEvidenceFeedback] = useState<EvidenceFeedback | null>(null)
   const [submitSummary, setSubmitSummary] = useState('')
   const [appealReason, setAppealReason] = useState('')
   const [blockReasonCode, setBlockReasonCode] = useState('backend_unavailable')
   const [blockReasonText, setBlockReasonText] = useState('')
+  const [actionMode, setActionMode] = useState<ActionMode>('submit')
 
   const steps = task?.sopSteps ?? []
+  const requiredSteps = steps.filter((step) => step.required)
+  const requiredDoneCount = requiredSteps.filter((step) => step.status === 'done').length
+  const requiredProgressPercent = requiredSteps.length
+    ? Math.round((requiredDoneCount / requiredSteps.length) * 100)
+    : 100
   const requiredIncomplete = steps.some((step) => step.required && step.status !== 'done')
   const selectedStep = useMemo(
     () => steps.find((step) => step.stepId === evidenceStepId) ?? steps[0],
@@ -196,15 +205,19 @@ export function SpecialistTaskDrawer({
     setEvidenceType(firstEvidenceType(firstStep))
     setEvidenceText('')
     setScreenshotEvidence(null)
+    setScreenshotError('')
+    setLastEvidenceFeedback(null)
     setSubmitSummary('')
     setAppealReason('')
     setBlockReasonCode('backend_unavailable')
     setBlockReasonText('')
+    setActionMode('submit')
   }, [task?.id])
 
   useEffect(() => {
     setEvidenceType(firstEvidenceType(selectedStep))
     setScreenshotEvidence(null)
+    setScreenshotError('')
     setEvidenceText('')
   }, [selectedStep?.stepId])
 
@@ -217,13 +230,10 @@ export function SpecialistTaskDrawer({
     try {
       const nextTask = await action()
       onTaskUpdated(nextTask)
-      notification.success({ message: successMessage })
+      toast.success(successMessage)
       onReload()
     } catch (error) {
-      notification.error({
-        message: '专员任务操作失败',
-        description: error instanceof Error ? error.message : '请稍后重试',
-      })
+      toast.error(error instanceof Error ? error.message : '专员任务操作失败，请稍后重试')
     } finally {
       setSavingAction('')
     }
@@ -234,11 +244,20 @@ export function SpecialistTaskDrawer({
     : ['text_note']).map((type) => ({ value: type, label: evidenceTypeLabel(type) }))
   const screenshotSelected = evidenceType === 'screenshot'
   const linkSelected = evidenceType === 'backend_url' || evidenceType === 'product_url'
+  const evidenceLinkError = linkSelected && evidenceText.trim() && !isHttpUrl(evidenceText.trim())
+    ? '请输入 http 或 https 链接'
+    : ''
   const evidenceReady = screenshotSelected
-    ? Boolean(screenshotEvidence)
+    ? Boolean(screenshotEvidence) && !screenshotError
     : linkSelected
-      ? isHttpUrl(evidenceText.trim())
+      ? isHttpUrl(evidenceText.trim()) && !evidenceLinkError
       : Boolean(evidenceText.trim())
+  const busy = Boolean(savingAction)
+  const actionHelp = actionMode === 'submit'
+    ? '完成必填 SOP 后提交处理结果，服务端会再次校验任务状态。'
+    : actionMode === 'appeal'
+      ? '用于任务不适用、平台统计延迟等情况，提交后进入主管复核。'
+      : '用于 1688 后台不可用、权限缺失、数据缺失等现场阻塞，提交后等待主管处理。'
 
   function buildEvidencePayload(): Record<string, unknown> {
     if (screenshotSelected && screenshotEvidence) {
@@ -250,323 +269,421 @@ export function SpecialistTaskDrawer({
     return { text: evidenceText.trim() }
   }
 
-  const screenshotUploadProps: UploadProps = {
-    accept: 'image/png,image/jpeg,image/webp',
-    maxCount: 1,
-    showUploadList: false,
-    beforeUpload: async (file) => {
-      try {
-        setScreenshotEvidence(await prepareScreenshotEvidence(file))
-      } catch (error) {
-        setScreenshotEvidence(null)
-        notification.error({
-          message: '截图处理失败',
-          description: error instanceof Error ? error.message : '请重新选择截图',
-        })
-      }
-      return Upload.LIST_IGNORE
-    },
+  async function handleScreenshotChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      setScreenshotError('')
+      setScreenshotEvidence(await prepareScreenshotEvidence(file))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '截图处理失败，请重新选择截图'
+      setScreenshotEvidence(null)
+      setScreenshotError(message)
+      toast.error(message)
+    }
+  }
+
+  function renderFooterAction() {
+    if (!task) return null
+    if (actionMode === 'appeal') {
+      return (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!appealReason.trim() || busy}
+          loading={savingAction === 'appeal'}
+          onClick={() => void runAction(
+            'appeal',
+            async () => (await appealSpecialistTask(task.id, { reason: appealReason.trim() })).task,
+            '申诉已提交',
+          )}
+        >
+          提交申诉
+        </Button>
+      )
+    }
+    if (actionMode === 'block') {
+      return (
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={!blockReasonText.trim() || busy}
+          loading={savingAction === 'block'}
+          onClick={() => void runAction(
+            'block',
+            async () => (await blockSpecialistTask(task.id, {
+              reasonCode: blockReasonCode,
+              reasonText: blockReasonText.trim(),
+            })).task,
+            '阻塞原因已提交',
+          )}
+        >
+          提交无法处理
+        </Button>
+      )
+    }
+    return (
+      <Button
+        size="sm"
+        disabled={requiredIncomplete || busy}
+        loading={savingAction === 'submit'}
+        title={requiredIncomplete ? '完成全部必填 SOP 后才能提交' : '提交处理结果'}
+        onClick={() => void runAction(
+          'submit',
+          async () => (await submitSpecialistTask(task.id, { summary: submitSummary.trim() })).task,
+          '任务已提交待验收',
+        )}
+      >
+        提交处理结果
+      </Button>
+    )
   }
 
   return (
     <Drawer
       open={open}
-      width={920}
-      destroyOnClose
+      width="920px"
       title={task?.title || '任务详情'}
-      extra={task ? <Tag color={statusColor(task.status)}>{specialistTaskStatusLabel(task.status)}</Tag> : null}
+      subtitle={task ? specialistTaskStatusLabel(task.status) : undefined}
       onClose={onClose}
       footer={task ? (
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <Text type="secondary">必填 SOP：{requiredStepSummary(steps)}</Text>
-          <Space wrap>
-            <Button
-              disabled={!appealReason.trim() || Boolean(savingAction)}
-              loading={savingAction === 'appeal'}
-              onClick={() => void runAction(
-                'appeal',
-                async () => (await appealSpecialistTask(task.id, { reason: appealReason.trim() })).task,
-                '申诉已提交',
-              )}
-            >
-              提交申诉
-            </Button>
-            <Button
-              danger
-              disabled={!blockReasonText.trim() || Boolean(savingAction)}
-              loading={savingAction === 'block'}
-              onClick={() => void runAction(
-                'block',
-                async () => (await blockSpecialistTask(task.id, {
-                  reasonCode: blockReasonCode,
-                  reasonText: blockReasonText.trim(),
-                })).task,
-                '阻塞原因已提交',
-              )}
-            >
-              提交无法处理
-            </Button>
-            <Button
-              type="primary"
-              disabled={requiredIncomplete || Boolean(savingAction)}
-              loading={savingAction === 'submit'}
-              title={requiredIncomplete ? '完成全部必填 SOP 后才能提交' : '提交处理结果'}
-              onClick={() => void runAction(
-                'submit',
-                async () => (await submitSpecialistTask(task.id, { summary: submitSummary.trim() })).task,
-                '任务已提交待验收',
-              )}
-            >
-              提交处理结果
-            </Button>
-          </Space>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-sm text-[var(--color-text-muted)]">
+            必填 SOP：{requiredStepSummary(steps)}，当前动作：{actionMode === 'submit' ? '提交结果' : actionMode === 'appeal' ? '申诉' : '无法处理'}
+          </span>
+          <div className="flex justify-end">{renderFooterAction()}</div>
         </div>
       ) : null}
     >
-      {loading && !task ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
-      {!loading && !task ? <Empty description="请选择任务" /> : null}
+      {loading && !task ? (
+        <div className="flex items-center gap-2 py-10 text-sm text-[var(--color-text-muted)]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          正在读取任务详情...
+        </div>
+      ) : null}
+      {!loading && !task ? (
+        <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">请选择任务</div>
+      ) : null}
       {task ? (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 4 }}>
-            <Descriptions.Item label="店铺">{task.shopName || task.shopId || '-'}</Descriptions.Item>
-            <Descriptions.Item label="优先级">{specialistTaskPriorityLabel(task.priority)}</Descriptions.Item>
-            <Descriptions.Item label="截止时间">{formatTime(task.deadlineAt)}</Descriptions.Item>
-            <Descriptions.Item label="负责人">{task.assigneeName || task.assigneeUserId || '-'}</Descriptions.Item>
-            <Descriptions.Item label="任务编号" span={2}>{task.id}</Descriptions.Item>
-            <Descriptions.Item label="异常类型" span={2}>{task.anomalySignalType || '-'}</Descriptions.Item>
-          </Descriptions>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 overflow-hidden rounded-xl border border-[var(--color-border-default)] sm:grid-cols-2 lg:grid-cols-3">
+            {taskFieldRows(task).map(([label, value]) => (
+              <div key={label} className="border-b border-r border-[var(--color-border-muted)] p-3 last:border-r-0">
+                <div className="text-xs text-[var(--color-text-muted)]">{label}</div>
+                <div className="mt-1 truncate text-sm font-medium text-[var(--color-text-primary)]">{value}</div>
+              </div>
+            ))}
+          </div>
 
-          {task.description ? <Alert type="info" showIcon message="任务说明" description={task.description} /> : null}
+          {task.description ? (
+            <Alert type="info" title="任务说明" message={task.description} />
+          ) : null}
 
-          <Card size="small" title={`SOP 步骤（必填 ${requiredStepSummary(steps)}）`}>
+          <Card
+            title="SOP 执行"
+            actions={(
+              <div className="w-40">
+                <div className="mb-1 flex justify-between text-xs text-[var(--color-text-muted)]">
+                  <span>必填 {requiredStepSummary(steps)}</span>
+                  <span>{requiredDoneCount}/{requiredSteps.length || 0}</span>
+                </div>
+                <Progress percent={requiredProgressPercent} showInfo={false} size="sm" />
+              </div>
+            )}
+            padding="sm"
+          >
             {steps.length ? (
-              <List
-                size="small"
-                dataSource={steps}
-                renderItem={(step) => {
+              <div className="space-y-2">
+                {steps.map((step, index) => {
                   const done = step.status === 'done'
+                  const active = selectedStep?.stepId === step.stepId
                   return (
-                    <List.Item
-                      actions={[
-                        <Checkbox
-                          key="status"
-                          checked={done}
-                          disabled={Boolean(savingAction)}
-                          onChange={() => void runAction(
-                            `step:${step.stepId}`,
-                            async () => (await updateSpecialistTaskSopStep(task.id, step.stepId, {
-                              status: done ? 'not_started' : 'done',
-                              operatorNote: operatorNote.trim(),
-                              evidenceRefs: step.evidenceRefs,
-                            })).task,
-                            done ? 'SOP 步骤已改为未完成' : 'SOP 步骤已完成',
-                          )}
-                        >
-                          {done ? '已完成' : '标记完成'}
-                        </Checkbox>,
-                      ]}
+                    <button
+                      key={step.stepId}
+                      type="button"
+                      className={clsx(
+                        'w-full rounded-lg border p-3 text-left transition-colors',
+                        active
+                          ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)]'
+                          : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] hover:bg-[var(--color-bg-muted)]',
+                      )}
+                      onClick={() => setEvidenceStepId(step.stepId)}
                     >
-                      <List.Item.Meta
-                        title={(
-                          <Space wrap>
-                            <Text strong>{step.title || step.stepId}</Text>
-                            <Tag color={step.required ? 'warning' : 'default'}>{step.required ? '必填' : '可选'}</Tag>
-                          </Space>
-                        )}
-                        description={(
-                          <Space direction="vertical" size={2}>
-                            {step.description ? <Text type="secondary">{step.description}</Text> : null}
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              证据要求：{step.evidenceTypes.map(evidenceTypeLabel).join('、') || '未限制'}
-                            </Text>
-                            {step.operatorNote ? <Text style={{ fontSize: 12 }}>执行备注：{step.operatorNote}</Text> : null}
-                          </Space>
-                        )}
-                      />
-                    </List.Item>
+                      <div className="flex items-start gap-3">
+                        <div className={clsx(
+                          'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                          done ? 'bg-[var(--color-success)] text-white' : 'bg-[var(--color-bg-muted)] text-[var(--color-text-secondary)]',
+                        )}>
+                          {done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-[var(--color-text-primary)]">{step.title || step.stepId}</span>
+                            <Badge variant={step.required ? 'warning' : 'default'} size="sm">{step.required ? '必填' : '可选'}</Badge>
+                          </div>
+                          {step.description ? (
+                            <p className="mt-1 text-sm text-[var(--color-text-muted)]">{step.description}</p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            证据要求：{step.evidenceTypes.map(evidenceTypeLabel).join('、') || '未限制'}
+                          </p>
+                          {step.operatorNote ? (
+                            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">执行备注：{step.operatorNote}</p>
+                          ) : null}
+                          <label className="mt-2 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)]" onClick={(event) => event.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={done}
+                              disabled={busy}
+                              onChange={() => void runAction(
+                                `step:${step.stepId}`,
+                                async () => {
+                                  const result = await updateSpecialistTaskSopStep(task.id, step.stepId, {
+                                    status: done ? 'not_started' : 'done',
+                                    operatorNote: operatorNote.trim(),
+                                    evidenceRefs: step.evidenceRefs,
+                                  })
+                                  try {
+                                    const refreshedTask = await onRefreshTask(task.id)
+                                    return refreshedTask ?? result.task
+                                  } catch {
+                                    toast.warning('SOP 状态已提交，但任务详情刷新失败，请手动刷新')
+                                    return result.task
+                                  }
+                                },
+                                done ? 'SOP 步骤已改为未完成' : 'SOP 步骤已完成',
+                              )}
+                            />
+                            {done ? '已完成，点此撤回' : '标记完成'}
+                          </label>
+                        </div>
+                      </div>
+                    </button>
                   )
-                }}
-              />
-            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该任务没有 SOP 步骤" />}
-            <Divider style={{ margin: '12px 0' }} />
-            <Form.Item label="本次步骤备注" style={{ marginBottom: 0 }}>
-              <Input
-                value={operatorNote}
-                maxLength={500}
-                placeholder="勾选步骤时一并提交，说明现场处理情况"
-                onChange={(event) => setOperatorNote(event.target.value)}
-              />
-            </Form.Item>
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-[var(--color-text-muted)]">该任务没有 SOP 步骤</div>
+            )}
+            <div className="mt-3 border-t border-[var(--color-border-muted)] pt-3">
+              <FormItem label="本次步骤备注">
+                <Input
+                  value={operatorNote}
+                  maxLength={500}
+                  placeholder="勾选步骤时一并提交，说明现场处理情况"
+                  onChange={(event) => setOperatorNote(event.target.value)}
+                />
+              </FormItem>
+            </div>
           </Card>
 
-          <Card size="small" title="提交证据">
-            <Row gutter={12}>
-              <Col xs={24} md={8}>
-                <Form.Item label="SOP 步骤">
-                  <Select
-                    value={selectedStep?.stepId || undefined}
-                    style={{ width: '100%' }}
-                    placeholder="选择步骤"
-                    options={steps.map((step) => ({ value: step.stepId, label: step.title || step.stepId }))}
-                    onChange={setEvidenceStepId}
-                  />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={6}>
-                <Form.Item label="证据类型">
-                  <Select
-                    value={evidenceType}
-                    style={{ width: '100%' }}
-                    options={evidenceOptions}
-                    onChange={(nextType) => {
-                      setEvidenceType(nextType)
-                      setEvidenceText('')
-                      setScreenshotEvidence(null)
-                    }}
-                  />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={10}>
-                {screenshotSelected ? (
-                  <Form.Item label="截图附件" extra="自动压缩为 JPG，单张提交数据不超过 800 KB。">
-                    <Space direction="vertical" size={4}>
-                      <Upload {...screenshotUploadProps}>
-                        <Button icon={<UploadOutlined />}>选择截图</Button>
-                      </Upload>
-                      <Text type={screenshotEvidence ? 'success' : 'secondary'}>
-                        {screenshotEvidence
-                          ? `${screenshotEvidence.fileName}（${Math.ceil(screenshotEvidence.size / 1024)} KB）`
-                          : '尚未选择截图'}
-                      </Text>
-                      <Input
-                        value={evidenceText}
-                        maxLength={500}
-                        placeholder="可补充截图说明"
-                        onChange={(event) => setEvidenceText(event.target.value)}
+          <Card title="提交证据" padding="sm">
+            <div className="grid gap-3 lg:grid-cols-[1fr_180px_1.2fr]">
+              <FormItem label="SOP 步骤">
+                <Select
+                  value={selectedStep?.stepId || ''}
+                  options={steps.map((step) => ({ value: step.stepId, label: step.title || step.stepId }))}
+                  onChange={(event) => setEvidenceStepId(event.target.value)}
+                />
+              </FormItem>
+              <FormItem label="证据类型">
+                <Select
+                  value={evidenceType}
+                  options={evidenceOptions}
+                  onChange={(event) => {
+                    setEvidenceType(event.target.value)
+                    setEvidenceText('')
+                    setScreenshotEvidence(null)
+                  }}
+                />
+              </FormItem>
+              {screenshotSelected ? (
+                <FormItem label="截图附件" hint="自动压缩为 JPG，单张不超过 800 KB" error={screenshotError}>
+                  <div className="space-y-2">
+                    <label className="inline-flex">
+                      <input
+                        type="file"
+                        className="sr-only"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(event) => void handleScreenshotChange(event)}
                       />
-                    </Space>
-                  </Form.Item>
-                ) : (
-                  <Form.Item label={linkSelected ? '证据链接' : '证据说明'}>
-                    {linkSelected ? (
-                      <Input
-                        value={evidenceText}
-                        maxLength={2000}
-                        status={evidenceText && !isHttpUrl(evidenceText.trim()) ? 'error' : undefined}
-                        placeholder={evidenceType === 'product_url' ? 'https://detail.1688.com/...' : 'https://work.1688.com/...'}
-                        onChange={(event) => setEvidenceText(event.target.value)}
-                      />
-                    ) : (
-                      <TextArea
-                        rows={2}
-                        maxLength={2000}
-                        showCount
-                        value={evidenceText}
-                        placeholder="填写操作结果或说明"
-                        onChange={(event) => setEvidenceText(event.target.value)}
-                      />
-                    )}
-                  </Form.Item>
-                )}
-              </Col>
-            </Row>
-            <Button
-              type="primary"
-              disabled={!selectedStep || !evidenceReady || Boolean(savingAction)}
-              loading={savingAction === 'evidence'}
-              onClick={() => void runAction(
-                'evidence',
-                async () => {
+                      <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border-default)] px-3 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]">
+                        <FileImage className="h-4 w-4" />
+                        选择截图
+                      </span>
+                    </label>
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {screenshotEvidence
+                        ? `${screenshotEvidence.fileName}（${Math.ceil(screenshotEvidence.size / 1024)} KB）`
+                        : '尚未选择截图'}
+                    </div>
+                    <Input
+                      value={evidenceText}
+                      maxLength={500}
+                      placeholder="可补充截图说明"
+                      onChange={(event) => setEvidenceText(event.target.value)}
+                    />
+                  </div>
+                </FormItem>
+              ) : (
+                <FormItem label={linkSelected ? '证据链接' : '证据说明'} error={evidenceLinkError}>
+                  {linkSelected ? (
+                    <Input
+                      value={evidenceText}
+                      maxLength={2000}
+                      placeholder={evidenceType === 'product_url' ? 'https://detail.1688.com/...' : 'https://work.1688.com/...'}
+                      onChange={(event) => setEvidenceText(event.target.value)}
+                    />
+                  ) : (
+                    <Textarea
+                      rows={2}
+                      maxLength={2000}
+                      value={evidenceText}
+                      placeholder="填写操作结果或说明"
+                      onChange={(event) => setEvidenceText(event.target.value)}
+                    />
+                  )}
+                </FormItem>
+              )}
+            </div>
+            <div className="mt-3">
+              <Button
+                size="sm"
+                disabled={!selectedStep || !evidenceReady || busy}
+                loading={savingAction === 'evidence'}
+                onClick={() => void runAction(
+                  'evidence',
+                  async () => {
+                    const payload = buildEvidencePayload()
                     const result = await submitSpecialistTaskEvidence(task.id, {
                       stepId: selectedStep?.stepId || '',
                       evidenceType,
-                      payload: buildEvidencePayload(),
+                      payload,
+                    })
+                    setLastEvidenceFeedback({
+                      typeLabel: evidenceTypeLabel(evidenceType),
+                      summary: evidenceRecordSummary(payload),
+                      submittedAt: new Date().toISOString(),
                     })
                     setEvidenceText('')
                     setScreenshotEvidence(null)
-                  return result.task
-                },
-                '证据已提交',
-              )}
-            >
-              提交证据
-            </Button>
-            {task.evidenceRecords.length ? (
-              <List
-                className="mt-3"
-                size="small"
-                dataSource={task.evidenceRecords}
-                renderItem={(record) => (
-                  <List.Item>
-                    <Text>
-                      {evidenceTypeLabel(record.evidenceType)}，{evidenceRecordSummary(record.payload)}，
-                      {record.stepId || '任务级'}，{formatTime(record.createdAt)}
-                    </Text>
-                  </List.Item>
+                    setScreenshotError('')
+                    try {
+                      const refreshedTask = await onRefreshTask(task.id)
+                      return refreshedTask ?? result.task
+                    } catch {
+                      toast.warning('证据已提交，但任务详情刷新失败，请手动刷新')
+                      return result.task
+                    }
+                  },
+                  '证据已提交',
                 )}
+              >
+                提交证据
+              </Button>
+            </div>
+            {lastEvidenceFeedback ? (
+              <Alert
+                type="success"
+                title="最近提交反馈"
+                message={`${lastEvidenceFeedback.typeLabel}：${lastEvidenceFeedback.summary}，${formatTime(lastEvidenceFeedback.submittedAt)}`}
+                className="mt-3"
               />
+            ) : null}
+            {task.evidenceRecords.length ? (
+              <div className="mt-3 divide-y divide-[var(--color-border-muted)] rounded-lg border border-[var(--color-border-muted)]">
+                {task.evidenceRecords.map((record) => (
+                  <div key={record.id} className="px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+                    {evidenceTypeLabel(record.evidenceType)}，{evidenceRecordSummary(record.payload)}，
+                    {record.stepId || '任务级'}，{formatTime(record.createdAt)}
+                  </div>
+                ))}
+              </div>
             ) : null}
           </Card>
 
-          <Card size="small" title="提交与异常处理">
-            <Row gutter={12}>
-              <Col xs={24} lg={8}>
-                <Form.Item label="处理结果摘要">
-                  <TextArea
+          <Card title="提交与异常处理" padding="sm">
+            <div role="tablist" aria-label="任务提交动作" className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--color-bg-muted)] p-1">
+              {([
+                ['submit', '提交处理结果'],
+                ['appeal', '提交申诉'],
+                ['block', '提交无法处理'],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={actionMode === mode}
+                  className={clsx(
+                    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    actionMode === mode
+                      ? 'bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]',
+                  )}
+                  onClick={() => setActionMode(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Alert type="info" message={actionHelp} className="mt-3" />
+            <div className="mt-3">
+              {actionMode === 'submit' ? (
+                <FormItem label="处理结果摘要">
+                  <Textarea
                     rows={4}
                     maxLength={2000}
-                    showCount
                     value={submitSummary}
                     placeholder="填写本次处理结果，提交后进入验收"
                     onChange={(event) => setSubmitSummary(event.target.value)}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={24} lg={8}>
-                <Form.Item label="申诉原因">
-                  <TextArea
+                </FormItem>
+              ) : null}
+              {actionMode === 'appeal' ? (
+                <FormItem label="申诉原因">
+                  <Textarea
                     rows={4}
                     maxLength={1000}
-                    showCount
                     value={appealReason}
                     placeholder="例如平台统计延迟、任务不适用"
                     onChange={(event) => setAppealReason(event.target.value)}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={24} lg={8}>
-                <Form.Item label="无法处理原因">
-                  <Select
-                    value={blockReasonCode}
-                    style={{ width: '100%' }}
-                    options={[
-                      { value: 'backend_unavailable', label: '1688 后台不可用' },
-                      { value: 'permission_missing', label: '缺少后台权限' },
-                      { value: 'data_not_found', label: '数据不存在' },
-                      { value: 'other', label: '其他原因' },
-                    ]}
-                    onChange={setBlockReasonCode}
-                  />
-                </Form.Item>
-                <Form.Item label="原因说明">
-                  <TextArea
-                    rows={2}
-                    maxLength={1000}
-                    showCount
-                    value={blockReasonText}
-                    placeholder="写清现场情况，方便主管复核"
-                    onChange={(event) => setBlockReasonText(event.target.value)}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
+                </FormItem>
+              ) : null}
+              {actionMode === 'block' ? (
+                <div className="grid gap-3 md:grid-cols-[220px_1fr]">
+                  <FormItem label="无法处理原因">
+                    <Select
+                      value={blockReasonCode}
+                      options={[
+                        { value: 'backend_unavailable', label: '1688 后台不可用' },
+                        { value: 'permission_missing', label: '缺少后台权限' },
+                        { value: 'data_not_found', label: '数据不存在' },
+                        { value: 'other', label: '其他原因' },
+                      ]}
+                      onChange={(event) => setBlockReasonCode(event.target.value)}
+                    />
+                  </FormItem>
+                  <FormItem label="原因说明">
+                    <Textarea
+                      rows={3}
+                      maxLength={1000}
+                      value={blockReasonText}
+                      placeholder="写清现场情况，方便主管复核"
+                      onChange={(event) => setBlockReasonText(event.target.value)}
+                    />
+                  </FormItem>
+                </div>
+              ) : null}
+            </div>
             {requiredIncomplete ? (
-              <Paragraph type="warning" style={{ marginBottom: 0 }}>
+              <p className="mt-3 text-sm text-[var(--color-warning)]">
                 完成全部必填 SOP 后才能提交处理结果，服务端会再次校验。
-              </Paragraph>
+              </p>
             ) : null}
           </Card>
-        </Space>
+        </div>
       ) : null}
     </Drawer>
   )

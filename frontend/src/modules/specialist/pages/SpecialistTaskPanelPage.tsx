@@ -1,21 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ReloadOutlined } from '@ant-design/icons'
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Col,
-  Row,
-  Select,
-  Space,
-  Statistic,
-  Table,
-  Tag,
-  Typography,
-} from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import { Alert, Badge, Button, Card, DataTable, Select, toast } from '../../../shared/components'
+import type { DataTableColumn } from '../../../shared/components'
 import {
   fetchShopSpecialistTasks,
   fetchSpecialistTaskDetail,
@@ -29,21 +16,19 @@ import {
 import type { SpecialistTaskListResponse, SpecialistTaskRecord } from '../types'
 import { SpecialistTaskDrawer } from '../components/SpecialistTaskDrawer'
 
-const { Text, Title } = Typography
-
-function statusColor(status: string) {
+function statusVariant(status: string): 'default' | 'success' | 'error' | 'warning' | 'info' {
   if (status === 'completed') return 'success'
   if (status === 'appeal_in_review' || status === 'overdue') return 'warning'
   if (status === 'validation_failed_penalty' || status === 'rejected_rework') return 'error'
-  if (status === 'submitted_pending_validation' || status === 'in_progress') return 'processing'
+  if (status === 'submitted_pending_validation' || status === 'in_progress') return 'info'
   return 'default'
 }
 
-function deadlineColor(deadlineAt: string | null) {
+function deadlineClassName(deadlineAt: string | null) {
   const tone = specialistTaskDeadlineTone(deadlineAt)
-  if (tone === 'danger') return '#cf1322'
-  if (tone === 'warning') return '#d46b08'
-  return undefined
+  if (tone === 'danger') return 'text-[var(--color-error)]'
+  if (tone === 'warning') return 'text-[var(--color-warning)]'
+  return 'text-[var(--color-text-secondary)]'
 }
 
 function formatTime(value: string | null | undefined) {
@@ -76,7 +61,6 @@ function emptyOverview(): SpecialistTaskListResponse {
 }
 
 export function SpecialistTaskPanelPage() {
-  const { notification } = App.useApp()
   const [searchParams] = useSearchParams()
   const shopId = searchParams.get('shopId')?.trim() || ''
   const [statusFilter, setStatusFilter] = useState('')
@@ -101,7 +85,7 @@ export function SpecialistTaskPanelPage() {
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : '专员任务加载失败'
       setError(message)
-      notification.error({ message: '任务读取失败', description: message })
+      toast.error(`任务读取失败：${message}`)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -115,85 +99,96 @@ export function SpecialistTaskPanelPage() {
     try {
       setSelectedTask(await fetchSpecialistTaskDetail(task.id))
     } catch (detailError) {
-      notification.error({
-        message: '任务详情加载失败',
-        description: detailError instanceof Error ? detailError.message : '请稍后重试',
-      })
+      toast.error(detailError instanceof Error ? `任务详情加载失败：${detailError.message}` : '任务详情加载失败，请稍后重试')
     } finally {
       setDetailLoading(false)
     }
+  }
+
+  async function refreshSelectedTask(taskId: string): Promise<SpecialistTaskRecord | null> {
+    const normalizedTaskId = taskId.trim()
+    if (!normalizedTaskId) return null
+    const nextTask = await fetchSpecialistTaskDetail(normalizedTaskId)
+    setSelectedTask(nextTask)
+    return nextTask
   }
 
   useEffect(() => {
     void load()
   }, [shopId, statusFilter])
 
-  const columns = useMemo<ColumnsType<SpecialistTaskRecord>>(() => [
+  const columns = useMemo<DataTableColumn<SpecialistTaskRecord>[]>(() => [
     {
       title: '任务',
-      dataIndex: 'title',
       key: 'title',
-      width: 300,
-      ellipsis: true,
+      width: 320,
+      minWidth: 260,
+      fixed: 'left',
+      filterable: true,
+      filterValue: (row) => `${row.title} ${row.description} ${row.id}`,
       render: (_, row) => (
-        <Space direction="vertical" size={0} className="min-w-0">
-          <Text strong ellipsis={{ tooltip: row.title || row.id }} style={{ maxWidth: 270 }}>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
             {row.title || row.id}
-          </Text>
-          <Text type="secondary" ellipsis={{ tooltip: row.description }} style={{ maxWidth: 270, fontSize: 12 }}>
+          </div>
+          <div className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
             {row.description || row.id}
-          </Text>
-        </Space>
+          </div>
+        </div>
       ),
     },
     {
       title: '店铺',
-      dataIndex: 'shopName',
       key: 'shopName',
       width: 220,
-      ellipsis: true,
+      minWidth: 180,
+      filterable: true,
+      filterValue: (row) => `${row.shopName} ${row.shopId}`,
       render: (_, row) => (
-        <Space direction="vertical" size={0} className="min-w-0">
-          <Text ellipsis={{ tooltip: row.shopName || row.shopId }} style={{ maxWidth: 190 }}>
-            {row.shopName || row.shopId}
-          </Text>
-          <Text type="secondary" ellipsis={{ tooltip: row.shopId }} style={{ maxWidth: 190, fontSize: 12 }}>
-            {row.shopId}
-          </Text>
-        </Space>
+        <div className="min-w-0">
+          <div className="truncate text-sm text-[var(--color-text-primary)]">{row.shopName || row.shopId || '-'}</div>
+          <div className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{row.shopId || '-'}</div>
+        </div>
       ),
     },
     {
       title: '状态',
-      dataIndex: 'status',
       key: 'status',
-      width: 138,
+      width: 130,
+      minWidth: 110,
+      filterable: true,
       render: (status: string) => (
-        <Tag color={statusColor(String(status))}>{specialistTaskStatusLabel(String(status))}</Tag>
+        <Badge variant={statusVariant(String(status))} dot>{specialistTaskStatusLabel(String(status))}</Badge>
       ),
     },
     {
       title: '优先级',
-      dataIndex: 'priority',
       key: 'priority',
-      width: 90,
+      width: 96,
+      minWidth: 86,
       render: (priority: string) => specialistTaskPriorityLabel(priority),
     },
     {
       title: '截止时间',
-      dataIndex: 'deadlineAt',
       key: 'deadlineAt',
       width: 150,
+      minWidth: 130,
+      sortable: true,
+      sortValue: (row) => row.deadlineAt ? new Date(row.deadlineAt).getTime() : 0,
       render: (deadlineAt: string | null) => (
-        <Text style={{ color: deadlineColor(deadlineAt) }}>{formatTime(deadlineAt)}</Text>
+        <span className={deadlineClassName(deadlineAt)}>{formatTime(deadlineAt)}</span>
       ),
     },
     {
       title: '更新时间',
-      dataIndex: 'updatedAt',
       key: 'updatedAt',
       width: 150,
-      render: (value: string) => <Text type="secondary">{formatTime(value)}</Text>,
+      minWidth: 130,
+      sortable: true,
+      sortValue: (row) => row.updatedAt ? new Date(row.updatedAt).getTime() : 0,
+      render: (value: string) => (
+        <span className="text-[var(--color-text-muted)]">{formatTime(value)}</span>
+      ),
     },
   ], [])
 
@@ -208,19 +203,19 @@ export function SpecialistTaskPanelPage() {
   ] as const
 
   return (
-    <div className="specialist-task-panel space-y-4 p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <Title level={4} style={{ margin: 0 }}>专员任务台</Title>
-          <Text type="secondary">
+    <div className="specialist-task-panel flex h-full min-h-0 flex-col gap-4 overflow-hidden animate-fade-in">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-semibold text-[var(--color-text-primary)]">专员任务台</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             {shopId ? `当前仅看店铺 ${shopId} 的专员任务。` : '按 SOP 执行、回传证据并提交验收。'}
-          </Text>
+          </p>
         </div>
-        <Space wrap>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
           <Select
             aria-label="任务状态"
             value={statusFilter}
-            style={{ width: 190 }}
+            className="w-full sm:w-48"
             options={[
               { value: '', label: '全部状态' },
               { value: 'pending', label: '待开始' },
@@ -229,60 +224,50 @@ export function SpecialistTaskPanelPage() {
               { value: 'appeal_in_review', label: '申诉中' },
               { value: 'completed', label: '已完成' },
             ]}
-            onChange={setStatusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
           />
           <Button
-            icon={<ReloadOutlined />}
+            variant="secondary"
+            size="sm"
+            className="w-full sm:w-auto"
             loading={refreshing}
             onClick={() => void load(true)}
           >
+            <RefreshCw className="h-4 w-4" />
             刷新任务
           </Button>
-        </Space>
+        </div>
       </div>
 
       {shopId ? (
         <Alert
           type="info"
-          showIcon
-          message="店铺级任务视图"
-          description="仅展示当前店铺的专员任务，适合同屏打开 1688 后台后逐项处理。"
+          title="店铺级任务视图"
+          message="仅展示当前店铺的专员任务，适合同屏打开 1688 后台后逐项处理。"
         />
       ) : null}
-      {error ? <Alert type="error" showIcon message="任务读取失败" description={error} /> : null}
+      {error ? <Alert type="error" title="任务读取失败" message={error} /> : null}
 
-      <Card className="specialist-task-panel__metrics" size="small" styles={{ body: { padding: '12px 16px' } }}>
-        <Row gutter={[16, 12]}>
-          {metrics.map(([title, value]) => (
-            <Col key={title} xs={12} sm={8} lg={4}>
-              <Statistic title={title} value={loading ? '-' : value} valueStyle={{ fontSize: 20 }} />
-            </Col>
-          ))}
-        </Row>
-      </Card>
+      <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {metrics.map(([title, value]) => (
+          <Card key={title} padding="sm">
+            <p className="text-xs text-[var(--color-text-muted)]">{title}</p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">{loading ? '-' : value}</p>
+          </Card>
+        ))}
+      </div>
 
-      <Card className="specialist-task-panel__table" size="small" styles={{ body: { padding: 0 } }}>
-        <Table
+      <Card padding="none" className="flex min-h-0 flex-1 flex-col" bodyClassName="flex min-h-0 flex-1 flex-col">
+        <DataTable
           rowKey="id"
-          size="small"
           columns={columns}
-          dataSource={overview.items}
+          data={overview.items}
           loading={loading}
-          pagination={false}
-          scroll={{ x: 1040, y: 'calc(100vh - 360px)' }}
-          locale={{ emptyText: shopId ? '该店铺暂无专员任务' : '今日暂无专员任务' }}
-          onRow={(row) => ({
-            onClick: () => void openTask(row),
-            onKeyDown: (event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                void openTask(row)
-              }
-            },
-            tabIndex: 0,
-            style: { cursor: 'pointer' },
-            'aria-label': `查看任务：${row.title || row.id}`,
-          })}
+          emptyText={shopId ? '该店铺暂无专员任务' : '今日暂无专员任务'}
+          fillHeight
+          selectable
+          storageKey="client-specialist-task-table-columns"
+          onRowClick={(row) => void openTask(row)}
         />
       </Card>
 
@@ -295,6 +280,7 @@ export function SpecialistTaskPanelPage() {
           setSelectedTask(null)
         }}
         onTaskUpdated={setSelectedTask}
+        onRefreshTask={refreshSelectedTask}
         onReload={() => void load(true)}
       />
     </div>
