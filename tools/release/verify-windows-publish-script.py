@@ -10,7 +10,9 @@ WORKFLOW = ROOT / ".github" / "workflows" / "windows-release-factory.yml"
 PREFLIGHT = ROOT / "tools" / "release" / "windows-release-preflight.ps1"
 RUNNER_SETUP = ROOT / "docs" / "release" / "windows-self-hosted-runner-setup.md"
 INSTALLER = ROOT / "publish" / "installer.nsi"
+RELEASE_CONFIG = ROOT / "publish" / "config.init.yaml"
 UPLOAD_SCRIPT = ROOT / "tools" / "release" / "upload-windows-release.ps1"
+STABLE_APP_UPDATE_MANIFEST_URL = "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"
 
 
 def require_contains(path: Path, needle: str) -> None:
@@ -123,7 +125,13 @@ def main() -> None:
     require_contains(INSTALLER, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"')
     require_contains(INSTALLER, 'RMDir /r "$SMPROGRAMS\\Ant Browser"')
     require_contains(INSTALLER, 'Delete /REBOOTOK "$DESKTOP\\Ant Browser.lnk"')
-    print("[OK] windows publish script chrome resource contract verified")
+    require_contains(
+        RELEASE_CONFIG,
+        'release:\n  update_manifest_url: ""\n  app_update_manifest_url: "'
+        + STABLE_APP_UPDATE_MANIFEST_URL
+        + '"',
+    )
+    print("[OK] windows publish contract verified")
 
 
 if __name__ == "__main__":

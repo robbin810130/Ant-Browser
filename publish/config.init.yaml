@@ -53,4 +53,4 @@ launch_server:
   port: 19876
 release:
   update_manifest_url: ""
-  app_update_manifest_url: ""
+  app_update_manifest_url: "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"
