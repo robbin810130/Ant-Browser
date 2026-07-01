@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"ant-chrome/backend/internal/config"
 )
@@ -145,6 +147,124 @@ func TestResolveManifestSourceUsesConfig(t *testing.T) {
 	}
 	if resolution.Source != "config.yaml" {
 		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+}
+
+func TestResolveManifestSourceUsesDefaultStableManifest(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "")
+	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "")
+
+	resolution := resolveManifestSourceForGOOS(t.TempDir(), &config.Config{}, "windows")
+
+	if resolution.URL != DefaultStableManifestURL {
+		t.Fatalf("default stable URL 不正确: got=%q want=%q", resolution.URL, DefaultStableManifestURL)
+	}
+	if resolution.Source != "default-stable" {
+		t.Fatalf("Source 不正确: got=%q", resolution.Source)
+	}
+	if resolution.ConfigPath != "" {
+		t.Fatalf("ConfigPath 应为空: got=%q", resolution.ConfigPath)
+	}
+}
+
+func TestResolveManifestSourceDoesNotUseDefaultStableManifestOnDarwin(t *testing.T) {
+	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "")
+	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "")
+
+	resolution := resolveManifestSourceForGOOS(t.TempDir(), &config.Config{}, "darwin")
+
+	if resolution != (ManifestSourceResolution{}) {
+		t.Fatalf("darwin 不应使用 Windows 默认 stable manifest: got=%+v", resolution)
+	}
+}
+
+func TestManifestHTTPClientHasTimeout(t *testing.T) {
+	if timeout := newManifestHTTPClient().Timeout; timeout != 15*time.Second {
+		t.Fatalf("manifest HTTP client timeout 不正确: got=%s want=%s", timeout, 15*time.Second)
+	}
+}
+
+func TestLoadManifestFromSourceRejectsCrossOriginRedirect(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(validManifestJSON()))
+	}))
+	defer targetServer.Close()
+
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetServer.URL, http.StatusFound)
+	}))
+	defer sourceServer.Close()
+
+	_, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: sourceServer.URL})
+	if err == nil || !strings.Contains(err.Error(), "cross-origin redirect") {
+		t.Fatalf("跨源 redirect 应被拒绝: got=%v", err)
+	}
+}
+
+func TestLoadManifestFromSourceAllowsThreeSameOriginRedirects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/0":
+			http.Redirect(w, r, "/1", http.StatusFound)
+		case "/1":
+			http.Redirect(w, r, "/2", http.StatusFound)
+		case "/2":
+			http.Redirect(w, r, "/3", http.StatusFound)
+		case "/3":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(validManifestJSON()))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	manifest, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: server.URL + "/0"})
+	if err != nil {
+		t.Fatalf("三次同源 redirect 应成功: %v", err)
+	}
+	if manifest.Version != "1.2.3" {
+		t.Fatalf("manifest 版本不正确: got=%q", manifest.Version)
+	}
+}
+
+func TestLoadManifestFromSourceRejectsFourthSameOriginRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/0":
+			http.Redirect(w, r, "/1", http.StatusFound)
+		case "/1":
+			http.Redirect(w, r, "/2", http.StatusFound)
+		case "/2":
+			http.Redirect(w, r, "/3", http.StatusFound)
+		case "/3":
+			http.Redirect(w, r, "/4", http.StatusFound)
+		case "/4":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(validManifestJSON()))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: server.URL + "/0"})
+	if err == nil || !strings.Contains(err.Error(), "too many app update manifest redirects") {
+		t.Fatalf("第四次同源 redirect 应被拒绝: got=%v", err)
+	}
+}
+
+func TestLoadManifestFromSourceRejectsOversizedHTTPManifest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat("x", maxManifestBytes+1)))
+	}))
+	defer server.Close()
+
+	_, err := LoadManifestFromSource(context.Background(), ManifestSourceResolution{URL: server.URL})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("超大 manifest 应被拒绝: got=%v", err)
 	}
 }
 

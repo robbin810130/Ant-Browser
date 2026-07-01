@@ -130,7 +130,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\app-update\windows-app
 1. 分别打包 baseline 与 target。
 2. 校验 target `MakaBrowser-<version>-windows-amd64.zip` 与 `app-update-stable.json`。
 3. 静默安装 baseline 到 `%LOCALAPPDATA%\Programs\Maka Browser`。
-4. 使用 Windows 本地绝对路径配置 `DESKTOP_APP_UPDATE_MANIFEST_URL`。
+4. 临时 Go harness 通过本地 `ManifestProvider` 直接提供 target manifest，不写用户级或进程级环境变量。
 5. 通过临时 Go harness 调用 `Check -> Download -> Apply`。
 6. 显式设置 `WindowsBackend.CurrentExePath` 为已安装的 `ant-chrome.exe`，避免 `go run` 的临时程序被复制成 runner。
 7. 等待 runner 完成替换。
@@ -315,6 +315,11 @@ HEAD: b4c393d fix: preserve desktop server connection across updates
 manifest: http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json
 server: http://192.168.210.169:4174
 ```
+
+该 stable manifest 地址只允许用于受控内网 HTTP，不得暴露公网。当前
+manifest 没有独立签名；客户端仅提供 15 秒超时、1 MiB 大小上限和同源
+redirect 防护，这不等于 HTTP 链路已安全。公网发布、HTTPS 与 Ed25519
+签名校验必须另立设计后实施。
 
 验证结论：
 

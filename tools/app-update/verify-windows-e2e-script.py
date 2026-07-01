@@ -25,9 +25,11 @@ def main() -> None:
         "Test-Path variable:LASTEXITCODE",
         "bat\\publish.ps1",
         "verify-app-update-package.py",
-        "DESKTOP_APP_UPDATE_MANIFEST_URL",
         "CurrentExePath: currentExe",
         "appupdate.WindowsBackend",
+        "ManifestProvider: appupdate.DefaultManifestProvider",
+        "URL: manifestPath",
+        'Source: "local-e2e"',
         '"xray"',
         '"sing-box"',
         "backend\\cmd\\app-update-e2e",
@@ -61,6 +63,10 @@ def main() -> None:
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
         fail("script missing required fragments: " + ", ".join(missing))
+
+    forbidden_token = "desktop_app_update_manifest_url"
+    if forbidden_token in text.lower():
+        fail("script contains forbidden app update source injection: " + forbidden_token)
 
     print("[OK] Windows app-update e2e script contract verified")
 

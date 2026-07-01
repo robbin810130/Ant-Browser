@@ -454,10 +454,6 @@ if (Test-Path -LiteralPath (Join-Path $installRoot "data\app.db") -PathType Leaf
     $beforeDataHash = ""
 }
 
-Write-Step "Configure local manifest"
-[Environment]::SetEnvironmentVariable("DESKTOP_APP_UPDATE_MANIFEST_URL", $manifestPath, "User")
-$env:DESKTOP_APP_UPDATE_MANIFEST_URL = $manifestPath
-
 Write-Harness
 Write-Step "Run Check -> Download -> Apply"
 Push-Location $repoRoot

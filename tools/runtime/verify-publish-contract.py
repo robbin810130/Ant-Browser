@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,6 +43,7 @@ def main() -> None:
     manifest_path = repo_root / "publish" / "runtime-manifest.json"
     sources_path = repo_root / "publish" / "runtime-sources.json"
     installer_path = repo_root / "publish" / "installer.nsi"
+    release_config_path = repo_root / "publish" / "config.init.yaml"
     windows_publish_path = repo_root / "bat" / "publish.ps1"
     mac_publish_path = repo_root / "publish" / "mac" / "publish-mac.sh"
     release_readme_path = repo_root / "tools" / "public-release" / "README.md"
@@ -72,6 +74,13 @@ def main() -> None:
     assert_contains(installer_text, "RequestExecutionLevel user", "publish/installer.nsi")
     assert_contains(installer_text, 'InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"', "publish/installer.nsi")
 
+    release_config_text = release_config_path.read_text(encoding="utf-8")
+    assert_contains(
+        release_config_text,
+        'release:\n  update_manifest_url: ""\n  app_update_manifest_url: "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"',
+        "publish/config.init.yaml",
+    )
+
     windows_publish_text = windows_publish_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_publish_text, 'Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $stagingPublishDir "runtime-manifest.json") -Force', "bat/publish.ps1")
     assert_contains(windows_publish_text, 'Copy-WindowsChromePayload -ChromeRoot $chromeRoot -StagingDir $stagingDir', "bat/publish.ps1")
@@ -84,12 +93,23 @@ def main() -> None:
 
     windows_e2e_text = windows_e2e_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_e2e_text, "CurrentExePath: currentExe", "tools/app-update/windows-app-update-e2e.ps1")
-    assert_contains(windows_e2e_text, "DESKTOP_APP_UPDATE_MANIFEST_URL", "tools/app-update/windows-app-update-e2e.ps1")
     assert_contains(windows_e2e_text, "localAppVersion", "tools/app-update/windows-app-update-e2e.ps1")
     assert_contains(windows_e2e_text, "data\\app.db", "tools/app-update/windows-app-update-e2e.ps1")
 
-    windows_e2e_verifier_text = windows_e2e_verifier_path.read_text(encoding="utf-8")
-    assert_contains(windows_e2e_verifier_text, "Windows app-update e2e script contract verified", "tools/app-update/verify-windows-e2e-script.py")
+    windows_e2e_verifier = subprocess.run(
+        [sys.executable, str(windows_e2e_verifier_path)],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if windows_e2e_verifier.returncode != 0:
+        details = "\n".join(
+            output.strip()
+            for output in (windows_e2e_verifier.stdout, windows_e2e_verifier.stderr)
+            if output.strip()
+        )
+        fail("Windows app-update e2e verifier failed" + (f":\n{details}" if details else ""))
 
     mac_publish_text = mac_publish_path.read_text(encoding="utf-8")
     assert_contains(mac_publish_text, 'cp "$ROOT_DIR/publish/runtime-manifest.json" "$APP_PUBLISH_DIR/runtime-manifest.json"', "publish/mac/publish-mac.sh")
