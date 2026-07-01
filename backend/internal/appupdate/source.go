@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"ant-chrome/backend/internal/config"
 )
@@ -19,6 +22,9 @@ const (
 	envManifestURL               = "DESKTOP_APP_UPDATE_MANIFEST_URL"
 	envUpdatesDisabled           = "DESKTOP_APP_UPDATE_DISABLED"
 	envAllowLocalhostManifestURL = "DESKTOP_APP_UPDATE_ALLOW_LOCAL_MANIFEST_URL"
+	maxManifestBytes             = 1 << 20
+	manifestHTTPTimeout          = 15 * time.Second
+	maxManifestRedirects         = 3
 )
 
 type ManifestSourceResolution struct {
@@ -40,6 +46,10 @@ const (
 )
 
 func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSourceResolution {
+	return resolveManifestSourceForGOOS(runtimeDir, cfg, runtime.GOOS)
+}
+
+func resolveManifestSourceForGOOS(runtimeDir string, cfg *config.Config, goos string) ManifestSourceResolution {
 	if truthyEnv(envUpdatesDisabled) {
 		return ManifestSourceResolution{}
 	}
@@ -71,6 +81,10 @@ func ResolveManifestSource(runtimeDir string, cfg *config.Config) ManifestSource
 				Source: "config.yaml",
 			}
 		}
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		return ManifestSourceResolution{}
 	}
 
 	return ManifestSourceResolution{
@@ -167,7 +181,7 @@ func loadManifestFromHTTP(ctx context.Context, manifestURL string) (Manifest, er
 		return Manifest{}, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newManifestHTTPClient().Do(req)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -177,14 +191,38 @@ func loadManifestFromHTTP(ctx context.Context, manifestURL string) (Manifest, er
 		return Manifest{}, fmt.Errorf("app update manifest request failed: HTTP %d", resp.StatusCode)
 	}
 
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes+1))
+	if err != nil {
+		return Manifest{}, err
+	}
+	if len(data) > maxManifestBytes {
+		return Manifest{}, fmt.Errorf("app update manifest exceeds %d bytes", maxManifestBytes)
+	}
+
 	var manifest Manifest
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, err
 	}
 	if manifest.SchemaVersion != SchemaVersion {
 		return Manifest{}, fmt.Errorf("unsupported app update manifest schema version: %d", manifest.SchemaVersion)
 	}
 	return manifest, nil
+}
+
+func newManifestHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: manifestHTTPTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > maxManifestRedirects {
+				return fmt.Errorf("too many app update manifest redirects")
+			}
+			origin := via[0].URL
+			if !strings.EqualFold(req.URL.Scheme, origin.Scheme) || !strings.EqualFold(req.URL.Host, origin.Host) {
+				return fmt.Errorf("cross-origin redirect from %s://%s to %s://%s", origin.Scheme, origin.Host, req.URL.Scheme, req.URL.Host)
+			}
+			return nil
+		},
+	}
 }
 
 func fileURLPath(parsed *url.URL) (string, error) {

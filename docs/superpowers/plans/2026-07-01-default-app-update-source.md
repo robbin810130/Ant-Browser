@@ -8,9 +8,15 @@
 
 **Tech Stack:** Go, PowerShell, Python 3 contract tests, Wails, NSIS, GitHub Actions.
 
+**Security Boundary:** The stable HTTP URL is for controlled internal-network
+use only and must not be exposed publicly. The manifest currently has no
+independent signature; HTTPS and Ed25519 verification require a separate
+architecture design. This change adds timeout, size, and redirect protections,
+but those transport guards do not establish manifest authenticity.
+
 ---
 
-### Task 1: Add the built-in stable manifest fallback
+### Task 1: Add the Windows-only built-in stable manifest fallback
 
 **Files:**
 - Modify: `backend/internal/appupdate/source_test.go`
@@ -25,7 +31,7 @@ func TestResolveManifestSourceUsesDefaultStableManifest(t *testing.T) {
 	t.Setenv("DESKTOP_APP_UPDATE_MANIFEST_URL", "")
 	t.Setenv("DESKTOP_APP_UPDATE_DISABLED", "")
 
-	resolution := ResolveManifestSource(t.TempDir(), &config.Config{})
+	resolution := resolveManifestSourceForGOOS(t.TempDir(), &config.Config{}, "windows")
 
 	if resolution.URL != DefaultStableManifestURL {
 		t.Fatalf("default stable URL 不正确: got=%q want=%q", resolution.URL, DefaultStableManifestURL)
@@ -57,7 +63,9 @@ Add the exported constant beside the existing environment constants:
 const DefaultStableManifestURL = "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"
 ```
 
-Replace the final empty resolution in `ResolveManifestSource` with:
+Have public `ResolveManifestSource` pass `runtime.GOOS` to an internal
+`resolveManifestSourceForGOOS` helper. Replace the helper's final empty
+resolution only when `goos` is Windows with:
 
 ```go
 	return ManifestSourceResolution{
@@ -67,6 +75,8 @@ Replace the final empty resolution in `ResolveManifestSource` with:
 ```
 
 Keep the early `DESKTOP_APP_UPDATE_DISABLED` return unchanged so an explicit disable remains authoritative.
+Add a Darwin regression test that calls the helper with `goos="darwin"` and
+expects an empty resolution.
 
 - [ ] **Step 4: Run focused and package tests and verify GREEN**
 
@@ -140,7 +150,7 @@ Run:
 rtk python3 tools/release/verify-windows-publish-script.py
 ```
 
-Expected: `[OK] windows publish script chrome resource contract verified`.
+Expected: `[OK] windows publish contract verified`.
 
 - [ ] **Step 5: Commit the packaging fix**
 
@@ -252,7 +262,10 @@ rtk git diff --check
 rtk git status --short --branch
 ```
 
-Expected: no whitespace errors; only the design commit and three intended implementation commits are ahead of `origin/codex/maka-specialist-task-panel`; existing untracked `images/maka-browser-icon-candidates/` and `node_modules/` remain untouched.
+Expected: no whitespace errors; only the intended design, implementation, test,
+and final-review hardening commits are ahead of
+`origin/codex/maka-specialist-task-panel`; existing untracked
+`images/maka-browser-icon-candidates/` and `node_modules/` remain untouched.
 
 ### Task 5: Integrate and publish the repair
 

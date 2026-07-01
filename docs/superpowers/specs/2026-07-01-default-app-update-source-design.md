@@ -10,7 +10,7 @@ Maka Browser `1.1.23` 在 stable `1.1.24` 已发布后，手工点击“检查�
 
 ## 目标
 
-- 新安装的 Maka Browser 无需人工配置即可发现 stable 更新。
+- 新安装的 Windows Maka Browser 无需人工配置即可发现 stable 更新。
 - 显式运行时配置、环境变量和 `config.yaml` 继续拥有更高优先级。
 - “无远端更新源”不能再静默伪装成“当前已是最新版本”。
 - Windows 发布验证覆盖真实安装后的默认更新发现能力。
@@ -29,7 +29,7 @@ Maka Browser `1.1.23` 在 stable `1.1.24` 已发布后，手工点击“检查�
 1. 安装运行时目录中的 `config/app-update.json`
 2. `DESKTOP_APP_UPDATE_MANIFEST_URL`
 3. `config.yaml` 的 `release.app_update_manifest_url`
-4. 客户端内置 stable manifest URL
+4. 仅 Windows 客户端内置 stable manifest URL
 
 默认地址：
 
@@ -37,7 +37,14 @@ Maka Browser `1.1.23` 在 stable `1.1.24` 已发布后，手工点击“检查�
 http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json
 ```
 
-内置默认值只作为最后兜底，不覆盖用户或运维显式配置。诊断结果必须继续返回实际使用的来源和 URL。
+内置默认值只作为 Windows 最后兜底，不覆盖用户或运维显式配置；macOS 等其他平台没有该默认 fallback。诊断结果必须继续返回实际使用的来源和 URL。
+
+## 安全边界
+
+- 默认 stable URL 仅用于受控内网 HTTP，不得暴露到公网或当作公网发布方案。
+- 当前 manifest 没有独立签名；HTTPS 与 Ed25519 签名校验必须另立架构设计后实施。
+- 本次对 manifest HTTP 读取加入 15 秒超时、1 MiB 大小上限、最多 3 次同源跳转，并拒绝跨源 redirect。
+- 这些传输防护不等于内容真实性校验，不能宣称当前 HTTP 更新链路已经安全。
 
 ## 发布配置
 
@@ -61,7 +68,8 @@ http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json
 
 ### Go 单元测试
 
-- 无运行时配置、环境变量和配置值时，解析到内置 stable URL。
+- Windows 无运行时配置、环境变量和配置值时，解析到内置 stable URL。
+- Darwin 无显式配置时，不解析到 Windows 内置 stable URL。
 - 运行时配置覆盖内置 URL。
 - 环境变量覆盖配置和内置 URL。
 - `config.yaml` 覆盖内置 URL。

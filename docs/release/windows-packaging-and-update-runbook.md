@@ -316,6 +316,11 @@ manifest: http://192.168.210.169:18080/releases/windows/stable/app-update-stable
 server: http://192.168.210.169:4174
 ```
 
+该 stable manifest 地址只允许用于受控内网 HTTP，不得暴露公网。当前
+manifest 没有独立签名；客户端仅提供 15 秒超时、1 MiB 大小上限和同源
+redirect 防护，这不等于 HTTP 链路已安全。公网发布、HTTPS 与 Ed25519
+签名校验必须另立设计后实施。
+
 验证结论：
 
 - app-update `Check -> Download -> Apply` 通过。

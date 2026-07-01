@@ -43,6 +43,7 @@ def main() -> None:
     manifest_path = repo_root / "publish" / "runtime-manifest.json"
     sources_path = repo_root / "publish" / "runtime-sources.json"
     installer_path = repo_root / "publish" / "installer.nsi"
+    release_config_path = repo_root / "publish" / "config.init.yaml"
     windows_publish_path = repo_root / "bat" / "publish.ps1"
     mac_publish_path = repo_root / "publish" / "mac" / "publish-mac.sh"
     release_readme_path = repo_root / "tools" / "public-release" / "README.md"
@@ -72,6 +73,13 @@ def main() -> None:
     assert_contains(installer_text, '!define INSTALL_DIR     "$LOCALAPPDATA\\Programs\\Ant Browser"', "publish/installer.nsi")
     assert_contains(installer_text, "RequestExecutionLevel user", "publish/installer.nsi")
     assert_contains(installer_text, 'InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"', "publish/installer.nsi")
+
+    release_config_text = release_config_path.read_text(encoding="utf-8")
+    assert_contains(
+        release_config_text,
+        'release:\n  update_manifest_url: ""\n  app_update_manifest_url: "http://192.168.210.169:18080/releases/windows/stable/app-update-stable.json"',
+        "publish/config.init.yaml",
+    )
 
     windows_publish_text = windows_publish_path.read_text(encoding="utf-8-sig")
     assert_contains(windows_publish_text, 'Copy-Item -LiteralPath $runtimeManifestSource -Destination (Join-Path $stagingPublishDir "runtime-manifest.json") -Force', "bat/publish.ps1")
