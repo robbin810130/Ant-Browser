@@ -60,6 +60,51 @@ function emptyOverview(): SpecialistTaskListResponse {
   }
 }
 
+function taskMatchesStatusFilter(task: SpecialistTaskRecord, statusFilter: string) {
+  return !statusFilter || task.status === statusFilter
+}
+
+function summaryKeyForStatus(status: string): keyof SpecialistTaskListResponse['summary'] | null {
+  if (status === 'pending') return 'pending'
+  if (status === 'in_progress') return 'inProgress'
+  if (status === 'submitted_pending_validation') return 'submittedPendingValidation'
+  if (status === 'appeal_in_review') return 'appealInReview'
+  if (status === 'overdue') return 'overdue'
+  if (status === 'completed') return 'completed'
+  return null
+}
+
+function addCount(value: number, delta: number) {
+  return Math.max(0, value + delta)
+}
+
+function applySummaryDelta(
+  summary: SpecialistTaskListResponse['summary'],
+  previousTask: SpecialistTaskRecord,
+  nextTask: SpecialistTaskRecord,
+  statusFilter: string,
+): SpecialistTaskListResponse['summary'] {
+  const previousVisible = taskMatchesStatusFilter(previousTask, statusFilter)
+  const nextVisible = taskMatchesStatusFilter(nextTask, statusFilter)
+  const nextSummary = { ...summary }
+
+  if (previousVisible && !nextVisible) {
+    nextSummary.total = addCount(nextSummary.total, -1)
+  } else if (!previousVisible && nextVisible) {
+    nextSummary.total = addCount(nextSummary.total, 1)
+  }
+
+  const previousKey = previousVisible ? summaryKeyForStatus(previousTask.status) : null
+  const nextKey = nextVisible ? summaryKeyForStatus(nextTask.status) : null
+  if (previousKey && previousKey !== nextKey) {
+    nextSummary[previousKey] = addCount(nextSummary[previousKey], -1)
+  }
+  if (nextKey && previousKey !== nextKey) {
+    nextSummary[nextKey] = addCount(nextSummary[nextKey], 1)
+  }
+  return nextSummary
+}
+
 export function SpecialistTaskPanelPage() {
   const [searchParams] = useSearchParams()
   const shopId = searchParams.get('shopId')?.trim() || ''
@@ -111,6 +156,35 @@ export function SpecialistTaskPanelPage() {
     const nextTask = await fetchSpecialistTaskDetail(normalizedTaskId)
     setSelectedTask(nextTask)
     return nextTask
+  }
+
+  function applyTaskMutation(nextTask: SpecialistTaskRecord) {
+    setSelectedTask(nextTask)
+    setOverview((current) => {
+      let replaced = false
+      let previousTask: SpecialistTaskRecord | null = null
+      const nextVisible = taskMatchesStatusFilter(nextTask, statusFilter)
+      const items = current.items.flatMap((item) => {
+        if (item.id !== nextTask.id) return item
+        previousTask = item
+        replaced = true
+        return nextVisible ? [nextTask] : []
+      })
+      if (!replaced) return current
+      const summary = previousTask
+        ? applySummaryDelta(current.summary, previousTask, nextTask, statusFilter)
+        : current.summary
+      const paginationTotalDelta = previousTask && !nextVisible ? -1 : 0
+      return {
+        ...current,
+        items,
+        pagination: {
+          ...current.pagination,
+          total: addCount(current.pagination.total, paginationTotalDelta),
+        },
+        summary,
+      }
+    })
   }
 
   useEffect(() => {
@@ -279,7 +353,7 @@ export function SpecialistTaskPanelPage() {
           setSelectedTaskId('')
           setSelectedTask(null)
         }}
-        onTaskUpdated={setSelectedTask}
+        onTaskUpdated={applyTaskMutation}
         onRefreshTask={refreshSelectedTask}
         onReload={() => void load(true)}
       />

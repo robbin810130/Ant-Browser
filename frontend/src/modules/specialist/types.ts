@@ -45,6 +45,15 @@ export interface SpecialistTaskEvidenceRecord {
   createdAt: string
 }
 
+export interface SpecialistTaskRuleSnapshotSummary {
+  ruleInstanceId: string | null
+  ruleVersion: string | number | null
+  publicationId: string | null
+  publishedAt: string | null
+  source: string | null
+  validationMetrics: unknown[]
+}
+
 export interface SpecialistTaskRecord {
   id: string
   shopId: string
@@ -70,6 +79,7 @@ export interface SpecialistTaskRecord {
   anomalySignalSourceRef: string | null
   anomalySignalSourceTier: string | null
   anomalySignalSnapshot: Record<string, unknown> | null
+  ruleSnapshotSummary: SpecialistTaskRuleSnapshotSummary | null
   createdAt: string
   updatedAt: string
   sopSteps: SpecialistTaskSopStep[]

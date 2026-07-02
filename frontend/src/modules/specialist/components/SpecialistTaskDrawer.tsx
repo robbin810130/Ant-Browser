@@ -225,12 +225,16 @@ export function SpecialistTaskDrawer({
     actionName: string,
     action: () => Promise<SpecialistTaskRecord>,
     successMessage: string,
+    refreshFailureMessage = '任务状态已更新，但详情刷新失败，请手动刷新',
   ) {
     setSavingAction(actionName)
     try {
       const nextTask = await action()
       onTaskUpdated(nextTask)
       toast.success(successMessage)
+      void onRefreshTask(nextTask.id).catch(() => {
+        toast.warning(refreshFailureMessage)
+      })
       onReload()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '专员任务操作失败，请稍后重试')
@@ -444,15 +448,10 @@ export function SpecialistTaskDrawer({
                                     operatorNote: operatorNote.trim(),
                                     evidenceRefs: step.evidenceRefs,
                                   })
-                                  try {
-                                    const refreshedTask = await onRefreshTask(task.id)
-                                    return refreshedTask ?? result.task
-                                  } catch {
-                                    toast.warning('SOP 状态已提交，但任务详情刷新失败，请手动刷新')
-                                    return result.task
-                                  }
+                                  return result.task
                                 },
                                 done ? 'SOP 步骤已改为未完成' : 'SOP 步骤已完成',
+                                'SOP 状态已提交，但任务详情刷新失败，请手动刷新',
                               )}
                             />
                             {done ? '已完成，点此撤回' : '标记完成'}
@@ -569,15 +568,10 @@ export function SpecialistTaskDrawer({
                     setEvidenceText('')
                     setScreenshotEvidence(null)
                     setScreenshotError('')
-                    try {
-                      const refreshedTask = await onRefreshTask(task.id)
-                      return refreshedTask ?? result.task
-                    } catch {
-                      toast.warning('证据已提交，但任务详情刷新失败，请手动刷新')
-                      return result.task
-                    }
+                    return result.task
                   },
                   '证据已提交',
+                  '证据已提交，但任务详情刷新失败，请手动刷新',
                 )}
               >
                 提交证据
