@@ -9,6 +9,7 @@ import type {
   SpecialistTaskListResponse,
   SpecialistTaskMutationResponse,
   SpecialistTaskRecord,
+  SpecialistTaskRuleSnapshotSummary,
   SpecialistTaskSopStep,
   SubmitSpecialistTaskEvidencePayload,
   SubmitSpecialistTaskPayload,
@@ -83,6 +84,18 @@ function normalizeEvidenceRecord(input: any): SpecialistTaskEvidenceRecord {
   }
 }
 
+function normalizeRuleSnapshotSummary(input: any): SpecialistTaskRuleSnapshotSummary | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  return {
+    ruleInstanceId: normalizeNullableString(input.ruleInstanceId),
+    ruleVersion: input.ruleVersion ?? null,
+    publicationId: normalizeNullableString(input.publicationId),
+    publishedAt: normalizeNullableString(input.publishedAt),
+    source: normalizeNullableString(input.source),
+    validationMetrics: Array.isArray(input.validationMetrics) ? input.validationMetrics : [],
+  }
+}
+
 export function normalizeSpecialistTask(input: any): SpecialistTaskRecord {
   return {
     id: normalizeString(input?.id),
@@ -109,6 +122,7 @@ export function normalizeSpecialistTask(input: any): SpecialistTaskRecord {
     anomalySignalSourceRef: normalizeNullableString(input?.anomalySignalSourceRef),
     anomalySignalSourceTier: normalizeNullableString(input?.anomalySignalSourceTier),
     anomalySignalSnapshot: input?.anomalySignalSnapshot ? normalizeObject(input.anomalySignalSnapshot) : null,
+    ruleSnapshotSummary: normalizeRuleSnapshotSummary(input?.ruleSnapshotSummary),
     createdAt: normalizeString(input?.createdAt),
     updatedAt: normalizeString(input?.updatedAt),
     sopSteps: Array.isArray(input?.sopSteps) ? input.sopSteps.map(normalizeSopStep) : [],
@@ -166,10 +180,6 @@ function unwrapEnvelope<T>(input: unknown): T {
   return envelope.data as T
 }
 
-function unsupportedContract(message: string): never {
-  throw new Error(`${message}。当前客户端已接入任务读取、详情、证据说明和申诉；该动作需要服务端 Maka 专员任务合同继续落地。`)
-}
-
 async function specialistRequest<T>(path: string, init: SpecialistRequestInit = {}): Promise<T> {
   if (useDevWorkspaceFallback()) {
     return devSpecialistRequest<T>(path, init)
@@ -186,34 +196,21 @@ async function specialistRequest<T>(path: string, init: SpecialistRequestInit = 
 }
 
 export async function fetchTodaySpecialistTasks(query: SpecialistTaskListQuery = {}): Promise<SpecialistTaskListResponse> {
-  const data = await specialistRequest<unknown>(appendQuery('/api/workbench/tasks', query))
+  const data = await specialistRequest<unknown>(appendQuery('/api/maka/specialist/tasks/today', query))
   return normalizeListResponse(data)
 }
 
 export async function fetchShopSpecialistTasks(shopId: string, query: SpecialistTaskListQuery = {}): Promise<SpecialistTaskListResponse> {
   const normalizedShopId = shopId.trim()
   if (!normalizedShopId) return normalizeListResponse({ items: [] })
-  const data = await specialistRequest<unknown>(appendQuery('/api/workbench/tasks', query))
-  const list = normalizeListResponse(data)
-  const items = list.items.filter((item) => item.shopId === normalizedShopId)
-  return normalizeListResponse({
-    ...list,
-    items,
-    pagination: { ...list.pagination, total: items.length },
-    summary: {
-      total: items.length,
-      pending: items.filter((item) => item.status === 'pending').length,
-      inProgress: items.filter((item) => item.status === 'in_progress').length,
-      submittedPendingValidation: items.filter((item) => item.status === 'submitted_pending_validation').length,
-      appealInReview: items.filter((item) => item.status === 'appeal_in_review').length,
-      overdue: items.filter((item) => item.status === 'overdue').length,
-      completed: items.filter((item) => item.status === 'completed').length,
-    },
-  })
+  const data = await specialistRequest<unknown>(
+    appendQuery(`/api/maka/specialist/shops/${encodeURIComponent(normalizedShopId)}/tasks`, query),
+  )
+  return normalizeListResponse(data)
 }
 
 export async function fetchSpecialistTaskDetail(taskId: string): Promise<SpecialistTaskRecord> {
-  const data = await specialistRequest<unknown>(`/api/tasks/${encodeURIComponent(taskId.trim())}`)
+  const data = await specialistRequest<unknown>(`/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}`)
   return normalizeSpecialistTask((data as any)?.task ?? data)
 }
 
@@ -243,17 +240,20 @@ export async function submitSpecialistTaskEvidence(
   const text = normalizeString(payload.payload.text || payload.payload.note)
   const url = normalizeString(payload.payload.url)
   const fileName = normalizeString(payload.payload.fileName)
-  if (payload.evidenceType === 'screenshot') {
-    unsupportedContract('截图证据上传暂不能提交')
-  }
   const summary = text || url || fileName
   if (summary.length < 4) {
     throw new Error('证据说明至少需要 4 个字符')
   }
-  const attachments = url ? [url] : []
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
-    { method: 'POST', body: { summary, attachments } },
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
+    {
+      method: 'POST',
+      body: {
+        stepId: payload.stepId,
+        evidenceType: payload.evidenceType,
+        payload: payload.payload,
+      },
+    },
   )
   return normalizeMutationResponse(data)
 }
@@ -264,8 +264,8 @@ export async function submitSpecialistTask(
 ): Promise<SpecialistTaskMutationResponse> {
   const summary = normalizeString(payload.summary || '处理完成，提交验收')
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
-    { method: 'POST', body: { summary, attachments: [] } },
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/submit`,
+    { method: 'POST', body: { summary } },
   )
   return normalizeMutationResponse(data)
 }
@@ -275,7 +275,7 @@ export async function appealSpecialistTask(
   payload: AppealSpecialistTaskPayload,
 ): Promise<SpecialistTaskMutationResponse> {
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/appeal`,
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/appeal`,
     { method: 'POST', body: { reason: payload.reason } },
   )
   return normalizeMutationResponse(data)
@@ -285,9 +285,17 @@ export async function blockSpecialistTask(
   taskId: string,
   payload: BlockSpecialistTaskPayload,
 ): Promise<SpecialistTaskMutationResponse> {
-  void taskId
-  void payload
-  unsupportedContract('无法处理/阻塞原因暂不能提交')
+  const data = await specialistRequest<unknown>(
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/block`,
+    {
+      method: 'POST',
+      body: {
+        reasonCode: payload.reasonCode,
+        reasonText: payload.reasonText,
+      },
+    },
+  )
+  return normalizeMutationResponse(data)
 }
 
 function buildDevTask(overrides: Partial<SpecialistTaskRecord> = {}): SpecialistTaskRecord {
@@ -307,6 +315,14 @@ function buildDevTask(overrides: Partial<SpecialistTaskRecord> = {}): Specialist
     supervisorUserId: 'dev-supervisor',
     supervisorName: '开发主管',
     deadlineAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+    ruleSnapshotSummary: {
+      ruleInstanceId: 'dev-rule-instance-1',
+      ruleVersion: 1,
+      publicationId: 'dev-publication-1',
+      publishedAt: new Date().toISOString(),
+      source: 'dev_fallback',
+      validationMetrics: [],
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sopSteps: [
@@ -367,15 +383,22 @@ function devListResponse(task: SpecialistTaskRecord, path: string): SpecialistTa
 async function devSpecialistRequest<T>(path: string, init: SpecialistRequestInit = {}): Promise<T> {
   const method = String(init.method || 'GET').toUpperCase()
   const task = getDevSpecialistTask()
-  if (method === 'GET' && (path.includes('/tasks/today') || path.includes('/workbench/tasks'))) {
+  if (method === 'GET' && path.startsWith('/api/maka/specialist/tasks/today')) {
     return devListResponse(task, path) as T
   }
-  if (method === 'GET' && path.includes('/shops/')) {
-    const shopId = decodeURIComponent(path.split('/shops/')[1]?.split('/tasks')[0] || '')
+  const shopTasksMatch = path.match(/^\/api\/maka\/specialist\/shops\/([^/]+)\/tasks(?:\?|$)/)
+  if (method === 'GET' && shopTasksMatch) {
+    const shopId = decodeURIComponent(shopTasksMatch[1])
     const items = shopId && shopId !== task.shopId ? [] : [task]
-    return normalizeListResponse({ items }) as T
+    const filtered = devListResponse(task, path)
+    return normalizeListResponse({ ...filtered, items: shopId && shopId !== task.shopId ? [] : filtered.items.length ? items : [] }) as T
   }
-  if (method === 'GET') {
+  const detailMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/?]+)(?:\?|$)/)
+  if (method === 'GET' && detailMatch) {
+    const taskId = decodeURIComponent(detailMatch[1])
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
     return task as T
   }
   const sopStepMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/sop-steps\/([^/?]+)/)
@@ -402,32 +425,94 @@ async function devSpecialistRequest<T>(path: string, init: SpecialistRequestInit
     })
     return normalizeMutationResponse({ task: nextTask }) as T
   }
-  if (method === 'POST' && path.includes('/evidence')) {
+  const evidenceMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/evidence$/)
+  if (method === 'POST' && evidenceMatch) {
+    const taskId = decodeURIComponent(evidenceMatch[1])
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
     const now = new Date().toISOString()
     const body = normalizeObject(init.body)
-    const attachments = normalizeStringArray(body.attachments)
-    const summary = normalizeString(body.summary || body.text || body.note || attachments[0])
+    const evidencePayload = normalizeObject(body.payload)
+    const evidenceId = `dev-evidence-${devEvidenceSequence + 1}`
     devEvidenceSequence += 1
     const nextTask = setDevSpecialistTask({
       ...task,
       updatedAt: now,
+      sopSteps: task.sopSteps.map((step) => step.stepId === normalizeString(body.stepId)
+        ? {
+            ...step,
+            evidenceRefs: [...new Set([...step.evidenceRefs, evidenceId])],
+            updatedAt: now,
+          }
+        : step),
       evidenceRecords: [
         ...task.evidenceRecords,
         {
-          id: `dev-evidence-${devEvidenceSequence}`,
+          id: evidenceId,
           taskId: task.id,
           stepId: normalizeNullableString(body.stepId),
-          evidenceType: normalizeString(body.evidenceType || (attachments.length ? 'backend_url' : 'text_note')),
-          payload: {
-            text: summary,
-            url: attachments[0] || undefined,
-          },
+          evidenceType: normalizeString(body.evidenceType || 'text_note'),
+          payload: evidencePayload,
           submittedBy: 'dev',
           createdAt: now,
         },
       ],
     })
+    return normalizeMutationResponse({ task: nextTask, evidenceId }) as T
+  }
+  const submitMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/submit$/)
+  if (method === 'POST' && submitMatch) {
+    const taskId = decodeURIComponent(submitMatch[1])
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
+    const now = new Date().toISOString()
+    const nextTask = setDevSpecialistTask({
+      ...task,
+      status: 'submitted_pending_validation',
+      updatedAt: now,
+    })
+    devEvidenceSequence += 1
     return normalizeMutationResponse({ task: nextTask, evidenceId: `dev-evidence-${devEvidenceSequence}` }) as T
+  }
+  const appealMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/appeal$/)
+  if (method === 'POST' && appealMatch) {
+    const taskId = decodeURIComponent(appealMatch[1])
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
+    const now = new Date().toISOString()
+    const nextTask = setDevSpecialistTask({
+      ...task,
+      status: 'appeal_in_review',
+      updatedAt: now,
+    })
+    return normalizeMutationResponse({ task: nextTask, appealId: `dev-appeal-${Date.now()}` }) as T
+  }
+  const blockMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/]+)\/block$/)
+  if (method === 'POST' && blockMatch) {
+    const taskId = decodeURIComponent(blockMatch[1])
+    if (taskId !== task.id) {
+      throw new Error('开发任务不存在')
+    }
+    const now = new Date().toISOString()
+    const body = normalizeObject(init.body)
+    const nextTask = setDevSpecialistTask({
+      ...task,
+      status: 'appeal_in_review',
+      metadata: {
+        ...task.metadata,
+        makaBlockReason: {
+          reasonCode: normalizeString(body.reasonCode),
+          reasonText: normalizeString(body.reasonText),
+          blockedBy: 'dev',
+          blockedAt: now,
+        },
+      },
+      updatedAt: now,
+    })
+    return normalizeMutationResponse({ task: nextTask, appealId: `dev-appeal-${Date.now()}` }) as T
   }
   return normalizeMutationResponse({ task }) as T
 }

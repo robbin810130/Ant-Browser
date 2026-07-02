@@ -60,6 +60,18 @@ function emptyOverview(): SpecialistTaskListResponse {
   }
 }
 
+function buildSummary(items: SpecialistTaskRecord[]): SpecialistTaskListResponse['summary'] {
+  return {
+    total: items.length,
+    pending: items.filter((item) => item.status === 'pending').length,
+    inProgress: items.filter((item) => item.status === 'in_progress').length,
+    submittedPendingValidation: items.filter((item) => item.status === 'submitted_pending_validation').length,
+    appealInReview: items.filter((item) => item.status === 'appeal_in_review').length,
+    overdue: items.filter((item) => item.status === 'overdue').length,
+    completed: items.filter((item) => item.status === 'completed').length,
+  }
+}
+
 export function SpecialistTaskPanelPage() {
   const [searchParams] = useSearchParams()
   const shopId = searchParams.get('shopId')?.trim() || ''
@@ -111,6 +123,24 @@ export function SpecialistTaskPanelPage() {
     const nextTask = await fetchSpecialistTaskDetail(normalizedTaskId)
     setSelectedTask(nextTask)
     return nextTask
+  }
+
+  function applyTaskMutation(nextTask: SpecialistTaskRecord) {
+    setSelectedTask(nextTask)
+    setOverview((current) => {
+      let replaced = false
+      const items = current.items.map((item) => {
+        if (item.id !== nextTask.id) return item
+        replaced = true
+        return nextTask
+      })
+      if (!replaced) return current
+      return {
+        ...current,
+        items,
+        summary: buildSummary(items),
+      }
+    })
   }
 
   useEffect(() => {
@@ -279,7 +309,7 @@ export function SpecialistTaskPanelPage() {
           setSelectedTaskId('')
           setSelectedTask(null)
         }}
-        onTaskUpdated={setSelectedTask}
+        onTaskUpdated={applyTaskMutation}
         onRefreshTask={refreshSelectedTask}
         onReload={() => void load(true)}
       />

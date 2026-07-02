@@ -102,16 +102,50 @@ assert.match(drawerSource, /screenshotError/, 'screenshot validation should prov
 assert.match(drawerSource, /evidenceLinkError/, 'link evidence validation should provide field-level feedback')
 assert.match(drawerSource, /dataUrl/, 'screenshot evidence should include portable image data')
 assert.match(drawerSource, /return \{ url:/, 'link evidence should submit a URL payload')
+assert.match(pageSource, /applyTaskMutation/, 'mutation responses should immediately replace the selected list row from response.task')
+assert.match(pageSource, /setOverview\(\(current\)/, 'mutation responses should update task summary before the follow-up reload completes')
+assert.match(drawerSource, /onTaskUpdated\(nextTask\)/, 'drawer mutations should publish response.task before refreshing summary/detail')
+assert.match(drawerSource, /void onRefreshTask\(nextTask\.id\)/, 'drawer mutations should refresh detail after applying response.task')
+assert.match(drawerSource, /onReload\(\)/, 'drawer mutations should refresh list summary after applying response.task')
 assert.doesNotMatch(
   apiSource,
   /SOP 步骤状态暂不能在客户端直接更新/,
   'SOP updates must call the Maka specialist server contract instead of being blocked in the renderer',
+)
+assert.doesNotMatch(
+  apiSource,
+  /\/api\/workbench\/tasks/,
+  'specialist task list must use the Maka specialist task contract instead of legacy workbench tasks',
+)
+assert.doesNotMatch(
+  apiSource,
+  /\/api\/tasks\/\$\{[^}]+taskId[^}]+\}\/(?:evidence|appeal|detail)/,
+  'specialist task mutations/details must not use legacy /api/tasks task paths',
+)
+assert.doesNotMatch(
+  apiSource,
+  /unsupportedContract/,
+  'block and screenshot evidence must not be blocked by a renderer-side unsupported contract',
+)
+assert.doesNotMatch(
+  apiSource,
+  /payload\.evidenceType === 'screenshot'/,
+  'screenshot evidence should be sent through the Maka V2 evidence payload',
 )
 assert.match(
   apiSource,
   /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/sop-steps\/\$\{encodeURIComponent\(stepId\.trim\(\)\)\}/,
   'SOP updates should use the Maka specialist task contract path',
 )
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/today/, 'today list should use the Maka specialist task contract path')
+assert.match(apiSource, /\/api\/maka\/specialist\/shops\/\$\{encodeURIComponent\(normalizedShopId\)\}\/tasks/, 'shop task list should use the Maka specialist shop task contract path')
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}/, 'task detail should use the Maka specialist task detail path')
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/evidence/, 'evidence should use the Maka specialist evidence path')
+assert.match(apiSource, /body: \{\s*stepId: payload\.stepId,\s*evidenceType: payload\.evidenceType,\s*payload: payload\.payload/s, 'evidence should send the Maka V2 evidence payload shape')
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/submit/, 'submit should use the Maka specialist submit path')
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/appeal/, 'appeal should use the Maka specialist appeal path')
+assert.match(apiSource, /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/block/, 'block should use the Maka specialist block path')
+assert.match(apiSource, /ruleSnapshotSummary/, 'task normalization should preserve the server rule snapshot summary')
 assert.match(apiSource, /devSpecialistTask/, 'dev fallback should preserve local specialist task state across detail refreshes')
 assert.match(apiSource, /DesktopWorkspaceRequest/, 'specialist task API should proxy through the Wails backend')
 assert.doesNotMatch(apiSource, /\bfetch\(/, 'specialist task API must not fetch the workspace server directly from the renderer')

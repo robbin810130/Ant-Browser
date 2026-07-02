@@ -350,14 +350,14 @@ func TestFetchDesktopSharedLoginBindSessionUsesDesktopEndpointAndAuthorization(t
 	}
 }
 
-func TestDesktopWorkspaceRequestProxiesRelativeAuthedJSON(t *testing.T) {
+func TestDesktopWorkspaceRequestProxiesMakaSpecialistEvidenceV2Payload(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
 
 	var authHeader string
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks/task-1/evidence" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/maka/specialist/tasks/task-1/evidence" {
 			http.NotFound(w, r)
 			return
 		}
@@ -382,8 +382,16 @@ func TestDesktopWorkspaceRequestProxiesRelativeAuthedJSON(t *testing.T) {
 	envelope, err := app.DesktopWorkspaceRequest(
 		" desktop-token ",
 		" post ",
-		"/api/tasks/task-1/evidence",
-		map[string]any{"summary": " 已处理并提交证据 "},
+		"/api/maka/specialist/tasks/task-1/evidence",
+		map[string]any{
+			"stepId":       "step-1",
+			"evidenceType": "screenshot",
+			"payload": map[string]any{
+				"fileName": "proof.jpg",
+				"dataUrl":  "data:image/jpeg;base64,abc",
+				"note":     " 已处理并提交证据 ",
+			},
+		},
 	)
 	if err != nil {
 		t.Fatalf("DesktopWorkspaceRequest 返回错误: %v", err)
@@ -391,8 +399,15 @@ func TestDesktopWorkspaceRequestProxiesRelativeAuthedJSON(t *testing.T) {
 	if authHeader != "Bearer desktop-token" {
 		t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", authHeader)
 	}
-	if got, _ := requestBody["summary"].(string); got != " 已处理并提交证据 " {
-		t.Fatalf("期望代理请求体保留 summary，实际=%q", got)
+	if got, _ := requestBody["stepId"].(string); got != "step-1" {
+		t.Fatalf("期望代理请求体保留 stepId，实际=%q", got)
+	}
+	if got, _ := requestBody["evidenceType"].(string); got != "screenshot" {
+		t.Fatalf("期望代理请求体保留 evidenceType=screenshot，实际=%q", got)
+	}
+	payload, _ := requestBody["payload"].(map[string]any)
+	if payload["dataUrl"] != "data:image/jpeg;base64,abc" || payload["note"] != " 已处理并提交证据 " {
+		t.Fatalf("期望代理请求体保留 V2 payload，实际=%#v", payload)
 	}
 	if code, _ := envelope["code"].(float64); code != 0 {
 		t.Fatalf("期望 envelope.code=0，实际=%#v", envelope)
@@ -400,6 +415,90 @@ func TestDesktopWorkspaceRequestProxiesRelativeAuthedJSON(t *testing.T) {
 	data, _ := envelope["data"].(map[string]any)
 	if data["evidenceId"] != "evidence-1" {
 		t.Fatalf("期望 evidenceId=evidence-1，实际=%#v", data)
+	}
+}
+
+func TestDesktopWorkspaceRequestProxiesMakaSpecialistTaskMutations(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	requests := make(map[string]map[string]any)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/maka/specialist/tasks/task-1/submit",
+			"/api/maka/specialist/tasks/task-1/appeal",
+			"/api/maka/specialist/tasks/task-1/block":
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer desktop-token" {
+			t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", r.Header.Get("Authorization"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("解析代理请求失败: %v", err)
+		}
+		requests[r.URL.Path] = body
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"task": map[string]any{"id": "task-1"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = desktopAuthTestConfig(t, server.URL)
+
+	cases := []struct {
+		name string
+		path string
+		body map[string]any
+		want map[string]string
+	}{
+		{
+			name: "submit",
+			path: "/api/maka/specialist/tasks/task-1/submit",
+			body: map[string]any{"summary": "处理完成，提交验收"},
+			want: map[string]string{"summary": "处理完成，提交验收"},
+		},
+		{
+			name: "appeal",
+			path: "/api/maka/specialist/tasks/task-1/appeal",
+			body: map[string]any{"reason": "平台统计延迟"},
+			want: map[string]string{"reason": "平台统计延迟"},
+		},
+		{
+			name: "block",
+			path: "/api/maka/specialist/tasks/task-1/block",
+			body: map[string]any{"reasonCode": "backend_unavailable", "reasonText": "1688 后台不可用"},
+			want: map[string]string{"reasonCode": "backend_unavailable", "reasonText": "1688 后台不可用"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			envelope, err := app.DesktopWorkspaceRequest(" desktop-token ", http.MethodPost, tc.path, tc.body)
+			if err != nil {
+				t.Fatalf("DesktopWorkspaceRequest 返回错误: %v", err)
+			}
+			if code, _ := envelope["code"].(float64); code != 0 {
+				t.Fatalf("期望 envelope.code=0，实际=%#v", envelope)
+			}
+			got := requests[tc.path]
+			for key, want := range tc.want {
+				if got[key] != want {
+					t.Fatalf("期望 %s=%q，实际=%#v", key, want, got)
+				}
+			}
+		})
 	}
 }
 

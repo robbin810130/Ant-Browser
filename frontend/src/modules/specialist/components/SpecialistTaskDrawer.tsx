@@ -231,6 +231,9 @@ export function SpecialistTaskDrawer({
       const nextTask = await action()
       onTaskUpdated(nextTask)
       toast.success(successMessage)
+      void onRefreshTask(nextTask.id).catch(() => {
+        toast.warning('任务状态已更新，但详情刷新失败，请手动刷新')
+      })
       onReload()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '专员任务操作失败，请稍后重试')
