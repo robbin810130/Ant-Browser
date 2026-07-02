@@ -389,9 +389,11 @@ async function devSpecialistRequest<T>(path: string, init: SpecialistRequestInit
   const shopTasksMatch = path.match(/^\/api\/maka\/specialist\/shops\/([^/]+)\/tasks(?:\?|$)/)
   if (method === 'GET' && shopTasksMatch) {
     const shopId = decodeURIComponent(shopTasksMatch[1])
-    const items = shopId && shopId !== task.shopId ? [] : [task]
+    if (shopId && shopId !== task.shopId) {
+      return normalizeListResponse({ items: [] }) as T
+    }
     const filtered = devListResponse(task, path)
-    return normalizeListResponse({ ...filtered, items: shopId && shopId !== task.shopId ? [] : filtered.items.length ? items : [] }) as T
+    return normalizeListResponse({ ...filtered, items: filtered.items.length ? [task] : [] }) as T
   }
   const detailMatch = path.match(/^\/api\/maka\/specialist\/tasks\/([^/?]+)(?:\?|$)/)
   if (method === 'GET' && detailMatch) {

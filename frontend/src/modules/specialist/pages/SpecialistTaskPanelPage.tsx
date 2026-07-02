@@ -60,16 +60,49 @@ function emptyOverview(): SpecialistTaskListResponse {
   }
 }
 
-function buildSummary(items: SpecialistTaskRecord[]): SpecialistTaskListResponse['summary'] {
-  return {
-    total: items.length,
-    pending: items.filter((item) => item.status === 'pending').length,
-    inProgress: items.filter((item) => item.status === 'in_progress').length,
-    submittedPendingValidation: items.filter((item) => item.status === 'submitted_pending_validation').length,
-    appealInReview: items.filter((item) => item.status === 'appeal_in_review').length,
-    overdue: items.filter((item) => item.status === 'overdue').length,
-    completed: items.filter((item) => item.status === 'completed').length,
+function taskMatchesStatusFilter(task: SpecialistTaskRecord, statusFilter: string) {
+  return !statusFilter || task.status === statusFilter
+}
+
+function summaryKeyForStatus(status: string): keyof SpecialistTaskListResponse['summary'] | null {
+  if (status === 'pending') return 'pending'
+  if (status === 'in_progress') return 'inProgress'
+  if (status === 'submitted_pending_validation') return 'submittedPendingValidation'
+  if (status === 'appeal_in_review') return 'appealInReview'
+  if (status === 'overdue') return 'overdue'
+  if (status === 'completed') return 'completed'
+  return null
+}
+
+function addCount(value: number, delta: number) {
+  return Math.max(0, value + delta)
+}
+
+function applySummaryDelta(
+  summary: SpecialistTaskListResponse['summary'],
+  previousTask: SpecialistTaskRecord,
+  nextTask: SpecialistTaskRecord,
+  statusFilter: string,
+): SpecialistTaskListResponse['summary'] {
+  const previousVisible = taskMatchesStatusFilter(previousTask, statusFilter)
+  const nextVisible = taskMatchesStatusFilter(nextTask, statusFilter)
+  const nextSummary = { ...summary }
+
+  if (previousVisible && !nextVisible) {
+    nextSummary.total = addCount(nextSummary.total, -1)
+  } else if (!previousVisible && nextVisible) {
+    nextSummary.total = addCount(nextSummary.total, 1)
   }
+
+  const previousKey = previousVisible ? summaryKeyForStatus(previousTask.status) : null
+  const nextKey = nextVisible ? summaryKeyForStatus(nextTask.status) : null
+  if (previousKey && previousKey !== nextKey) {
+    nextSummary[previousKey] = addCount(nextSummary[previousKey], -1)
+  }
+  if (nextKey && previousKey !== nextKey) {
+    nextSummary[nextKey] = addCount(nextSummary[nextKey], 1)
+  }
+  return nextSummary
 }
 
 export function SpecialistTaskPanelPage() {
@@ -129,16 +162,27 @@ export function SpecialistTaskPanelPage() {
     setSelectedTask(nextTask)
     setOverview((current) => {
       let replaced = false
-      const items = current.items.map((item) => {
+      let previousTask: SpecialistTaskRecord | null = null
+      const nextVisible = taskMatchesStatusFilter(nextTask, statusFilter)
+      const items = current.items.flatMap((item) => {
         if (item.id !== nextTask.id) return item
+        previousTask = item
         replaced = true
-        return nextTask
+        return nextVisible ? [nextTask] : []
       })
       if (!replaced) return current
+      const summary = previousTask
+        ? applySummaryDelta(current.summary, previousTask, nextTask, statusFilter)
+        : current.summary
+      const paginationTotalDelta = previousTask && !nextVisible ? -1 : 0
       return {
         ...current,
         items,
-        summary: buildSummary(items),
+        pagination: {
+          ...current.pagination,
+          total: addCount(current.pagination.total, paginationTotalDelta),
+        },
+        summary,
       }
     })
   }
