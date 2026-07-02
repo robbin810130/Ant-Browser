@@ -97,7 +97,11 @@ assert.match(drawerSource, /role="tablist"/, 'specialist task drawer should sepa
 assert.match(drawerSource, /lastEvidenceFeedback/, 'evidence submission should leave local feedback inside the drawer')
 assert.match(drawerSource, /最近提交反馈/, 'evidence submission feedback should be visible to the specialist')
 assert.match(drawerSource, /onRefreshTask/, 'SOP step changes should refresh the selected task detail from the server contract')
-assert.match(drawerSource, /await onRefreshTask\(task\.id\)/, 'SOP step changes should re-read task detail after a successful mutation')
+assert.doesNotMatch(
+  drawerSource,
+  /await onRefreshTask\(task\.id\)/,
+  'SOP and evidence mutations must not wait for detail refresh before publishing response.task',
+)
 assert.match(drawerSource, /screenshotError/, 'screenshot validation should provide field-level feedback')
 assert.match(drawerSource, /evidenceLinkError/, 'link evidence validation should provide field-level feedback')
 assert.match(drawerSource, /dataUrl/, 'screenshot evidence should include portable image data')
@@ -107,6 +111,20 @@ assert.match(pageSource, /setOverview\(\(current\)/, 'mutation responses should 
 assert.match(drawerSource, /onTaskUpdated\(nextTask\)/, 'drawer mutations should publish response.task before refreshing summary/detail')
 assert.match(drawerSource, /void onRefreshTask\(nextTask\.id\)/, 'drawer mutations should refresh detail after applying response.task')
 assert.match(drawerSource, /onReload\(\)/, 'drawer mutations should refresh list summary after applying response.task')
+assert.ok(
+  drawerSource.indexOf('onTaskUpdated(nextTask)') < drawerSource.indexOf('void onRefreshTask(nextTask.id)'),
+  'drawer mutations should call onTaskUpdated(response.task) before scheduling detail refresh',
+)
+assert.match(
+  drawerSource,
+  /return result\.task[\s\S]*?SOP 步骤已/s,
+  'SOP mutation should return response.task directly before any detail refresh',
+)
+assert.match(
+  drawerSource,
+  /return result\.task[\s\S]*?'证据已提交'/s,
+  'evidence mutation should return response.task directly before any detail refresh',
+)
 assert.doesNotMatch(
   apiSource,
   /SOP 步骤状态暂不能在客户端直接更新/,

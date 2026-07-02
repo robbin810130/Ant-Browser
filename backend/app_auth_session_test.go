@@ -418,6 +418,105 @@ func TestDesktopWorkspaceRequestProxiesMakaSpecialistEvidenceV2Payload(t *testin
 	}
 }
 
+func TestDesktopWorkspaceRequestProxiesMakaSpecialistReadPathsAndSopStep(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	methods := make(map[string]string)
+	rawQueries := make(map[string]string)
+	var sopStepBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/maka/specialist/tasks/today",
+			"/api/maka/specialist/shops/shop-1/tasks",
+			"/api/maka/specialist/tasks/task-1",
+			"/api/maka/specialist/tasks/task-1/sop-steps/step-1":
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer desktop-token" {
+			t.Fatalf("期望 Authorization=Bearer desktop-token，实际=%q", r.Header.Get("Authorization"))
+		}
+		methods[r.URL.Path] = r.Method
+		rawQueries[r.URL.Path] = r.URL.RawQuery
+		if r.URL.Path == "/api/maka/specialist/tasks/task-1/sop-steps/step-1" {
+			if r.Method != http.MethodPost {
+				t.Fatalf("期望 SOP step 使用 POST，实际=%s", r.Method)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&sopStepBody); err != nil {
+				t.Fatalf("解析 SOP step 请求失败: %v", err)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "ok",
+			"data": map[string]any{
+				"task": map[string]any{"id": "task-1"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	app.config = desktopAuthTestConfig(t, server.URL)
+
+	requests := []struct {
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{method: http.MethodGet, path: "/api/maka/specialist/tasks/today?pageSize=100&status=in_progress"},
+		{method: http.MethodGet, path: "/api/maka/specialist/shops/shop-1/tasks?page=2&pageSize=20"},
+		{method: http.MethodGet, path: "/api/maka/specialist/tasks/task-1"},
+		{
+			method: http.MethodPost,
+			path:   "/api/maka/specialist/tasks/task-1/sop-steps/step-1",
+			body: map[string]any{
+				"status":       "done",
+				"operatorNote": "现场已处理",
+				"evidenceRefs": []any{"evidence-1", "evidence-2"},
+			},
+		},
+	}
+
+	for _, request := range requests {
+		envelope, err := app.DesktopWorkspaceRequest(" desktop-token ", request.method, request.path, request.body)
+		if err != nil {
+			t.Fatalf("DesktopWorkspaceRequest(%s %s) 返回错误: %v", request.method, request.path, err)
+		}
+		if code, _ := envelope["code"].(float64); code != 0 {
+			t.Fatalf("期望 envelope.code=0，实际=%#v", envelope)
+		}
+	}
+
+	if methods["/api/maka/specialist/tasks/today"] != http.MethodGet {
+		t.Fatalf("期望 today list 使用 GET，实际=%s", methods["/api/maka/specialist/tasks/today"])
+	}
+	if rawQueries["/api/maka/specialist/tasks/today"] != "pageSize=100&status=in_progress" {
+		t.Fatalf("期望 today query 透传，实际=%q", rawQueries["/api/maka/specialist/tasks/today"])
+	}
+	if methods["/api/maka/specialist/shops/shop-1/tasks"] != http.MethodGet {
+		t.Fatalf("期望 shop list 使用 GET，实际=%s", methods["/api/maka/specialist/shops/shop-1/tasks"])
+	}
+	if rawQueries["/api/maka/specialist/shops/shop-1/tasks"] != "page=2&pageSize=20" {
+		t.Fatalf("期望 shop query 透传，实际=%q", rawQueries["/api/maka/specialist/shops/shop-1/tasks"])
+	}
+	if methods["/api/maka/specialist/tasks/task-1"] != http.MethodGet {
+		t.Fatalf("期望 detail 使用 GET，实际=%s", methods["/api/maka/specialist/tasks/task-1"])
+	}
+	if methods["/api/maka/specialist/tasks/task-1/sop-steps/step-1"] != http.MethodPost {
+		t.Fatalf("期望 SOP step 使用 POST，实际=%s", methods["/api/maka/specialist/tasks/task-1/sop-steps/step-1"])
+	}
+	if sopStepBody["status"] != "done" || sopStepBody["operatorNote"] != "现场已处理" {
+		t.Fatalf("期望 SOP body 保留 status/operatorNote，实际=%#v", sopStepBody)
+	}
+	evidenceRefs, _ := sopStepBody["evidenceRefs"].([]any)
+	if len(evidenceRefs) != 2 || evidenceRefs[0] != "evidence-1" || evidenceRefs[1] != "evidence-2" {
+		t.Fatalf("期望 SOP body 保留 evidenceRefs，实际=%#v", sopStepBody["evidenceRefs"])
+	}
+}
+
 func TestDesktopWorkspaceRequestProxiesMakaSpecialistTaskMutations(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
