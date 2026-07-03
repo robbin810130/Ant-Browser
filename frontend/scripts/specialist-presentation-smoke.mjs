@@ -72,6 +72,88 @@ const apiSource = await readFile(
   'utf8',
 )
 
+const typescriptModule = await import(
+  pathToFileURL(resolve(root, 'node_modules', 'typescript', 'lib', 'typescript.js')).href
+)
+const typescript = typescriptModule.default ?? typescriptModule
+const compiledApiSource = typescript.transpileModule(apiSource, {
+  compilerOptions: {
+    target: typescript.ScriptTarget.ES2020,
+    module: typescript.ModuleKind.CommonJS,
+    esModuleInterop: true,
+  },
+  fileName: 'api.ts',
+}).outputText
+const workspaceRequests = []
+const apiModule = { exports: {} }
+const apiDependencies = {
+  '../../wailsjs/go/main/App': {
+    DesktopWorkspaceRequest: async (token, method, path, body) => {
+      workspaceRequests.push({ token, method, path, body })
+      return { code: 0, data: { task: { id: 'task-1' } } }
+    },
+  },
+  '../workspace/devData': {
+    useDevWorkspaceFallback: () => false,
+  },
+  '../../store/authStore': {
+    useAuthStore: {
+      getState: () => ({ accessToken: 'test-token' }),
+    },
+  },
+}
+const requireApiDependency = (specifier) => {
+  assert.ok(specifier in apiDependencies, `unexpected specialist API dependency: ${specifier}`)
+  return apiDependencies[specifier]
+}
+new Function('require', 'module', 'exports', compiledApiSource)(
+  requireApiDependency,
+  apiModule,
+  apiModule.exports,
+)
+
+await apiModule.exports.submitSpecialistTaskEvidence(' task-1 ', {
+  stepId: 'step-1',
+  evidenceType: 'screenshot',
+  payload: {
+    fileName: 'task-proof.jpg',
+    mimeType: 'image/jpeg',
+    size: 456789,
+    dataUrl: 'data:image/jpeg;base64,c2NyZWVuc2hvdA==',
+    note: '截图证据备注',
+  },
+})
+await apiModule.exports.submitSpecialistTaskEvidence('task-1', {
+  stepId: 'step-2',
+  evidenceType: 'backend_url',
+  payload: {
+    url: 'https://work.1688.com/backend',
+  },
+})
+await apiModule.exports.submitSpecialistTaskEvidence('task-1', {
+  stepId: 'step-3',
+  evidenceType: 'operation_summary',
+  payload: {
+    text: '已完成商品标题优化并复核',
+  },
+})
+
+assert.equal(workspaceRequests.length, 3)
+assert.equal(workspaceRequests[0].token, 'test-token')
+assert.equal(workspaceRequests[0].method, 'POST')
+assert.equal(workspaceRequests[0].path, '/api/maka/specialist/tasks/task-1/evidence')
+assert.equal(workspaceRequests[0].body.stepId, 'step-1')
+assert.equal(workspaceRequests[0].body.evidenceType, 'screenshot')
+assert.equal(workspaceRequests[0].body.payload.fileName, 'task-proof.jpg')
+assert.equal(workspaceRequests[0].body.payload.mimeType, 'image/jpeg')
+assert.equal(workspaceRequests[0].body.payload.size, 456789)
+assert.equal(workspaceRequests[0].body.payload.dataUrl, 'data:image/jpeg;base64,c2NyZWVuc2hvdA==')
+assert.equal(workspaceRequests[0].body.payload.note, '截图证据备注')
+assert.equal(workspaceRequests[1].body.evidenceType, 'backend_url')
+assert.equal(workspaceRequests[1].body.payload.url, 'https://work.1688.com/backend')
+assert.equal(workspaceRequests[2].body.evidenceType, 'operation_summary')
+assert.equal(workspaceRequests[2].body.payload.text, '已完成商品标题优化并复核')
+
 assert.match(pageSource, /shared\/components/, 'specialist task page should use the Maka Browser shared components')
 assert.match(drawerSource, /shared\/components/, 'specialist task drawer should use the Maka Browser shared components')
 assert.doesNotMatch(pageSource, /from 'antd'/, 'specialist task page must stay aligned with the Maka Browser client component system')
