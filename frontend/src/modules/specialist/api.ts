@@ -166,10 +166,6 @@ function unwrapEnvelope<T>(input: unknown): T {
   return envelope.data as T
 }
 
-function unsupportedContract(message: string): never {
-  throw new Error(`${message}。当前客户端已接入任务读取、详情、证据说明和申诉；该动作需要服务端 Maka 专员任务合同继续落地。`)
-}
-
 async function specialistRequest<T>(path: string, init: SpecialistRequestInit = {}): Promise<T> {
   if (useDevWorkspaceFallback()) {
     return devSpecialistRequest<T>(path, init)
@@ -230,9 +226,6 @@ export async function submitSpecialistTaskEvidence(
   const text = normalizeString(payload.payload.text || payload.payload.note)
   const url = normalizeString(payload.payload.url)
   const fileName = normalizeString(payload.payload.fileName)
-  if (payload.evidenceType === 'screenshot') {
-    unsupportedContract('截图证据上传暂不能提交')
-  }
   const summary = text || url || fileName
   if (summary.length < 4) {
     throw new Error('证据说明至少需要 4 个字符')

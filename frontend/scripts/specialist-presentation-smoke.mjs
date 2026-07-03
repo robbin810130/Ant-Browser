@@ -104,6 +104,16 @@ assert.match(drawerSource, /dataUrl/, 'screenshot evidence should include portab
 assert.match(drawerSource, /return \{ url:/, 'link evidence should submit a URL payload')
 assert.doesNotMatch(
   apiSource,
+  /截图证据上传暂不能提交|unsupportedContract/,
+  'screenshot evidence must reach the Maka specialist evidence endpoint instead of being blocked in the client',
+)
+assert.match(
+  apiSource,
+  /payload:\s*\{\s*\.\.\.payload\.payload,/,
+  'screenshot evidence fields should pass through to the Maka specialist evidence payload',
+)
+assert.doesNotMatch(
+  apiSource,
   /SOP 步骤状态暂不能在客户端直接更新/,
   'SOP updates must call the Maka specialist server contract instead of being blocked in the renderer',
 )
