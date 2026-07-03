@@ -109,6 +109,21 @@ assert.doesNotMatch(
 )
 assert.match(
   apiSource,
+  /appendQuery\('\/api\/maka\/specialist\/tasks\/today', query\)/,
+  'specialist task list should use the Maka specialist task contract path',
+)
+assert.match(
+  apiSource,
+  /`\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}`/,
+  'specialist task detail should use the Maka specialist task contract path so SOP snapshots are returned',
+)
+assert.match(
+  apiSource,
+  /`\/api\/maka\/specialist\/shops\/\$\{encodeURIComponent\(normalizedShopId\)\}\/tasks`/,
+  'shop specialist task list should use the Maka specialist shop task contract path',
+)
+assert.match(
+  apiSource,
   /\/api\/maka\/specialist\/tasks\/\$\{encodeURIComponent\(taskId\.trim\(\)\)\}\/sop-steps\/\$\{encodeURIComponent\(stepId\.trim\(\)\)\}/,
   'SOP updates should use the Maka specialist task contract path',
 )

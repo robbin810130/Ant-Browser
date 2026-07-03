@@ -186,34 +186,21 @@ async function specialistRequest<T>(path: string, init: SpecialistRequestInit = 
 }
 
 export async function fetchTodaySpecialistTasks(query: SpecialistTaskListQuery = {}): Promise<SpecialistTaskListResponse> {
-  const data = await specialistRequest<unknown>(appendQuery('/api/workbench/tasks', query))
+  const data = await specialistRequest<unknown>(appendQuery('/api/maka/specialist/tasks/today', query))
   return normalizeListResponse(data)
 }
 
 export async function fetchShopSpecialistTasks(shopId: string, query: SpecialistTaskListQuery = {}): Promise<SpecialistTaskListResponse> {
   const normalizedShopId = shopId.trim()
   if (!normalizedShopId) return normalizeListResponse({ items: [] })
-  const data = await specialistRequest<unknown>(appendQuery('/api/workbench/tasks', query))
-  const list = normalizeListResponse(data)
-  const items = list.items.filter((item) => item.shopId === normalizedShopId)
-  return normalizeListResponse({
-    ...list,
-    items,
-    pagination: { ...list.pagination, total: items.length },
-    summary: {
-      total: items.length,
-      pending: items.filter((item) => item.status === 'pending').length,
-      inProgress: items.filter((item) => item.status === 'in_progress').length,
-      submittedPendingValidation: items.filter((item) => item.status === 'submitted_pending_validation').length,
-      appealInReview: items.filter((item) => item.status === 'appeal_in_review').length,
-      overdue: items.filter((item) => item.status === 'overdue').length,
-      completed: items.filter((item) => item.status === 'completed').length,
-    },
-  })
+  const data = await specialistRequest<unknown>(
+    appendQuery(`/api/maka/specialist/shops/${encodeURIComponent(normalizedShopId)}/tasks`, query),
+  )
+  return normalizeListResponse(data)
 }
 
 export async function fetchSpecialistTaskDetail(taskId: string): Promise<SpecialistTaskRecord> {
-  const data = await specialistRequest<unknown>(`/api/tasks/${encodeURIComponent(taskId.trim())}`)
+  const data = await specialistRequest<unknown>(`/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}`)
   return normalizeSpecialistTask((data as any)?.task ?? data)
 }
 
@@ -250,10 +237,21 @@ export async function submitSpecialistTaskEvidence(
   if (summary.length < 4) {
     throw new Error('证据说明至少需要 4 个字符')
   }
-  const attachments = url ? [url] : []
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
-    { method: 'POST', body: { summary, attachments } },
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
+    {
+      method: 'POST',
+      body: {
+        stepId: payload.stepId,
+        evidenceType: payload.evidenceType,
+        payload: {
+          ...payload.payload,
+          text: text || undefined,
+          url: url || undefined,
+          fileName: fileName || undefined,
+        },
+      },
+    },
   )
   return normalizeMutationResponse(data)
 }
@@ -264,8 +262,8 @@ export async function submitSpecialistTask(
 ): Promise<SpecialistTaskMutationResponse> {
   const summary = normalizeString(payload.summary || '处理完成，提交验收')
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/evidence`,
-    { method: 'POST', body: { summary, attachments: [] } },
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/submit`,
+    { method: 'POST', body: { summary } },
   )
   return normalizeMutationResponse(data)
 }
@@ -275,7 +273,7 @@ export async function appealSpecialistTask(
   payload: AppealSpecialistTaskPayload,
 ): Promise<SpecialistTaskMutationResponse> {
   const data = await specialistRequest<unknown>(
-    `/api/tasks/${encodeURIComponent(taskId.trim())}/appeal`,
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/appeal`,
     { method: 'POST', body: { reason: payload.reason } },
   )
   return normalizeMutationResponse(data)
@@ -285,9 +283,11 @@ export async function blockSpecialistTask(
   taskId: string,
   payload: BlockSpecialistTaskPayload,
 ): Promise<SpecialistTaskMutationResponse> {
-  void taskId
-  void payload
-  unsupportedContract('无法处理/阻塞原因暂不能提交')
+  const data = await specialistRequest<unknown>(
+    `/api/maka/specialist/tasks/${encodeURIComponent(taskId.trim())}/block`,
+    { method: 'POST', body: { reasonCode: payload.reasonCode, reasonText: payload.reasonText } },
+  )
+  return normalizeMutationResponse(data)
 }
 
 function buildDevTask(overrides: Partial<SpecialistTaskRecord> = {}): SpecialistTaskRecord {
